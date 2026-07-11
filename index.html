@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="hu">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Ingyenes Bitcoin- és aranypiaci figyelő technikai és híralapú elemzésekkel."
+    />
+    <title>Aurum & Satoshi – Piaci figyelő</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="#" aria-label="Kezdőlap">
+        <span class="brand-mark">A&S</span>
+        <span>Aurum & Satoshi</span>
+      </a>
+      <div class="header-actions">
+        <span id="marketStatus" class="status"><span></span> Adatok betöltése</span>
+        <button id="refreshButton" class="icon-button" type="button" aria-label="Adatok frissítése">
+          ↻
+        </button>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div>
+          <p class="eyebrow">INGYENES PIACI IRÁNYTŰ</p>
+          <h1>Arany és Bitcoin.<br /><em>Tisztább döntések.</em></h1>
+          <p class="hero-copy">
+            Árfolyamok, technikai jelek és a hírek hangulata egyetlen, átlátható nézetben.
+          </p>
+        </div>
+        <div class="hero-note">
+          <span>Utolsó frissítés</span>
+          <strong id="lastUpdated">–</strong>
+          <small>Az ingyenes adatforrások késhetnek.</small>
+        </div>
+      </section>
+
+      <div id="errorBanner" class="error-banner" role="alert" hidden></div>
+
+      <section class="asset-grid" aria-label="Eszközök áttekintése">
+        <article class="asset-card bitcoin-card" data-asset="bitcoin">
+          <div class="asset-heading">
+            <div class="asset-icon bitcoin-icon">₿</div>
+            <div>
+              <p>Bitcoin</p>
+              <span>BTC / USD</span>
+            </div>
+            <span id="btcChange" class="change neutral">–</span>
+          </div>
+          <div class="price-row">
+            <strong id="btcPrice">–</strong>
+            <span>USD</span>
+          </div>
+          <div class="chart-wrap"><canvas id="btcChart"></canvas></div>
+          <div class="signal-row">
+            <div>
+              <span>Összesített jelzés</span>
+              <strong id="btcSignal" class="signal neutral">Elemzés…</strong>
+            </div>
+            <div class="confidence">
+              <span>Bizalom</span>
+              <strong id="btcConfidence">–</strong>
+            </div>
+          </div>
+          <div id="btcReasons" class="reason-list"></div>
+        </article>
+
+        <article class="asset-card gold-card" data-asset="gold">
+          <div class="asset-heading">
+            <div class="asset-icon gold-icon">Au</div>
+            <div>
+              <p>Arany</p>
+              <span>GOLD / USD</span>
+            </div>
+            <span id="goldChange" class="change neutral">–</span>
+          </div>
+          <div class="price-row">
+            <strong id="goldPrice">–</strong>
+            <span>USD / uncia</span>
+          </div>
+          <div class="chart-wrap"><canvas id="goldChart"></canvas></div>
+          <div class="signal-row">
+            <div>
+              <span>Összesített jelzés</span>
+              <strong id="goldSignal" class="signal neutral">Elemzés…</strong>
+            </div>
+            <div class="confidence">
+              <span>Bizalom</span>
+              <strong id="goldConfidence">–</strong>
+            </div>
+          </div>
+          <div id="goldReasons" class="reason-list"></div>
+        </article>
+      </section>
+
+      <section class="insights-grid">
+        <article class="panel indicators-panel">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">TECHNIKAI KÉP</p>
+              <h2>Indikátorok</h2>
+            </div>
+            <div class="tabs" role="tablist" aria-label="Eszköz kiválasztása">
+              <button class="tab active" data-indicator-asset="bitcoin" type="button">Bitcoin</button>
+              <button class="tab" data-indicator-asset="gold" type="button">Arany</button>
+            </div>
+          </div>
+          <div class="indicator-list">
+            <div class="indicator">
+              <div><span>RSI (14)</span><small>Túlvett / túladott</small></div>
+              <strong id="indicatorRsi">–</strong>
+              <span id="indicatorRsiState" class="pill neutral">–</span>
+            </div>
+            <div class="indicator">
+              <div><span>SMA trend</span><small>Rövid és hosszú átlag</small></div>
+              <strong id="indicatorSma">–</strong>
+              <span id="indicatorSmaState" class="pill neutral">–</span>
+            </div>
+            <div class="indicator">
+              <div><span>7 napos momentum</span><small>Árfolyam lendülete</small></div>
+              <strong id="indicatorMomentum">–</strong>
+              <span id="indicatorMomentumState" class="pill neutral">–</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel sentiment-panel">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">HÍRHANGULAT</p>
+              <h2>Piaci pulzus</h2>
+            </div>
+            <span id="sentimentBadge" class="sentiment-badge neutral">Elemzés…</span>
+          </div>
+          <div class="sentiment-meter" aria-label="Hírek hangulata">
+            <span id="sentimentNeedle"></span>
+          </div>
+          <div class="meter-labels"><span>Negatív</span><span>Semleges</span><span>Pozitív</span></div>
+          <p id="sentimentSummary" class="sentiment-summary">A friss hírek betöltése folyamatban.</p>
+        </article>
+      </section>
+
+      <section class="news-section">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">FRISS HÍREK</p>
+            <h2>A piac mozgatórugói</h2>
+          </div>
+          <a
+            href="https://news.google.com/search?q=bitcoin%20OR%20gold"
+            target="_blank"
+            rel="noopener noreferrer"
+          >További hírek ↗</a>
+        </div>
+        <div id="newsGrid" class="news-grid">
+          <div class="news-skeleton"></div>
+          <div class="news-skeleton"></div>
+          <div class="news-skeleton"></div>
+        </div>
+      </section>
+
+      <section class="chatgpt-panel">
+        <div>
+          <p class="eyebrow">MÉLYEBB ELEMZÉS</p>
+          <h2>Vidd tovább ChatGPT-be</h2>
+          <p>
+            Készíts másolható összefoglalót az aktuális adatokról, majd illeszd be a saját
+            ChatGPT-beszélgetésedbe.
+          </p>
+        </div>
+        <button id="copyPromptButton" class="primary-button" type="button">
+          Elemzési kérés másolása
+        </button>
+      </section>
+
+      <section class="disclaimer">
+        <strong>Fontos kockázati figyelmeztetés</strong>
+        <p>
+          Az oldal kizárólag oktatási és tájékoztatási célú. Nem minősül befektetési
+          tanácsadásnak. Az algoritmikus jelzések tévedhetnek, az árfolyamok késhetnek, és a
+          múltbeli teljesítmény nem garantál jövőbeli eredményt. Csak olyan összeget
+          kockáztass, amelynek elvesztését megengedheted magadnak.
+        </p>
+      </section>
+    </main>
+
+    <footer>
+      <span>© <span id="year"></span> Aurum & Satoshi</span>
+      <span>Ingyenes, nyílt piaci adatokból</span>
+    </footer>
+  </body>
+</html>
