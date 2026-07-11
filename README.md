@@ -38,11 +38,15 @@ A `.github/workflows/deploy.yml` minden `main` ágra történő feltöltés utá
 publikálja az oldalt. A repository `Settings → Pages → Source` beállításánál a
 `GitHub Actions` lehetőséget kell kiválasztani.
 
-## ChatGPT Plus
+## AI-elemzés
 
 A ChatGPT Plus előfizetés nem tartalmaz OpenAI API-hozzáférést. Az oldalon található
 gomb az aktuális adatokból elemzési kérést készít, amely kézzel bemásolható a ChatGPT-be.
-Automatikus AI-elemzéshez külön OpenAI API-kulcs és biztonságos backend szükséges.
+
+Az `ai-backend` könyvtár egy ingyenes Cloudflare Worker + Gemini 2.5 Flash integrációt
+tartalmaz. Telepítés után az oldal automatikusan lekérheti és megjelenítheti a magyar
+nyelvű AI-elemzést. A részletes beállítási útmutató az
+[`ai-backend/README.md`](ai-backend/README.md) fájlban található.
 
 ## Beállítások és adatvédelem
 
@@ -51,8 +55,10 @@ A pénznem, frissítési idő, portfólió, riasztások és opcionális API-beá
 tárolt kulcsok nem tekinthetők teljesen titkosnak, ezért csak korlátozott, visszavonható
 ingyenes kulcs használata javasolt.
 
-OpenAI API-kulcsot az oldal szándékosan nem kér. Az automatikus AI-elemzés a beállítható
-backend URL-en keresztül működik; a backend feladata a titkos kulcs védelme.
+Gemini- vagy OpenAI API-kulcsot az oldal szándékosan nem kér. Az automatikus AI-elemzés
+a beállítható backend URL-en keresztül működik; a backend feladata a titkos kulcs
+védelme. A Workerhez tartozó külön hozzáférési token a böngésző helyi tárhelyén marad,
+és bármikor lecserélhető.
 
 Az árriasztások csak nyitott oldal mellett ellenőrizhetők. Háttérben futó e-mail- vagy
 Telegram-riasztáshoz külön szerver szükséges.

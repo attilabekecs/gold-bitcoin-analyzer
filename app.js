@@ -795,6 +795,7 @@ function loadSettings() {
     coinGeckoKey: "",
     twelveDataKey: "",
     aiEndpoint: "",
+    aiAccessToken: "",
   };
   try {
     return { ...defaults, ...JSON.parse(localStorage.getItem("aurum-settings") || "{}") };
@@ -836,6 +837,7 @@ function openSettings() {
   document.getElementById("settingCoinGeckoKey").value = state.settings.coinGeckoKey;
   document.getElementById("settingTwelveDataKey").value = state.settings.twelveDataKey;
   document.getElementById("settingAiEndpoint").value = state.settings.aiEndpoint;
+  document.getElementById("settingAiAccessToken").value = state.settings.aiAccessToken;
   document.getElementById("settingsDialog").showModal();
 }
 
@@ -851,6 +853,7 @@ function saveSettings(event) {
     coinGeckoKey: document.getElementById("settingCoinGeckoKey").value.trim(),
     twelveDataKey: document.getElementById("settingTwelveDataKey").value.trim(),
     aiEndpoint: document.getElementById("settingAiEndpoint").value.trim(),
+    aiAccessToken: document.getElementById("settingAiAccessToken").value.trim(),
   };
   localStorage.setItem("aurum-settings", JSON.stringify(state.settings));
   applySettings();
@@ -1147,8 +1150,9 @@ async function copyAnalysisPrompt() {
 
 async function requestAiAnalysis() {
   const endpoint = state.settings.aiEndpoint;
-  if (!endpoint) {
-    showToast("Előbb adj meg egy biztonságos AI backend URL-t a beállításokban.");
+  const accessToken = state.settings.aiAccessToken;
+  if (!endpoint || !accessToken) {
+    showToast("Add meg az AI backend URL-t és hozzáférési tokent a beállításokban.");
     openSettings();
     return;
   }
@@ -1165,25 +1169,34 @@ async function requestAiAnalysis() {
   try {
     const response = await fetch(endpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
       body: JSON.stringify({
         prompt: buildAnalysisPrompt(),
         generatedAt: new Date().toISOString(),
       }),
     });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const contentType = response.headers.get("content-type") || "";
     const payload = contentType.includes("application/json")
       ? await response.json()
       : await response.text();
+    if (!response.ok) {
+      const message =
+        typeof payload === "object" && payload?.error
+          ? payload.error
+          : `A backend hibát jelzett (${response.status}).`;
+      throw new Error(message);
+    }
     const analysis =
       typeof payload === "string" ? payload : payload.analysis || payload.text || payload.result;
     if (!analysis) throw new Error("Üres válasz");
     resultElement.textContent = analysis;
     resultElement.hidden = false;
     showToast("AI-elemzés elkészült.");
-  } catch {
-    showToast("Az AI backend nem válaszolt. Ellenőrizd a beállításokat.");
+  } catch (error) {
+    showToast(error.message || "Az AI backend nem válaszolt. Ellenőrizd a beállításokat.");
   } finally {
     button.disabled = false;
     button.textContent = original;

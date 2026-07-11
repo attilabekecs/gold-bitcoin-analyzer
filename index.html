@@ -424,11 +424,15 @@
             <input id="settingTwelveDataKey" type="password" autocomplete="off" placeholder="Opcionális – XAU/USD történeti adatok" />
           </label>
           <label>Biztonságos AI backend URL
-            <input id="settingAiEndpoint" type="url" placeholder="https://sajat-backend.example.com/analyze" />
+            <input id="settingAiEndpoint" type="url" placeholder="https://aurum-satoshi-ai.example.workers.dev/analyze" />
+          </label>
+          <label>AI backend hozzáférési token
+            <input id="settingAiAccessToken" type="password" autocomplete="off" placeholder="A Cloudflare-ben beállított AI_ACCESS_TOKEN" />
           </label>
           <div class="security-note">
-            <strong>OpenAI API-kulcsot ne adj meg ezen a publikus oldalon.</strong>
-            Az automatikus AI-elemzéshez a kulcsot egy külön backendnek kell védenie.
+            <strong>Gemini- vagy OpenAI API-kulcsot ne adj meg ezen a publikus oldalon.</strong>
+            Itt csak a Worker hozzáférési tokenje szerepel. Az AI API-kulcsot a Cloudflare
+            titkos tárhelyének kell védenie.
           </div>
         </div>
 

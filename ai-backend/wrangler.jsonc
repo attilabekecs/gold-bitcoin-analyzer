@@ -1,0 +1,12 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "aurum-satoshi-ai",
+  "main": "src/index.js",
+  "compatibility_date": "2026-07-11",
+  "workers_dev": true,
+  "vars": {
+    "ALLOWED_ORIGIN": "https://attilabekecs.github.io",
+    "ALLOW_LOCAL": "false",
+    "GEMINI_MODEL": "gemini-2.5-flash"
+  }
+}

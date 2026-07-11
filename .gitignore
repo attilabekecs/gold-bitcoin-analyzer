@@ -1,1 +1,3 @@
 .DS_Store
+ai-backend/.dev.vars
+ai-backend/.wrangler/
