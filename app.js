@@ -7,15 +7,25 @@ const state = {
   sentiment: { score: 0, label: "Semleges" },
   selectedAsset: "bitcoin",
   charts: {},
+  timeframe: 30,
+  exchangeRates: { USD: 1, EUR: 1, HUF: 1 },
+  settings: null,
+  portfolio: [],
+  alerts: [],
+  dataHealth: {
+    bitcoin: "pending",
+    gold: "pending",
+    news: "pending",
+    fx: "pending",
+  },
+  refreshTimer: null,
 };
 
 const endpoints = {
-  bitcoin:
-    "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=30&interval=daily",
   goldSpot: "https://api.gold-api.com/price/XAU",
   goldHistory: "https://freegoldapi.com/data/latest.json",
-  news:
-    "https://api.gdeltproject.org/api/v2/doc/doc?query=%28bitcoin%20OR%20cryptocurrency%20OR%20gold%20OR%20bullion%29%20sourcelang%3Aenglish&mode=artlist&maxrecords=12&timespan=48h&format=json&sort=datedesc",
+  exchangeRates: "https://api.frankfurter.dev/v1/latest?base=USD&symbols=EUR,HUF",
+  newsBase: "https://api.gdeltproject.org/api/v2/doc/doc",
 };
 
 const positiveWords = [
@@ -31,12 +41,34 @@ const negativeWords = [
 ];
 
 document.addEventListener("DOMContentLoaded", () => {
+  state.settings = loadSettings();
+  state.portfolio = loadLocalArray("aurum-portfolio");
+  state.alerts = loadLocalArray("aurum-alerts");
   document.getElementById("year").textContent = new Date().getFullYear();
+  document.getElementById("portfolioDate").valueAsDate = new Date();
   document.getElementById("refreshButton").addEventListener("click", loadDashboard);
   document.getElementById("copyPromptButton").addEventListener("click", copyAnalysisPrompt);
+  document.getElementById("aiAnalyzeButton").addEventListener("click", requestAiAnalysis);
+  document.getElementById("settingsButton").addEventListener("click", openSettings);
+  document.getElementById("closeSettingsButton").addEventListener("click", closeSettings);
+  document.getElementById("settingsForm").addEventListener("submit", saveSettings);
+  document.getElementById("resetSettingsButton").addEventListener("click", resetSettings);
+  document.getElementById("portfolioForm").addEventListener("submit", addPortfolioEntry);
+  document.getElementById("alertForm").addEventListener("submit", addAlert);
+  document.getElementById("notificationButton").addEventListener("click", requestNotifications);
+  ["riskCapital", "riskPercent", "riskEntry", "riskStop", "riskTarget"].forEach((id) => {
+    document.getElementById(id).addEventListener("input", calculateRisk);
+  });
   document.querySelectorAll("[data-indicator-asset]").forEach((button) => {
     button.addEventListener("click", () => selectIndicatorAsset(button.dataset.indicatorAsset));
   });
+  document.querySelectorAll("[data-timeframe]").forEach((button) => {
+    button.addEventListener("click", () => selectTimeframe(Number(button.dataset.timeframe)));
+  });
+  applySettings();
+  renderPortfolio();
+  renderAlerts();
+  calculateRisk();
   loadDashboard();
 });
 
@@ -44,33 +76,51 @@ async function loadDashboard() {
   setLoading(true);
   hideError();
 
-  const [bitcoinResult, goldResult, newsResult] = await Promise.allSettled([
+  const [bitcoinResult, goldResult, newsResult, ratesResult] = await Promise.allSettled([
     fetchBitcoin(),
     fetchGold(),
     fetchNews(),
+    fetchExchangeRates(),
   ]);
 
   const errors = [];
 
   if (bitcoinResult.status === "fulfilled") {
     state.assets.bitcoin = bitcoinResult.value;
+    state.dataHealth.bitcoin = "ok";
   } else {
     errors.push("A Bitcoin-adatok most nem érhetők el.");
+    state.assets.bitcoin = null;
+    state.dataHealth.bitcoin = "error";
   }
 
   if (goldResult.status === "fulfilled") {
     state.assets.gold = goldResult.value;
+    state.dataHealth.gold = goldResult.value.warning ? "warning" : "ok";
   } else {
     errors.push("Az aranyadatok most nem érhetők el.");
+    state.assets.gold = null;
+    state.dataHealth.gold = "error";
   }
 
   if (newsResult.status === "fulfilled") {
     state.news = newsResult.value;
     state.sentiment = analyzeSentiment(state.news);
+    state.dataHealth.news = state.news.length ? "ok" : "warning";
   } else {
     errors.push("A hírfolyam most nem érhető el.");
     state.news = [];
     state.sentiment = { score: 0, label: "Semleges" };
+    state.dataHealth.news = "error";
+  }
+
+  if (ratesResult.status === "fulfilled") {
+    state.exchangeRates = { USD: 1, ...ratesResult.value };
+    state.dataHealth.fx = "ok";
+  } else {
+    state.exchangeRates = { USD: 1, EUR: 1, HUF: 1 };
+    state.dataHealth.fx = state.settings.currency === "USD" ? "warning" : "error";
+    if (state.settings.currency !== "USD") errors.push("A devizaátváltás most nem érhető el.");
   }
 
   ["bitcoin", "gold"].forEach((assetKey) => {
@@ -86,6 +136,9 @@ async function loadDashboard() {
   renderSentiment();
   renderNews();
   renderIndicators(state.selectedAsset);
+  renderPortfolio();
+  renderDataHealth();
+  checkAlerts();
 
   if (errors.length) showError(errors.join(" "));
   document.getElementById("lastUpdated").textContent = new Intl.DateTimeFormat("hu-HU", {
@@ -95,15 +148,15 @@ async function loadDashboard() {
     month: "short",
     day: "numeric",
   }).format(new Date());
-  setLoading(false, errors.length === 3);
+  setLoading(false, errors.length >= 4);
 }
 
-async function fetchJson(url, timeout = 12000) {
+async function fetchJson(url, timeout = 12000, headers = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
   try {
     const response = await fetch(url, {
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", ...headers },
       signal: controller.signal,
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -114,16 +167,36 @@ async function fetchJson(url, timeout = 12000) {
 }
 
 async function fetchBitcoin() {
-  const data = await fetchJson(endpoints.bitcoin);
+  const url = `https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=${state.timeframe}&interval=daily`;
+  const headers = state.settings.coinGeckoKey
+    ? { "x-cg-demo-api-key": state.settings.coinGeckoKey }
+    : {};
+  const data = await fetchJson(url, 12000, headers);
   const points = (data.prices || [])
     .map(([time, price]) => ({ time: Number(time), price: Number(price) }))
     .filter((point) => Number.isFinite(point.price));
 
-  if (points.length < 15) throw new Error("Nincs elegendő Bitcoin-adat");
+  if (points.length < Math.min(7, state.timeframe)) throw new Error("Nincs elegendő Bitcoin-adat");
   return buildAsset("Bitcoin", points, points.at(-1).price);
 }
 
 async function fetchGold() {
+  if (state.settings.twelveDataKey) {
+    try {
+      const outputSize = Math.min(state.timeframe, 365);
+      const url = `https://api.twelvedata.com/time_series?symbol=XAU%2FUSD&interval=1day&outputsize=${outputSize}&apikey=${encodeURIComponent(state.settings.twelveDataKey)}`;
+      const data = await fetchJson(url, 15000);
+      if (data.status === "error") throw new Error(data.message);
+      const points = (data.values || [])
+        .map((item) => ({ time: new Date(item.datetime).getTime(), price: Number(item.close) }))
+        .filter((point) => Number.isFinite(point.time) && Number.isFinite(point.price))
+        .sort((a, b) => a.time - b.time);
+      if (points.length >= 7) return buildAsset("Arany", points, points.at(-1).price);
+    } catch {
+      state.dataHealth.gold = "warning";
+    }
+  }
+
   const [spotResult, historyResult] = await Promise.allSettled([
     fetchJson(endpoints.goldSpot),
     fetchJson(endpoints.goldHistory, 18000),
@@ -138,11 +211,19 @@ async function fetchGold() {
       }))
       .filter((point) => Number.isFinite(point.time) && Number.isFinite(point.price))
       .sort((a, b) => a.time - b.time)
-      .slice(-30);
+      .slice(-state.timeframe);
   }
 
   const spotData = spotResult.status === "fulfilled" ? spotResult.value : null;
   const spotPrice = Number(spotData?.price);
+
+  const lastHistorical = points.at(-1);
+  const historyAgeDays = lastHistorical
+    ? (Date.now() - lastHistorical.time) / 86400000
+    : Infinity;
+  const historyIsFresh = historyAgeDays <= 5;
+
+  if (!historyIsFresh) points = [];
 
   if (Number.isFinite(spotPrice)) {
     const today = new Date().setHours(12, 0, 0, 0);
@@ -155,12 +236,19 @@ async function fetchGold() {
   }
 
   if (!points.length) throw new Error("Nincs elérhető aranyadat");
-  return buildAsset("Arany", points, Number.isFinite(spotPrice) ? spotPrice : points.at(-1).price);
+  const asset = buildAsset("Arany", points, Number.isFinite(spotPrice) ? spotPrice : points.at(-1).price);
+  asset.warning = !historyIsFresh;
+  return asset;
 }
 
 function buildAsset(name, points, currentPrice) {
-  const previous = points.at(-2)?.price ?? currentPrice;
-  const change = previous ? ((currentPrice - previous) / previous) * 100 : 0;
+  const previousPoint = points.at(-2);
+  const previousIsRecent = previousPoint
+    ? Math.abs(points.at(-1).time - previousPoint.time) <= 4 * 86400000
+    : false;
+  const change = previousIsRecent && previousPoint.price
+    ? ((currentPrice - previousPoint.price) / previousPoint.price) * 100
+    : null;
   return {
     name,
     points,
@@ -171,16 +259,66 @@ function buildAsset(name, points, currentPrice) {
 }
 
 async function fetchNews() {
-  const data = await fetchJson(endpoints.news, 15000);
-  return (data.articles || [])
+  const queries = ["bitcoin cryptocurrency", "gold bullion"];
+  const results = await Promise.allSettled(
+    queries.map((query) => {
+      const params = new URLSearchParams({
+        query,
+        mode: "artlist",
+        maxrecords: "8",
+        timespan: "48h",
+        format: "json",
+        sort: "datedesc",
+      });
+      return fetchJson(`${endpoints.newsBase}?${params}`, 10000);
+    }),
+  );
+  const articles = results
+    .filter((result) => result.status === "fulfilled")
+    .flatMap((result) => result.value.articles || []);
+  if (!articles.length) {
+    try {
+      const fallback = await fetchJson(
+        "https://hn.algolia.com/api/v1/search_by_date?query=bitcoin%20gold&tags=story&hitsPerPage=12",
+        8000,
+      );
+      const fallbackArticles = (fallback.hits || [])
+        .filter((article) => article.title && isSafeHttpUrl(article.url))
+        .map((article) => ({
+          title: article.title.trim(),
+          url: article.url,
+          domain: new URL(article.url).hostname.replace("www.", ""),
+          date: new Date(article.created_at),
+        }));
+      if (fallbackArticles.length) return fallbackArticles;
+    } catch {
+      // The normal error below gives the user a useful fallback link.
+    }
+    throw new Error("A hírforrás nem válaszol");
+  }
+  const seen = new Set();
+  return articles
     .filter((article) => article.title && isSafeHttpUrl(article.url))
-    .slice(0, 9)
+    .filter((article) => {
+      const key = article.url || article.title;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => parseGdeltDate(b.seendate) - parseGdeltDate(a.seendate))
+    .slice(0, 12)
     .map((article) => ({
       title: article.title.trim(),
       url: article.url,
       domain: article.domain || new URL(article.url).hostname.replace("www.", ""),
       date: parseGdeltDate(article.seendate),
     }));
+}
+
+async function fetchExchangeRates() {
+  const data = await fetchJson(endpoints.exchangeRates, 8000);
+  if (!data.rates?.EUR || !data.rates?.HUF) throw new Error("Hiányzó devizaadat");
+  return data.rates;
 }
 
 function parseGdeltDate(value) {
@@ -223,6 +361,22 @@ function average(values) {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
+function exponentialMovingAverage(values, period) {
+  if (values.length < period) return null;
+  const multiplier = 2 / (period + 1);
+  let result = average(values.slice(0, period));
+  values.slice(period).forEach((value) => {
+    result = (value - result) * multiplier + result;
+  });
+  return result;
+}
+
+function standardDeviation(values) {
+  if (!values.length) return null;
+  const mean = average(values);
+  return Math.sqrt(average(values.map((value) => (value - mean) ** 2)));
+}
+
 function analyzeAsset(asset, sentimentScore) {
   const { prices } = asset;
   const rsi = calculateRsi(prices);
@@ -230,6 +384,23 @@ function analyzeAsset(asset, sentimentScore) {
   const sma21 = prices.length >= 21 ? average(prices.slice(-21)) : null;
   const momentumBase = prices.at(-8);
   const momentum = momentumBase ? ((prices.at(-1) - momentumBase) / momentumBase) * 100 : null;
+  const ema12 = exponentialMovingAverage(prices, 12);
+  const ema26 = exponentialMovingAverage(prices, 26);
+  const macd = ema12 !== null && ema26 !== null ? ema12 - ema26 : null;
+  const bollingerValues = prices.length >= 20 ? prices.slice(-20) : [];
+  const bollingerMiddle = average(bollingerValues);
+  const bollingerDeviation = standardDeviation(bollingerValues);
+  const bollingerUpper =
+    bollingerMiddle !== null && bollingerDeviation !== null
+      ? bollingerMiddle + bollingerDeviation * 2
+      : null;
+  const bollingerLower =
+    bollingerMiddle !== null && bollingerDeviation !== null
+      ? bollingerMiddle - bollingerDeviation * 2
+      : null;
+  const recentLevels = prices.slice(-Math.min(30, prices.length));
+  const support = recentLevels.length >= 7 ? Math.min(...recentLevels) : null;
+  const resistance = recentLevels.length >= 7 ? Math.max(...recentLevels) : null;
   let score = 0;
   const reasons = [];
 
@@ -263,6 +434,17 @@ function analyzeAsset(asset, sentimentScore) {
     reasons.push(`7 nap: ${formatPercent(momentum)}`);
   }
 
+  if (macd !== null) {
+    if (macd > 0) score += 0.5;
+    else if (macd < 0) score -= 0.5;
+    reasons.push(macd >= 0 ? "MACD: pozitív" : "MACD: negatív");
+  }
+
+  if (bollingerUpper !== null && bollingerLower !== null) {
+    if (prices.at(-1) <= bollingerLower) score += 0.5;
+    else if (prices.at(-1) >= bollingerUpper) score -= 0.5;
+  }
+
   if (sentimentScore > 0.2) {
     score += 0.5;
     reasons.push("Pozitív hírek");
@@ -281,10 +463,32 @@ function analyzeAsset(asset, sentimentScore) {
     className = "negative";
   }
 
-  const dataCompleteness = [rsi, sma21, momentum].filter((value) => value !== null).length / 3;
-  const confidence = Math.round(Math.min(86, 44 + Math.abs(score) * 11 + dataCompleteness * 12));
+  const dataCompleteness =
+    [rsi, sma21, momentum, macd, bollingerUpper].filter((value) => value !== null).length / 5;
+  let confidence = Math.round(Math.min(86, 44 + Math.abs(score) * 11 + dataCompleteness * 12));
+  if (prices.length < 7) {
+    signal = "Nincs elég adat";
+    className = "neutral";
+    confidence = 15;
+    reasons.unshift("Csak aktuális ár érhető el");
+  }
 
-  return { rsi, sma7, sma21, momentum, score, signal, className, confidence, reasons };
+  return {
+    rsi,
+    sma7,
+    sma21,
+    momentum,
+    macd,
+    bollingerUpper,
+    bollingerLower,
+    support,
+    resistance,
+    score,
+    signal,
+    className,
+    confidence,
+    reasons,
+  };
 }
 
 function analyzeSentiment(articles) {
@@ -321,10 +525,18 @@ function sentimentLabel(score) {
 function renderAsset(assetKey) {
   const asset = state.assets[assetKey];
   const prefix = assetKey === "bitcoin" ? "btc" : "gold";
-  document.getElementById(`${prefix}Price`).textContent = formatCurrency(asset.currentPrice);
+  const currency = state.settings.currency;
+  document.getElementById(`${prefix}Price`).textContent = formatNumber(
+    convertCurrency(asset.currentPrice),
+    currency === "HUF" ? 0 : 2,
+  );
+  document.getElementById(`${prefix}Pair`).textContent =
+    `${assetKey === "bitcoin" ? "BTC" : "GOLD"} / ${currency}`;
+  document.getElementById(`${prefix}Currency`).textContent =
+    `${currency}${assetKey === "gold" ? " / uncia" : ""}`;
 
   const changeElement = document.getElementById(`${prefix}Change`);
-  changeElement.textContent = formatPercent(asset.change);
+  changeElement.textContent = asset.change === null ? "Nincs friss előzmény" : formatPercent(asset.change);
   changeElement.className = `change ${valueClass(asset.change)}`;
 
   const signalElement = document.getElementById(`${prefix}Signal`);
@@ -333,8 +545,11 @@ function renderAsset(assetKey) {
   document.getElementById(`${prefix}Confidence`).textContent = `${asset.analysis.confidence}%`;
 
   const reasonsElement = document.getElementById(`${prefix}Reasons`);
+  const reasons = asset.warning
+    ? ["A történeti adat elavult", ...asset.analysis.reasons]
+    : asset.analysis.reasons;
   reasonsElement.replaceChildren(
-    ...asset.analysis.reasons.slice(0, 3).map((reason) => {
+    ...reasons.slice(0, 4).map((reason) => {
       const span = document.createElement("span");
       span.textContent = reason;
       return span;
@@ -347,8 +562,12 @@ function renderAsset(assetKey) {
 function renderUnavailableAsset(assetKey) {
   const prefix = assetKey === "bitcoin" ? "btc" : "gold";
   document.getElementById(`${prefix}Price`).textContent = "Nem elérhető";
+  document.getElementById(`${prefix}Change`).textContent = "–";
   document.getElementById(`${prefix}Signal`).textContent = "Nincs adat";
   document.getElementById(`${prefix}Confidence`).textContent = "–";
+  document.getElementById(`${prefix}Reasons`).replaceChildren();
+  state.charts[assetKey]?.destroy();
+  delete state.charts[assetKey];
 }
 
 function renderChart(assetKey, asset) {
@@ -364,7 +583,7 @@ function renderChart(assetKey, asset) {
         new Intl.DateTimeFormat("hu-HU", { month: "short", day: "numeric" }).format(point.time),
       ),
       datasets: [{
-        data: asset.prices,
+        data: asset.prices.map(convertCurrency),
         borderColor: color,
         borderWidth: 2,
         pointRadius: 0,
@@ -381,7 +600,7 @@ function renderChart(assetKey, asset) {
         legend: { display: false },
         tooltip: {
           displayColors: false,
-          callbacks: { label: (item) => `$${formatCurrency(item.raw)}` },
+          callbacks: { label: (item) => formatMoney(item.raw) },
         },
       },
       scales: {
@@ -403,7 +622,14 @@ function createGradient(canvas, color) {
 function renderIndicators(assetKey) {
   const analysis = state.assets[assetKey]?.analysis;
   if (!analysis) {
-    ["indicatorRsi", "indicatorSma", "indicatorMomentum"].forEach((id) => {
+    [
+      "indicatorRsi",
+      "indicatorSma",
+      "indicatorMomentum",
+      "indicatorMacd",
+      "indicatorBollinger",
+      "indicatorLevels",
+    ].forEach((id) => {
       document.getElementById(id).textContent = "–";
     });
     return;
@@ -435,6 +661,52 @@ function renderIndicators(assetKey) {
     "indicatorMomentumState",
     analysis.momentum === null ? "Nincs adat" : analysis.momentum > 1 ? "Erősödik" : analysis.momentum < -1 ? "Gyengül" : "Oldalaz",
     analysis.momentum === null ? "neutral" : valueClass(analysis.momentum, 1),
+  );
+
+  document.getElementById("indicatorMacd").textContent =
+    analysis.macd === null ? "Nincs adat" : formatMoney(convertCurrency(analysis.macd));
+  setPill(
+    "indicatorMacdState",
+    analysis.macd === null ? "Nincs adat" : analysis.macd >= 0 ? "Pozitív" : "Negatív",
+    analysis.macd === null ? "neutral" : valueClass(analysis.macd),
+  );
+
+  const currentPrice = state.assets[assetKey].currentPrice;
+  let bollingerPosition = null;
+  if (analysis.bollingerUpper !== null && analysis.bollingerLower !== null) {
+    const range = analysis.bollingerUpper - analysis.bollingerLower;
+    bollingerPosition = range
+      ? ((currentPrice - analysis.bollingerLower) / range) * 100
+      : 50;
+  }
+  document.getElementById("indicatorBollinger").textContent =
+    bollingerPosition === null ? "Nincs adat" : `${bollingerPosition.toFixed(0)}%`;
+  setPill(
+    "indicatorBollingerState",
+    bollingerPosition === null
+      ? "Nincs adat"
+      : bollingerPosition > 90
+        ? "Felső sáv"
+        : bollingerPosition < 10
+          ? "Alsó sáv"
+          : "Sávon belül",
+    bollingerPosition === null
+      ? "neutral"
+      : bollingerPosition > 90
+        ? "negative"
+        : bollingerPosition < 10
+          ? "positive"
+          : "neutral",
+  );
+
+  document.getElementById("indicatorLevels").textContent =
+    analysis.support === null
+      ? "Nincs adat"
+      : `${formatMoney(convertCurrency(analysis.support))} / ${formatMoney(convertCurrency(analysis.resistance))}`;
+  setPill(
+    "indicatorLevelsState",
+    analysis.support === null ? "Nincs adat" : "30 nap",
+    "neutral",
   );
 }
 
@@ -516,17 +788,319 @@ function relativeTime(date) {
   return `${Math.round(hours / 24)} napja`;
 }
 
+function loadSettings() {
+  const defaults = {
+    currency: "USD",
+    refreshMinutes: 5,
+    coinGeckoKey: "",
+    twelveDataKey: "",
+    aiEndpoint: "",
+  };
+  try {
+    return { ...defaults, ...JSON.parse(localStorage.getItem("aurum-settings") || "{}") };
+  } catch {
+    return defaults;
+  }
+}
+
+function loadLocalArray(key) {
+  try {
+    const value = JSON.parse(localStorage.getItem(key) || "[]");
+    return Array.isArray(value) ? value : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalArray(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    showToast("A böngésző nem engedte a helyi mentést.");
+  }
+}
+
+function applySettings() {
+  const currency = state.settings.currency;
+  document.getElementById("activeCurrency").textContent = currency;
+  document.getElementById("riskCapitalLabel").textContent = `Tőke (${currency})`;
+  clearInterval(state.refreshTimer);
+  if (state.settings.refreshMinutes > 0) {
+    state.refreshTimer = setInterval(loadDashboard, state.settings.refreshMinutes * 60000);
+  }
+}
+
+function openSettings() {
+  document.getElementById("settingCurrency").value = state.settings.currency;
+  document.getElementById("settingRefresh").value = String(state.settings.refreshMinutes);
+  document.getElementById("settingCoinGeckoKey").value = state.settings.coinGeckoKey;
+  document.getElementById("settingTwelveDataKey").value = state.settings.twelveDataKey;
+  document.getElementById("settingAiEndpoint").value = state.settings.aiEndpoint;
+  document.getElementById("settingsDialog").showModal();
+}
+
+function closeSettings() {
+  document.getElementById("settingsDialog").close();
+}
+
+function saveSettings(event) {
+  event.preventDefault();
+  state.settings = {
+    currency: document.getElementById("settingCurrency").value,
+    refreshMinutes: Number(document.getElementById("settingRefresh").value),
+    coinGeckoKey: document.getElementById("settingCoinGeckoKey").value.trim(),
+    twelveDataKey: document.getElementById("settingTwelveDataKey").value.trim(),
+    aiEndpoint: document.getElementById("settingAiEndpoint").value.trim(),
+  };
+  localStorage.setItem("aurum-settings", JSON.stringify(state.settings));
+  applySettings();
+  closeSettings();
+  showToast("Beállítások elmentve.");
+  loadDashboard();
+}
+
+function resetSettings() {
+  localStorage.removeItem("aurum-settings");
+  state.settings = loadSettings();
+  applySettings();
+  closeSettings();
+  showToast("Alapbeállítások visszaállítva.");
+  loadDashboard();
+}
+
+function selectTimeframe(days) {
+  if (state.timeframe === days) return;
+  state.timeframe = days;
+  document.querySelectorAll("[data-timeframe]").forEach((button) => {
+    button.classList.toggle("active", Number(button.dataset.timeframe) === days);
+  });
+  loadDashboard();
+}
+
+function addPortfolioEntry(event) {
+  event.preventDefault();
+  const asset = document.getElementById("portfolioAsset").value;
+  const quantity = Number(document.getElementById("portfolioQuantity").value);
+  const buyPrice = Number(document.getElementById("portfolioBuyPrice").value);
+  const date = document.getElementById("portfolioDate").value;
+  if (!(quantity > 0) || !(buyPrice > 0) || !date) return;
+  state.portfolio.push({
+    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    asset,
+    quantity,
+    buyPrice,
+    date,
+  });
+  saveLocalArray("aurum-portfolio", state.portfolio);
+  event.target.reset();
+  document.getElementById("portfolioDate").valueAsDate = new Date();
+  renderPortfolio();
+  showToast("Tranzakció hozzáadva.");
+}
+
+function removePortfolioEntry(id) {
+  state.portfolio = state.portfolio.filter((entry) => entry.id !== id);
+  saveLocalArray("aurum-portfolio", state.portfolio);
+  renderPortfolio();
+}
+
+function renderPortfolio() {
+  const table = document.getElementById("portfolioTable");
+  if (!table) return;
+  table.replaceChildren();
+  let totalCostUsd = 0;
+  let totalValueUsd = 0;
+
+  state.portfolio.forEach((entry) => {
+    const currentPrice = state.assets[entry.asset]?.currentPrice;
+    const cost = entry.quantity * entry.buyPrice;
+    const value = Number.isFinite(currentPrice) ? entry.quantity * currentPrice : null;
+    totalCostUsd += cost;
+    if (value !== null) totalValueUsd += value;
+
+    const row = document.createElement("tr");
+    const cells = [
+      entry.asset === "bitcoin" ? "Bitcoin" : "Arany",
+      formatNumber(entry.quantity, 6),
+      `$${formatNumber(entry.buyPrice, 2)}`,
+      value === null ? "Nincs adat" : formatMoney(convertCurrency(value - cost)),
+    ];
+    cells.forEach((valueText, index) => {
+      const cell = document.createElement("td");
+      cell.textContent = valueText;
+      if (index === 3 && value !== null) cell.className = valueClass(value - cost);
+      row.append(cell);
+    });
+    const actionCell = document.createElement("td");
+    const removeButton = document.createElement("button");
+    removeButton.className = "delete-button";
+    removeButton.type = "button";
+    removeButton.textContent = "Törlés";
+    removeButton.addEventListener("click", () => removePortfolioEntry(entry.id));
+    actionCell.append(removeButton);
+    row.append(actionCell);
+    table.append(row);
+  });
+
+  const hasEntries = state.portfolio.length > 0;
+  const pnlUsd = totalValueUsd - totalCostUsd;
+  const returnPercent = totalCostUsd ? (pnlUsd / totalCostUsd) * 100 : 0;
+  document.getElementById("portfolioValue").textContent =
+    hasEntries ? formatMoney(convertCurrency(totalValueUsd)) : "–";
+  document.getElementById("portfolioCost").textContent =
+    hasEntries ? formatMoney(convertCurrency(totalCostUsd)) : "–";
+  const pnlElement = document.getElementById("portfolioPnl");
+  pnlElement.textContent = hasEntries ? formatMoney(convertCurrency(pnlUsd)) : "–";
+  pnlElement.className = hasEntries ? valueClass(pnlUsd) : "";
+  const returnElement = document.getElementById("portfolioReturn");
+  returnElement.textContent = hasEntries ? formatPercent(returnPercent) : "–";
+  returnElement.className = hasEntries ? valueClass(returnPercent) : "";
+}
+
+function calculateRisk() {
+  const capital = Number(document.getElementById("riskCapital").value);
+  const riskPercent = Number(document.getElementById("riskPercent").value);
+  const entry = Number(document.getElementById("riskEntry").value);
+  const stop = Number(document.getElementById("riskStop").value);
+  const target = Number(document.getElementById("riskTarget").value);
+  const riskAmount = capital > 0 && riskPercent > 0 ? capital * riskPercent / 100 : null;
+  const priceRisk = entry > 0 && stop > 0 ? Math.abs(entry - stop) : null;
+  const position = riskAmount !== null && priceRisk ? riskAmount / priceRisk : null;
+  const rewardRatio = priceRisk && target > 0 ? Math.abs(target - entry) / priceRisk : null;
+  document.getElementById("riskAmount").textContent =
+    riskAmount === null ? "–" : formatMoney(riskAmount);
+  document.getElementById("riskPosition").textContent =
+    position === null ? "–" : formatNumber(position, 6);
+  document.getElementById("riskReward").textContent =
+    rewardRatio === null ? "–" : `1 : ${rewardRatio.toFixed(2)}`;
+}
+
+function addAlert(event) {
+  event.preventDefault();
+  const price = Number(document.getElementById("alertPrice").value);
+  if (!(price > 0)) return;
+  state.alerts.push({
+    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    asset: document.getElementById("alertAsset").value,
+    direction: document.getElementById("alertDirection").value,
+    price,
+    triggered: false,
+  });
+  saveLocalArray("aurum-alerts", state.alerts);
+  document.getElementById("alertPrice").value = "";
+  renderAlerts();
+  showToast("Árriasztás elmentve.");
+}
+
+function removeAlert(id) {
+  state.alerts = state.alerts.filter((alert) => alert.id !== id);
+  saveLocalArray("aurum-alerts", state.alerts);
+  renderAlerts();
+}
+
+function renderAlerts() {
+  const list = document.getElementById("alertsList");
+  if (!list) return;
+  list.replaceChildren();
+  if (!state.alerts.length) {
+    const empty = document.createElement("p");
+    empty.className = "helper-text";
+    empty.textContent = "Még nincs beállított riasztás.";
+    list.append(empty);
+    return;
+  }
+  state.alerts.forEach((alert) => {
+    const item = document.createElement("div");
+    item.className = "alert-item";
+    const text = document.createElement("span");
+    const assetName = alert.asset === "bitcoin" ? "Bitcoin" : "Arany";
+    text.textContent = `${assetName}: ${alert.direction === "above" ? "fölötte" : "alatta"} $${formatNumber(alert.price, 2)}${alert.triggered ? " ✓ teljesült" : ""}`;
+    const removeButton = document.createElement("button");
+    removeButton.className = "delete-button";
+    removeButton.type = "button";
+    removeButton.textContent = "Törlés";
+    removeButton.addEventListener("click", () => removeAlert(alert.id));
+    item.append(text, removeButton);
+    list.append(item);
+  });
+}
+
+async function requestNotifications() {
+  if (!("Notification" in window)) {
+    showToast("Ez a böngésző nem támogatja az értesítéseket.");
+    return;
+  }
+  const permission = await Notification.requestPermission();
+  showToast(permission === "granted" ? "Értesítések engedélyezve." : "Az értesítés nem lett engedélyezve.");
+}
+
+function checkAlerts() {
+  let changed = false;
+  state.alerts.forEach((alert) => {
+    if (alert.triggered) return;
+    const currentPrice = state.assets[alert.asset]?.currentPrice;
+    if (!Number.isFinite(currentPrice)) return;
+    const triggered =
+      alert.direction === "above" ? currentPrice >= alert.price : currentPrice <= alert.price;
+    if (!triggered) return;
+    alert.triggered = true;
+    changed = true;
+    const assetName = alert.asset === "bitcoin" ? "Bitcoin" : "Arany";
+    const message = `${assetName}: $${formatNumber(currentPrice, 2)} – a figyelt árszint teljesült.`;
+    showToast(message);
+    if ("Notification" in window && Notification.permission === "granted") {
+      new Notification("Aurum & Satoshi árriasztás", { body: message });
+    }
+  });
+  if (changed) {
+    saveLocalArray("aurum-alerts", state.alerts);
+    renderAlerts();
+  }
+}
+
+function renderDataHealth() {
+  const labels = {
+    pending: ["Ellenőrzés…", ""],
+    ok: ["Elérhető", "ok"],
+    warning: ["Korlátozott", "warning"],
+    error: ["Nem elérhető", "error"],
+  };
+  [
+    ["sourceBitcoin", "bitcoin"],
+    ["sourceGold", "gold"],
+    ["sourceNews", "news"],
+    ["sourceFx", "fx"],
+  ].forEach(([elementId, key]) => {
+    const element = document.getElementById(elementId);
+    const [text, className] = labels[state.dataHealth[key]];
+    element.textContent = text;
+    element.className = `source-state ${className}`;
+  });
+}
+
+function showToast(message) {
+  const toast = document.getElementById("toast");
+  if (!toast) return;
+  toast.textContent = message;
+  toast.classList.add("show");
+  clearTimeout(showToast.timer);
+  showToast.timer = setTimeout(() => toast.classList.remove("show"), 2600);
+}
+
 function buildAnalysisPrompt() {
   const assetLines = Object.entries(state.assets).map(([key, asset]) => {
     if (!asset?.analysis) return `${key}: nincs elérhető adat`;
     const analysis = asset.analysis;
     return [
       `${asset.name}: $${formatCurrency(asset.currentPrice)}`,
-      `napi változás: ${formatPercent(asset.change)}`,
+      `napi változás: ${asset.change === null ? "nincs friss összehasonlító adat" : formatPercent(asset.change)}`,
       `RSI(14): ${analysis.rsi?.toFixed(1) ?? "nincs adat"}`,
       `SMA7: ${analysis.sma7?.toFixed(2) ?? "nincs adat"}`,
       `SMA21: ${analysis.sma21?.toFixed(2) ?? "nincs adat"}`,
       `7 napos momentum: ${analysis.momentum === null ? "nincs adat" : formatPercent(analysis.momentum)}`,
+      `MACD: ${analysis.macd?.toFixed(2) ?? "nincs adat"}`,
+      `támasz: ${analysis.support?.toFixed(2) ?? "nincs adat"}`,
+      `ellenállás: ${analysis.resistance?.toFixed(2) ?? "nincs adat"}`,
       `algoritmikus jelzés: ${analysis.signal} (${analysis.confidence}% becsült bizalom)`,
     ].join(", ");
   });
@@ -536,6 +1110,7 @@ function buildAnalysisPrompt() {
 
 ${assetLines.join("\n")}
 Hírek egyszerű kulcsszavas hangulata: ${state.sentiment.label}
+Portfólióelemek száma: ${state.portfolio.length}
 
 Friss hírcímek:
 ${headlines || "- Nincs elérhető hírcím"}
@@ -570,11 +1145,76 @@ async function copyAnalysisPrompt() {
   setTimeout(() => { button.textContent = original; }, 1800);
 }
 
+async function requestAiAnalysis() {
+  const endpoint = state.settings.aiEndpoint;
+  if (!endpoint) {
+    showToast("Előbb adj meg egy biztonságos AI backend URL-t a beállításokban.");
+    openSettings();
+    return;
+  }
+  if (!isSafeHttpUrl(endpoint)) {
+    showToast("Az AI backend URL érvénytelen.");
+    return;
+  }
+
+  const button = document.getElementById("aiAnalyzeButton");
+  const resultElement = document.getElementById("aiResult");
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = "Elemzés folyamatban…";
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt: buildAnalysisPrompt(),
+        generatedAt: new Date().toISOString(),
+      }),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const contentType = response.headers.get("content-type") || "";
+    const payload = contentType.includes("application/json")
+      ? await response.json()
+      : await response.text();
+    const analysis =
+      typeof payload === "string" ? payload : payload.analysis || payload.text || payload.result;
+    if (!analysis) throw new Error("Üres válasz");
+    resultElement.textContent = analysis;
+    resultElement.hidden = false;
+    showToast("AI-elemzés elkészült.");
+  } catch {
+    showToast("Az AI backend nem válaszolt. Ellenőrizd a beállításokat.");
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
 function formatCurrency(value) {
   if (!Number.isFinite(value)) return "–";
   return new Intl.NumberFormat("en-US", {
     maximumFractionDigits: value < 100 ? 2 : 0,
   }).format(value);
+}
+
+function convertCurrency(value) {
+  if (!Number.isFinite(value)) return value;
+  const rate = state.exchangeRates[state.settings.currency] ?? 1;
+  return value * rate;
+}
+
+function formatMoney(value) {
+  if (!Number.isFinite(value)) return "–";
+  return new Intl.NumberFormat("hu-HU", {
+    style: "currency",
+    currency: state.settings.currency,
+    maximumFractionDigits: state.settings.currency === "HUF" ? 0 : 2,
+  }).format(value);
+}
+
+function formatNumber(value, maximumFractionDigits = 2) {
+  if (!Number.isFinite(value)) return "–";
+  return new Intl.NumberFormat("hu-HU", { maximumFractionDigits }).format(value);
 }
 
 function formatPercent(value) {

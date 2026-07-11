@@ -29,6 +29,9 @@
         <button id="refreshButton" class="icon-button" type="button" aria-label="Adatok frissítése">
           ↻
         </button>
+        <button id="settingsButton" class="icon-button" type="button" aria-label="Beállítások">
+          ⚙
+        </button>
       </div>
     </header>
 
@@ -50,19 +53,32 @@
 
       <div id="errorBanner" class="error-banner" role="alert" hidden></div>
 
+      <div class="market-toolbar">
+        <div>
+          <span>Megjelenített pénznem</span>
+          <strong id="activeCurrency">USD</strong>
+        </div>
+        <div class="tabs" role="tablist" aria-label="Időtáv kiválasztása">
+          <button class="tab" data-timeframe="7" type="button">7N</button>
+          <button class="tab active" data-timeframe="30" type="button">1H</button>
+          <button class="tab" data-timeframe="90" type="button">3H</button>
+          <button class="tab" data-timeframe="365" type="button">1É</button>
+        </div>
+      </div>
+
       <section class="asset-grid" aria-label="Eszközök áttekintése">
         <article class="asset-card bitcoin-card" data-asset="bitcoin">
           <div class="asset-heading">
             <div class="asset-icon bitcoin-icon">₿</div>
             <div>
               <p>Bitcoin</p>
-              <span>BTC / USD</span>
+              <span id="btcPair">BTC / USD</span>
             </div>
             <span id="btcChange" class="change neutral">–</span>
           </div>
           <div class="price-row">
             <strong id="btcPrice">–</strong>
-            <span>USD</span>
+            <span id="btcCurrency">USD</span>
           </div>
           <div class="chart-wrap"><canvas id="btcChart"></canvas></div>
           <div class="signal-row">
@@ -83,13 +99,13 @@
             <div class="asset-icon gold-icon">Au</div>
             <div>
               <p>Arany</p>
-              <span>GOLD / USD</span>
+              <span id="goldPair">GOLD / USD</span>
             </div>
             <span id="goldChange" class="change neutral">–</span>
           </div>
           <div class="price-row">
             <strong id="goldPrice">–</strong>
-            <span>USD / uncia</span>
+            <span id="goldCurrency">USD / uncia</span>
           </div>
           <div class="chart-wrap"><canvas id="goldChart"></canvas></div>
           <div class="signal-row">
@@ -134,6 +150,21 @@
               <strong id="indicatorMomentum">–</strong>
               <span id="indicatorMomentumState" class="pill neutral">–</span>
             </div>
+            <div class="indicator">
+              <div><span>MACD</span><small>Trend és lendület</small></div>
+              <strong id="indicatorMacd">–</strong>
+              <span id="indicatorMacdState" class="pill neutral">–</span>
+            </div>
+            <div class="indicator">
+              <div><span>Bollinger pozíció</span><small>20 napos ársáv</small></div>
+              <strong id="indicatorBollinger">–</strong>
+              <span id="indicatorBollingerState" class="pill neutral">–</span>
+            </div>
+            <div class="indicator">
+              <div><span>Támasz / ellenállás</span><small>30 napos árszintek</small></div>
+              <strong id="indicatorLevels">–</strong>
+              <span id="indicatorLevelsState" class="pill neutral">Szintek</span>
+            </div>
           </div>
         </article>
 
@@ -151,6 +182,145 @@
           <div class="meter-labels"><span>Negatív</span><span>Semleges</span><span>Pozitív</span></div>
           <p id="sentimentSummary" class="sentiment-summary">A friss hírek betöltése folyamatban.</p>
         </article>
+      </section>
+
+      <section class="pro-section">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">SAJÁT PÉNZÜGYI KÖZPONT</p>
+            <h2>Portfólió és kockázat</h2>
+          </div>
+          <span class="local-badge">Csak ezen az eszközön tárolva</span>
+        </div>
+
+        <div class="portfolio-summary">
+          <div><span>Becsült érték</span><strong id="portfolioValue">–</strong></div>
+          <div><span>Bekerülési érték</span><strong id="portfolioCost">–</strong></div>
+          <div><span>Eredmény</span><strong id="portfolioPnl">–</strong></div>
+          <div><span>Hozam</span><strong id="portfolioReturn">–</strong></div>
+        </div>
+
+        <div class="workspace-grid">
+          <article class="panel">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">PORTFÓLIÓ</p>
+                <h3>Tranzakciók</h3>
+              </div>
+            </div>
+            <form id="portfolioForm" class="form-grid">
+              <label>Eszköz
+                <select id="portfolioAsset">
+                  <option value="bitcoin">Bitcoin</option>
+                  <option value="gold">Arany</option>
+                </select>
+              </label>
+              <label>Mennyiség
+                <input id="portfolioQuantity" type="number" min="0" step="any" required />
+              </label>
+              <label>Vételi ár (USD)
+                <input id="portfolioBuyPrice" type="number" min="0" step="any" required />
+              </label>
+              <label>Dátum
+                <input id="portfolioDate" type="date" required />
+              </label>
+              <button class="primary-button form-action" type="submit">Hozzáadás</button>
+            </form>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Eszköz</th><th>Mennyiség</th><th>Vételi ár</th><th>Eredmény</th><th></th></tr></thead>
+                <tbody id="portfolioTable"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">POZÍCIÓMÉRET</p>
+                <h3>Kockázati kalkulátor</h3>
+              </div>
+            </div>
+            <div class="form-grid calculator-form">
+              <label><span id="riskCapitalLabel">Tőke (USD)</span>
+                <input id="riskCapital" type="number" min="0" step="any" value="1000000" />
+              </label>
+              <label>Kockázat (%)
+                <input id="riskPercent" type="number" min="0.1" max="100" step="0.1" value="1" />
+              </label>
+              <label>Belépési ár
+                <input id="riskEntry" type="number" min="0" step="any" />
+              </label>
+              <label>Stop-loss
+                <input id="riskStop" type="number" min="0" step="any" />
+              </label>
+              <label>Célár
+                <input id="riskTarget" type="number" min="0" step="any" />
+              </label>
+            </div>
+            <div class="calculator-results">
+              <div><span>Kockáztatott összeg</span><strong id="riskAmount">–</strong></div>
+              <div><span>Javasolt mennyiség</span><strong id="riskPosition">–</strong></div>
+              <div><span>Kockázat/hozam</span><strong id="riskReward">–</strong></div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="workspace-grid alerts-grid">
+        <article class="panel">
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="eyebrow">ÁRRIASZTÁSOK</p>
+              <h3>Figyelt árszintek</h3>
+            </div>
+            <button id="notificationButton" class="text-button" type="button">Értesítések engedélyezése</button>
+          </div>
+          <form id="alertForm" class="inline-form">
+            <select id="alertAsset">
+              <option value="bitcoin">Bitcoin</option>
+              <option value="gold">Arany</option>
+            </select>
+            <select id="alertDirection">
+              <option value="above">ár fölé emelkedik</option>
+              <option value="below">ár alá esik</option>
+            </select>
+            <input id="alertPrice" type="number" min="0" step="any" placeholder="Célár (USD)" required />
+            <button class="primary-button" type="submit">Riasztás</button>
+          </form>
+          <div id="alertsList" class="alerts-list"></div>
+          <p class="helper-text">A böngészős riasztás csak akkor működik, amikor az oldal nyitva van.</p>
+        </article>
+
+        <article class="panel">
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="eyebrow">RENDSZERÁLLAPOT</p>
+              <h3>Adatforrások</h3>
+            </div>
+          </div>
+          <div class="source-list">
+            <div><span>Bitcoin árfolyam</span><strong id="sourceBitcoin" class="source-state">Ellenőrzés…</strong></div>
+            <div><span>Arany spot ár</span><strong id="sourceGold" class="source-state">Ellenőrzés…</strong></div>
+            <div><span>Piaci hírek</span><strong id="sourceNews" class="source-state">Ellenőrzés…</strong></div>
+            <div><span>Devizaárfolyam</span><strong id="sourceFx" class="source-state">Ellenőrzés…</strong></div>
+          </div>
+        </article>
+      </section>
+
+      <section class="macro-section">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">MAKROGAZDASÁGI HÁTTÉR</p>
+            <h2>Fontos döntési pontok</h2>
+          </div>
+        </div>
+        <div class="macro-grid">
+          <a href="https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm" target="_blank" rel="noopener noreferrer"><span>USA kamatdöntések</span><strong>Federal Reserve ↗</strong></a>
+          <a href="https://www.bls.gov/schedule/news_release/cpi.htm" target="_blank" rel="noopener noreferrer"><span>Amerikai infláció</span><strong>CPI naptár ↗</strong></a>
+          <a href="https://www.ecb.europa.eu/press/calendars/mgcgc/html/index.en.html" target="_blank" rel="noopener noreferrer"><span>EKB kamatdöntések</span><strong>ECB naptár ↗</strong></a>
+          <a href="https://www.investing.com/economic-calendar/" target="_blank" rel="noopener noreferrer"><span>Gazdasági események</span><strong>Teljes naptár ↗</strong></a>
+        </div>
       </section>
 
       <section class="news-section">
@@ -178,12 +348,19 @@
           <h2>Vidd tovább ChatGPT-be</h2>
           <p>
             Készíts másolható összefoglalót az aktuális adatokról, majd illeszd be a saját
-            ChatGPT-beszélgetésedbe.
+            ChatGPT-beszélgetésedbe. Beállított biztonságos backend esetén az elemzés
+            automatikusan is lekérhető.
           </p>
         </div>
-        <button id="copyPromptButton" class="primary-button" type="button">
-          Elemzési kérés másolása
-        </button>
+        <div class="ai-actions">
+          <button id="copyPromptButton" class="primary-button" type="button">
+            Elemzési kérés másolása
+          </button>
+          <button id="aiAnalyzeButton" class="text-button" type="button">
+            Automatikus AI-elemzés
+          </button>
+        </div>
+        <div id="aiResult" class="ai-result" hidden></div>
       </section>
 
       <section class="disclaimer">
@@ -201,5 +378,67 @@
       <span>© <span id="year"></span> Aurum & Satoshi</span>
       <span>Ingyenes, nyílt piaci adatokból</span>
     </footer>
+
+    <dialog id="settingsDialog" class="settings-dialog">
+      <form id="settingsForm" method="dialog">
+        <div class="dialog-heading">
+          <div>
+            <p class="eyebrow">SZEMÉLYRE SZABÁS</p>
+            <h2>Beállítások</h2>
+          </div>
+          <button id="closeSettingsButton" class="icon-button" type="button" aria-label="Bezárás">×</button>
+        </div>
+
+        <div class="settings-section">
+          <h3>Megjelenítés</h3>
+          <div class="form-grid">
+            <label>Pénznem
+              <select id="settingCurrency">
+                <option value="USD">USD – amerikai dollár</option>
+                <option value="EUR">EUR – euró</option>
+                <option value="HUF">HUF – magyar forint</option>
+              </select>
+            </label>
+            <label>Automatikus frissítés
+              <select id="settingRefresh">
+                <option value="0">Kikapcsolva</option>
+                <option value="1">1 perc</option>
+                <option value="5">5 perc</option>
+                <option value="15">15 perc</option>
+                <option value="30">30 perc</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3>Opcionális API-k</h3>
+          <p class="helper-text">
+            Ezek az adatok kizárólag a saját böngésződben tárolódnak. Nyilvános vagy
+            ingyenes, korlátozott kulcsot használj.
+          </p>
+          <label>CoinGecko Demo API key
+            <input id="settingCoinGeckoKey" type="password" autocomplete="off" placeholder="Opcionális – magasabb lekérési keret" />
+          </label>
+          <label>Twelve Data API key
+            <input id="settingTwelveDataKey" type="password" autocomplete="off" placeholder="Opcionális – XAU/USD történeti adatok" />
+          </label>
+          <label>Biztonságos AI backend URL
+            <input id="settingAiEndpoint" type="url" placeholder="https://sajat-backend.example.com/analyze" />
+          </label>
+          <div class="security-note">
+            <strong>OpenAI API-kulcsot ne adj meg ezen a publikus oldalon.</strong>
+            Az automatikus AI-elemzéshez a kulcsot egy külön backendnek kell védenie.
+          </div>
+        </div>
+
+        <div class="dialog-actions">
+          <button id="resetSettingsButton" class="text-button" type="button">Alaphelyzet</button>
+          <button class="primary-button" type="submit">Mentés és frissítés</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </body>
 </html>
