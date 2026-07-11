@@ -794,11 +794,16 @@ function loadSettings() {
     refreshMinutes: 5,
     coinGeckoKey: "",
     twelveDataKey: "",
-    aiEndpoint: "",
+    aiEndpoint: "https://aurum-satoshi-ai.attila-bekecs.workers.dev/analyze",
     aiAccessToken: "",
   };
   try {
-    return { ...defaults, ...JSON.parse(localStorage.getItem("aurum-settings") || "{}") };
+    const saved = JSON.parse(localStorage.getItem("aurum-settings") || "{}");
+    return {
+      ...defaults,
+      ...saved,
+      aiEndpoint: saved.aiEndpoint || defaults.aiEndpoint,
+    };
   } catch {
     return defaults;
   }
