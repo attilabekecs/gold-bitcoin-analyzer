@@ -67,7 +67,7 @@ const VALID_VIEWS = [
   "ai",
 ];
 
-const BOT_SECTIONS = ["summary", "settings", "trades", "experiences"];
+const BOT_SECTIONS = ["summary", "scanner", "settings", "trades", "experiences"];
 const SUPPORTED_CURRENCIES = ["USD", "EUR", "HUF"];
 
 function parseLocationHash() {

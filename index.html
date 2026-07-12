@@ -477,6 +477,7 @@
 
         <nav class="bot-sub-nav" role="tablist" aria-label="Bot almenü">
           <button class="active" data-bot-section="summary" type="button" role="tab" aria-selected="true">Összegzés</button>
+          <button data-bot-section="scanner" type="button" role="tab" aria-selected="false">Piaci szkenner</button>
           <button data-bot-section="settings" type="button" role="tab" aria-selected="false">Beállítások</button>
           <button data-bot-section="trades" type="button" role="tab" aria-selected="false">Ügyletek</button>
           <button data-bot-section="experiences" type="button" role="tab" aria-selected="false">Tapasztalatok</button>
@@ -497,27 +498,28 @@
 
           <p id="botStatus" class="bot-status">Bot kikapcsolva.</p>
 
-          <div class="bot-dashboard-grid">
-            <article class="panel bot-dashboard-performance">
-              <div class="section-heading compact-heading">
-                <div><p class="eyebrow">TELJESÍTMÉNY</p><h3>Egyenleggörbe</h3></div>
+          <article class="panel bot-dashboard-performance">
+            <div class="section-heading compact-heading">
+              <div><p class="eyebrow">TELJESÍTMÉNY</p><h3>Egyenleggörbe</h3></div>
+            </div>
+            <div class="bot-chart-wrap"><canvas id="botEquityChart"></canvas></div>
+          </article>
+        </div>
+
+        <div class="bot-section-panel" data-bot-section-panel="scanner" role="tabpanel" hidden>
+          <article class="panel bot-dashboard-signals">
+            <div class="section-heading compact-heading">
+              <div><p class="eyebrow">ÉLŐ JELZÉSEK</p><h3 id="botScanHeading">Követett eszközök</h3></div>
+              <div id="botScanDataStatus" class="live-data-state pending">
+                <span></span>
+                <div><strong>Adatok betöltése</strong><small>Piaci szkenner</small></div>
               </div>
-              <div class="bot-chart-wrap"><canvas id="botEquityChart"></canvas></div>
-            </article>
-            <article class="panel bot-dashboard-signals">
-              <div class="section-heading compact-heading">
-                <div><p class="eyebrow">ÉLŐ JELZÉSEK</p><h3 id="botScanHeading">Követett eszközök</h3></div>
-                <div id="botScanDataStatus" class="live-data-state pending">
-                  <span></span>
-                  <div><strong>Adatok betöltése</strong><small>Piaci szkenner</small></div>
-                </div>
-              </div>
-              <div id="botScanSummary" class="bot-scan-summary"></div>
-              <div id="botSignalGrid" class="bot-scan-list">
-                <span class="helper-text">Válassz eszközöket a beállításoknál.</span>
-              </div>
-            </article>
-          </div>
+            </div>
+            <div id="botScanSummary" class="bot-scan-summary"></div>
+            <div id="botSignalGrid" class="bot-scan-list">
+              <span class="helper-text">Válassz eszközöket a beállításoknál.</span>
+            </div>
+          </article>
         </div>
 
         <div class="bot-section-panel" data-bot-section-panel="settings" role="tabpanel" hidden>

@@ -10,7 +10,7 @@
   let lastLearnPreview = null;
   let activeSection = "summary";
 
-  const BOT_SECTIONS = ["summary", "settings", "trades", "experiences"];
+  const BOT_SECTIONS = ["summary", "scanner", "settings", "trades", "experiences"];
 
   const CONFIG_FIELDS = [
     { id: "botInitialCapital", key: "initialCapital", type: "number" },
