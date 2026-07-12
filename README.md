@@ -14,6 +14,9 @@ indikátorokat, friss híreket, portfóliókövetést és kockázatkezelési esz
 - Kereskedési napló, találati arány, profit factor, visszaesés és egyenleggörbe
 - EMA/RSI/ATR backtest választható idősíkkal és állítható kereskedési díjjal
 - Több idősíkú backtest és két gyertyával megerősített jelzésváltások
+- Konfigurálható Stratégialabor spread-, slippage- és kockázatmodellezéssel
+- Időrendi tanuló/ellenőrző szétválasztás és Buy & Hold benchmark
+- EMA-paraméter-hőtérkép, túlillesztési figyelmeztetések és CSV ügyletnapló
 - Helyi jelzéstörténet és böngészős értesítés stabil VÉTEL/ELADÁS váltáskor
 - Interaktív intraday ár-, RSI-, MACD- és volumendiagramok
 - Fokozatos adatbetöltés: a gyors piaci adatok nem várnak a lassabb hírforrásokra

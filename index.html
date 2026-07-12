@@ -14,9 +14,9 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=20260712-7" />
+    <link rel="stylesheet" href="styles.css?v=20260712-8" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
-    <script src="app.js?v=20260712-7" defer></script>
+    <script src="app.js?v=20260712-8" defer></script>
   </head>
   <body data-view="overview">
     <header class="site-header">
@@ -419,15 +419,15 @@
           </div>
         </article>
 
-        <div class="simulator-grid backtest-area">
-          <article class="panel">
+        <div class="backtest-area">
+          <article class="panel strategy-config-panel">
             <div class="section-heading compact-heading">
               <div>
-                <p class="eyebrow">TÖRTÉNETI TESZT</p>
-                <h3>Több idősíkú backtest</h3>
+                <p class="eyebrow">STRATÉGIALABOR</p>
+                <h3>Konfigurálható, időben szétválasztott backtest</h3>
               </div>
             </div>
-            <form id="backtestForm" class="form-grid">
+            <form id="backtestForm" class="strategy-form">
               <label>Eszköz
                 <select id="backtestAsset">
                   <option value="bitcoin">Bitcoin</option>
@@ -448,15 +448,50 @@
               <label>Díj oldalanként (%)
                 <input id="backtestFee" type="number" min="0" max="2" step="0.01" value="0.10" />
               </label>
-              <button class="primary-button form-action" type="submit">Backtest futtatása</button>
+              <label>Spread (%)
+                <input id="backtestSpread" type="number" min="0" max="2" step="0.01" value="0.02" />
+              </label>
+              <label>Slippage (%)
+                <input id="backtestSlippage" type="number" min="0" max="2" step="0.01" value="0.01" />
+              </label>
+              <label>Kockázat / ügylet (%)
+                <input id="backtestRisk" type="number" min="0.1" max="10" step="0.1" value="1" />
+              </label>
+              <label>Tanuló időszak (%)
+                <input id="backtestSplit" type="number" min="50" max="85" step="5" value="70" />
+              </label>
+              <label>Gyors EMA
+                <input id="backtestFastEma" type="number" min="3" max="50" step="1" value="9" />
+              </label>
+              <label>Lassú EMA
+                <input id="backtestSlowEma" type="number" min="5" max="120" step="1" value="21" />
+              </label>
+              <label>Long RSI minimum
+                <input id="backtestRsiMin" type="number" min="20" max="70" step="1" value="50" />
+              </label>
+              <label>Long RSI maximum
+                <input id="backtestRsiMax" type="number" min="30" max="90" step="1" value="68" />
+              </label>
+              <label>ATR stop szorzó
+                <input id="backtestAtrMultiplier" type="number" min="0.5" max="5" step="0.1" value="1.5" />
+              </label>
+              <label>Célár (R)
+                <input id="backtestRewardRatio" type="number" min="0.5" max="10" step="0.1" value="2" />
+              </label>
+              <label>Momentum küszöb (%)
+                <input id="backtestMomentum" type="number" min="0" max="5" step="0.01" value="0.06" />
+              </label>
+              <button class="primary-button strategy-run-button" type="submit">
+                Stratégia tesztelése
+              </button>
             </form>
             <p class="helper-text">
-              EMA9/EMA21, RSI, lendület és ATR alapú teszt. A belépés mindig a jelzést követő
-              gyertya nyitóárán történik.
+              A tanuló és ellenőrző szakasz időrendben különül el. A teszt díjat, spreadet és
+              slippage-et is levon, de a múltbeli eredmény nem garantál jövőbeli teljesítményt.
             </p>
           </article>
 
-          <article class="panel">
+          <article class="panel strategy-results-panel">
             <div class="backtest-stats">
               <div><span>Ügyletek</span><strong id="backtestTrades">–</strong></div>
               <div><span>Találati arány</span><strong id="backtestWinRate">–</strong></div>
@@ -466,8 +501,81 @@
               <div><span>Vizsgált időszak</span><strong id="backtestPeriod">–</strong></div>
             </div>
             <div class="paper-chart-wrap"><canvas id="backtestChart"></canvas></div>
+            <div id="strategyVerdict" class="strategy-verdict neutral">
+              Futtasd a tesztet a stratégia értékeléséhez.
+            </div>
           </article>
         </div>
+
+        <div class="strategy-validation-grid">
+          <article class="panel">
+            <p class="eyebrow">TANULÓ SZAKASZ</p>
+            <strong id="strategyTrainReturn">–</strong>
+            <span id="strategyTrainDetails">Paraméterhangolási időszak</span>
+          </article>
+          <article class="panel">
+            <p class="eyebrow">ELLENŐRZŐ SZAKASZ</p>
+            <strong id="strategyTestReturn">–</strong>
+            <span id="strategyTestDetails">Korábban nem vizsgált adatok</span>
+          </article>
+          <article class="panel">
+            <p class="eyebrow">BUY & HOLD BENCHMARK</p>
+            <strong id="strategyBenchmark">–</strong>
+            <span id="strategyBenchmarkDetails">Azonos ellenőrző időszak</span>
+          </article>
+          <article class="panel">
+            <p class="eyebrow">TÚLILLESZTÉSI KOCKÁZAT</p>
+            <strong id="strategyOverfit">–</strong>
+            <span id="strategyOverfitDetails">Tanuló és teszt eredményének eltérése</span>
+          </article>
+        </div>
+
+        <div class="simulator-grid strategy-detail-grid">
+          <article class="panel">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">PARAMÉTER-HŐTÉRKÉP</p>
+                <h3>EMA-érzékenység a tanuló szakaszon</h3>
+              </div>
+            </div>
+            <div id="strategyHeatmap" class="strategy-heatmap">
+              <span>A teszt után jelenik meg.</span>
+            </div>
+          </article>
+          <article class="panel">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">ÉRTELMEZHETŐSÉG</p>
+                <h3>Mit jelent az eredmény?</h3>
+              </div>
+            </div>
+            <ul id="strategyWarnings" class="strategy-warnings">
+              <li>A kiértékelés a futtatás után jelenik meg.</li>
+            </ul>
+          </article>
+        </div>
+
+        <article class="panel strategy-trades-panel">
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="eyebrow">BACKTEST ÜGYLETEK</p>
+              <h3>Ellenőrző időszak részletes naplója</h3>
+            </div>
+            <button id="backtestExportButton" class="text-button" type="button" disabled>
+              CSV export
+            </button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Nyitás</th><th>Irány</th><th>Belépés</th><th>Kilépés</th><th>Ok</th><th>Költség</th><th>Eredmény</th></tr>
+              </thead>
+              <tbody id="backtestTradesTable">
+                <tr><td colspan="7" class="empty-table-cell">Még nincs backtest eredmény.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
 
         <article class="panel trade-history-panel">
           <div class="section-heading compact-heading">

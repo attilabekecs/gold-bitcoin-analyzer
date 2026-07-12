@@ -1221,6 +1221,31 @@ h2 {
   margin-top: 20px;
 }
 
+.backtest-area {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+}
+
+.strategy-form {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.strategy-form label {
+  min-width: 0;
+}
+
+.strategy-run-button {
+  align-self: end;
+  grid-column: span 2;
+}
+
+.strategy-results-panel {
+  min-width: 0;
+}
+
 .backtest-stats {
   display: grid;
   gap: 8px;
@@ -1239,6 +1264,121 @@ h2 {
 .backtest-stats strong {
   font-size: 13px;
   margin-top: 4px;
+}
+
+.strategy-verdict {
+  background: #f3f0e8;
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.55;
+  margin-top: 14px;
+  padding: 11px 13px;
+}
+
+.strategy-verdict.positive {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.strategy-verdict.negative {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.strategy-validation-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 20px;
+}
+
+.strategy-validation-grid article {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.strategy-validation-grid strong {
+  font-family: "Playfair Display", serif;
+  font-size: 22px;
+  margin: 8px 0 4px;
+}
+
+.strategy-validation-grid span {
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.strategy-detail-grid,
+.strategy-trades-panel {
+  margin-top: 20px;
+}
+
+.strategy-heatmap {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.strategy-heatmap > span {
+  color: var(--muted);
+  font-size: 10px;
+  grid-column: 1 / -1;
+}
+
+.heatmap-cell {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  min-height: 66px;
+  padding: 10px;
+}
+
+.heatmap-cell strong {
+  font-size: 14px;
+}
+
+.heatmap-cell span {
+  font-size: 8px;
+  margin-top: 5px;
+}
+
+.heatmap-cell.positive {
+  background: var(--green-soft);
+  border-color: rgba(40, 104, 73, 0.16);
+  color: var(--green);
+}
+
+.heatmap-cell.negative {
+  background: var(--red-soft);
+  border-color: rgba(163, 71, 61, 0.14);
+  color: var(--red);
+}
+
+.heatmap-cell.neutral {
+  background: #f3f0e8;
+  color: var(--muted);
+}
+
+.strategy-warnings {
+  color: var(--muted);
+  display: grid;
+  font-size: 10px;
+  gap: 9px;
+  line-height: 1.5;
+  margin: 0;
+  padding-left: 17px;
+}
+
+.strategy-warnings li.warning {
+  color: var(--red);
+}
+
+.strategy-warnings li.success {
+  color: var(--green);
 }
 
 .empty-table-cell {
@@ -1820,6 +1960,18 @@ footer {
     grid-template-columns: 1fr;
   }
 
+  .backtest-area {
+    grid-template-columns: 1fr;
+  }
+
+  .strategy-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .strategy-validation-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .live-data-state {
     min-width: 0;
   }
@@ -1956,6 +2108,15 @@ footer {
   .paper-order-panel .form-grid,
   .backtest-stats {
     grid-template-columns: 1fr;
+  }
+
+  .strategy-form,
+  .strategy-validation-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .strategy-run-button {
+    grid-column: auto;
   }
 
   .paper-order-panel .form-action {

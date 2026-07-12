@@ -30,6 +30,7 @@ const state = {
   paperAccount: null,
   paperEquityChart: null,
   backtestChart: null,
+  strategyLabResult: null,
   dataHealth: {
     bitcoin: "pending",
     gold: "pending",
@@ -88,6 +89,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("paperUseSignalButton").addEventListener("click", useSignalForPaperOrder);
   document.getElementById("paperResetButton").addEventListener("click", resetPaperAccount);
   document.getElementById("backtestForm").addEventListener("submit", runBacktest);
+  document.getElementById("backtestExportButton").addEventListener("click", exportBacktestCsv);
   ["riskCapital", "riskPercent", "riskEntry", "riskStop", "riskTarget"].forEach((id) => {
     document.getElementById(id).addEventListener("input", calculateRisk);
   });
@@ -2437,25 +2439,106 @@ function runBacktest(event) {
   event.preventDefault();
   const assetKey = document.getElementById("backtestAsset").value;
   const interval = Number(document.getElementById("backtestInterval").value);
-  const capital = Number(document.getElementById("backtestCapital").value);
-  const feeRate = Number(document.getElementById("backtestFee").value) / 100;
+  const config = readBacktestConfig();
   const candles = getIntradaySeries(assetKey, interval)?.candles || [];
-  if (candles.length < 60) {
+  if (!config) return;
+  if (candles.length < Math.max(120, config.slowEma * 4)) {
     showToast(`Ehhez az eszközhöz nincs elegendő ${formatIntervalLong(interval)} adat.`);
     return;
   }
-  const result = executeBacktest(candles, capital, feeRate);
-  result.interval = interval;
-  renderBacktestResult(result);
+  const splitIndex = Math.floor(candles.length * config.trainingSplit);
+  const warmup = Math.max(config.slowEma * 3, 50);
+  const validationOffset = Math.max(0, splitIndex - warmup);
+  const trainingCandles = candles.slice(0, splitIndex + 1);
+  const validationCandles = candles.slice(validationOffset);
+  const training = executeBacktest(trainingCandles, config.initialCapital, {
+    ...config,
+    tradeStartIndex: Math.max(config.slowEma + 2, 31),
+  });
+  const validation = executeBacktest(validationCandles, config.initialCapital, {
+    ...config,
+    tradeStartIndex: splitIndex - validationOffset,
+  });
+  const benchmarkEntry = applyBacktestExecutionPrice(
+    candles[splitIndex]?.open || candles[splitIndex]?.close,
+    "long",
+    true,
+    config,
+  );
+  const benchmarkExit = applyBacktestExecutionPrice(
+    candles.at(-1).close,
+    "long",
+    false,
+    config,
+  );
+  const benchmarkQuantity = config.initialCapital / benchmarkEntry;
+  const benchmarkFees =
+    (benchmarkEntry + benchmarkExit) * benchmarkQuantity * config.feeRate;
+  const benchmarkFinal =
+    config.initialCapital +
+    (benchmarkExit - benchmarkEntry) * benchmarkQuantity -
+    benchmarkFees;
+  const benchmarkReturn =
+    ((benchmarkFinal - config.initialCapital) / config.initialCapital) * 100;
+  const heatmap = buildStrategyHeatmap(
+    trainingCandles,
+    config,
+    Math.max(config.slowEma + 2, 31),
+  );
+  const result = {
+    assetKey,
+    interval,
+    config,
+    training,
+    validation,
+    benchmarkReturn,
+    heatmap,
+    splitTime: candles[splitIndex].time,
+  };
+  state.strategyLabResult = result;
+  renderStrategyLabResult(result);
 }
 
-function executeBacktest(candles, initialCapital, feeRate) {
+function readBacktestConfig() {
+  const config = {
+    initialCapital: Number(document.getElementById("backtestCapital").value),
+    feeRate: Number(document.getElementById("backtestFee").value) / 100,
+    spreadRate: Number(document.getElementById("backtestSpread").value) / 100,
+    slippageRate: Number(document.getElementById("backtestSlippage").value) / 100,
+    riskRate: Number(document.getElementById("backtestRisk").value) / 100,
+    trainingSplit: Number(document.getElementById("backtestSplit").value) / 100,
+    fastEma: Number(document.getElementById("backtestFastEma").value),
+    slowEma: Number(document.getElementById("backtestSlowEma").value),
+    rsiMin: Number(document.getElementById("backtestRsiMin").value),
+    rsiMax: Number(document.getElementById("backtestRsiMax").value),
+    atrMultiplier: Number(document.getElementById("backtestAtrMultiplier").value),
+    rewardRatio: Number(document.getElementById("backtestRewardRatio").value),
+    momentumThreshold: Number(document.getElementById("backtestMomentum").value),
+  };
+  const values = Object.values(config);
+  if (values.some((value) => !Number.isFinite(value)) || !(config.initialCapital > 0)) {
+    showToast("Ellenőrizd a stratégia számszerű beállításait.");
+    return null;
+  }
+  if (config.fastEma >= config.slowEma) {
+    showToast("A gyors EMA periódusa legyen kisebb a lassú EMA periódusánál.");
+    return null;
+  }
+  if (config.rsiMin >= config.rsiMax) {
+    showToast("Az RSI minimum legyen kisebb az RSI maximumnál.");
+    return null;
+  }
+  return config;
+}
+
+function executeBacktest(candles, initialCapital, config) {
   let capital = initialCapital;
   let position = null;
   const trades = [];
-  const equity = [{ time: candles[30].time, equity: capital }];
+  const firstTradeIndex = Math.max(config.tradeStartIndex || 31, config.slowEma + 2, 31);
+  const equity = [{ time: candles[firstTradeIndex].time, equity: capital }];
 
-  for (let index = 31; index < candles.length; index += 1) {
+  for (let index = firstTradeIndex; index < candles.length; index += 1) {
     const candle = candles[index];
     if (position) {
       const stopHit =
@@ -2465,13 +2548,22 @@ function executeBacktest(candles, initialCapital, feeRate) {
           ? candle.high >= position.target
           : candle.low <= position.target;
       if (stopHit || targetHit) {
-        const exit = stopHit ? position.stop : position.target;
+        const rawExit = stopHit ? position.stop : position.target;
+        const exit = applyBacktestExecutionPrice(rawExit, position.direction, false, config);
         const multiplier = position.direction === "long" ? 1 : -1;
         const gross = (exit - position.entry) * position.quantity * multiplier;
-        const fees = (position.entry + exit) * position.quantity * feeRate;
+        const fees = (position.entry + exit) * position.quantity * config.feeRate;
         const pnl = gross - fees;
         capital += pnl;
-        trades.push({ ...position, exit, pnl, closedAt: candle.time });
+        trades.push({
+          ...position,
+          exit,
+          gross,
+          fees,
+          pnl,
+          exitReason: stopHit ? "Stop-loss" : "Célár",
+          closedAt: candle.time,
+        });
         equity.push({ time: candle.time, equity: capital });
         position = null;
         continue;
@@ -2481,23 +2573,43 @@ function executeBacktest(candles, initialCapital, feeRate) {
 
     const history = candles.slice(0, index);
     const closes = history.map((item) => item.close);
-    const ema9 = exponentialMovingAverage(closes, 9);
-    const ema21 = exponentialMovingAverage(closes, 21);
+    const fastEma = exponentialMovingAverage(closes, config.fastEma);
+    const slowEma = exponentialMovingAverage(closes, config.slowEma);
     const rsi = calculateRsi(closes, 14);
     const momentumBase = closes.at(-16);
     const momentum = momentumBase ? ((closes.at(-1) - momentumBase) / momentumBase) * 100 : 0;
     const atr = calculateAtr(history, 14);
-    if (ema9 === null || ema21 === null || rsi === null || atr === null || !(capital > 0)) continue;
-    const gap = ((ema9 - ema21) / ema21) * 100;
+    if (fastEma === null || slowEma === null || rsi === null || atr === null || !(capital > 0)) {
+      continue;
+    }
+    const gap = ((fastEma - slowEma) / slowEma) * 100;
     let direction = null;
-    if (gap > 0.015 && rsi >= 50 && rsi <= 68 && momentum > 0.06) direction = "long";
-    if (gap < -0.015 && rsi >= 32 && rsi <= 50 && momentum < -0.06) direction = "short";
+    const shortRsiMin = 100 - config.rsiMax;
+    const shortRsiMax = 100 - config.rsiMin;
+    if (
+      gap > 0.015 &&
+      rsi >= config.rsiMin &&
+      rsi <= config.rsiMax &&
+      momentum > config.momentumThreshold
+    ) {
+      direction = "long";
+    }
+    if (
+      gap < -0.015 &&
+      rsi >= shortRsiMin &&
+      rsi <= shortRsiMax &&
+      momentum < -config.momentumThreshold
+    ) {
+      direction = "short";
+    }
     if (!direction) continue;
 
-    const entry = candle.open;
-    const stopDistance = atr * 1.5;
-    const riskAmount = capital * 0.01;
-    const unitRiskWithFees = stopDistance + (entry * 2) * feeRate;
+    const entry = applyBacktestExecutionPrice(candle.open, direction, true, config);
+    const stopDistance = atr * config.atrMultiplier;
+    const riskAmount = capital * config.riskRate;
+    const unitRiskWithFees =
+      stopDistance +
+      entry * (config.feeRate * 2 + config.spreadRate + config.slippageRate * 2);
     const quantity = Math.min(riskAmount / unitRiskWithFees, capital / entry);
     if (!(quantity > 0)) continue;
     position = {
@@ -2505,19 +2617,35 @@ function executeBacktest(candles, initialCapital, feeRate) {
       entry,
       quantity,
       stop: entry + (direction === "long" ? -stopDistance : stopDistance),
-      target: entry + (direction === "long" ? stopDistance * 2 : -stopDistance * 2),
+      target:
+        entry +
+        (direction === "long"
+          ? stopDistance * config.rewardRatio
+          : -stopDistance * config.rewardRatio),
+      entryReason:
+        `EMA${config.fastEma}/EMA${config.slowEma}, RSI ${formatNumber(rsi, 1)}, ` +
+        `momentum ${formatNumber(momentum, 2)}%`,
       openedAt: candle.time,
     };
   }
 
   if (position) {
     const last = candles.at(-1);
+    const exit = applyBacktestExecutionPrice(last.close, position.direction, false, config);
     const multiplier = position.direction === "long" ? 1 : -1;
-    const gross = (last.close - position.entry) * position.quantity * multiplier;
-    const fees = (position.entry + last.close) * position.quantity * feeRate;
+    const gross = (exit - position.entry) * position.quantity * multiplier;
+    const fees = (position.entry + exit) * position.quantity * config.feeRate;
     const pnl = gross - fees;
     capital += pnl;
-    trades.push({ ...position, exit: last.close, pnl, closedAt: last.time });
+    trades.push({
+      ...position,
+      exit,
+      gross,
+      fees,
+      pnl,
+      exitReason: "Időszak vége",
+      closedAt: last.time,
+    });
     equity.push({ time: last.time, equity: capital });
   }
 
@@ -2533,13 +2661,85 @@ function executeBacktest(candles, initialCapital, feeRate) {
     winRate: trades.length ? (wins.length / trades.length) * 100 : 0,
     profitFactor: grossLoss ? grossProfit / grossLoss : grossProfit > 0 ? Infinity : 0,
     maxDrawdown: calculateMaxDrawdown(equity.map((point) => point.equity)),
-    startTime: candles[0].time,
+    returnPercent: ((capital - initialCapital) / initialCapital) * 100,
+    expectancy: trades.length ? trades.reduce((sum, trade) => sum + trade.pnl, 0) / trades.length : 0,
+    startTime: candles[firstTradeIndex].time,
     endTime: candles.at(-1).time,
-    candleCount: candles.length,
+    candleCount: candles.length - firstTradeIndex,
   };
 }
 
-function renderBacktestResult(result) {
+function applyBacktestExecutionPrice(price, direction, isEntry, config) {
+  const adverseDirection =
+    direction === "long" ? (isEntry ? 1 : -1) : isEntry ? -1 : 1;
+  const friction = config.spreadRate / 2 + config.slippageRate;
+  return price * (1 + adverseDirection * friction);
+}
+
+function buildStrategyHeatmap(candles, config, tradeStartIndex) {
+  const fastValues = [...new Set([
+    Math.max(3, config.fastEma - 2),
+    config.fastEma,
+    config.fastEma + 2,
+  ])];
+  const slowValues = [...new Set([
+    Math.max(config.fastEma + 2, config.slowEma - 5),
+    config.slowEma,
+    config.slowEma + 5,
+  ])];
+  return fastValues.flatMap((fastEma) =>
+    slowValues.map((slowEma) => {
+      const result = executeBacktest(candles, config.initialCapital, {
+        ...config,
+        fastEma,
+        slowEma: Math.max(slowEma, fastEma + 2),
+        tradeStartIndex,
+      });
+      return { fastEma, slowEma: Math.max(slowEma, fastEma + 2), result };
+    }),
+  );
+}
+
+function renderStrategyLabResult(result) {
+  const validation = result.validation;
+  const training = result.training;
+  renderBacktestResult(validation, result.interval);
+  renderStrategyMetric(
+    "strategyTrainReturn",
+    formatSignedPercent(training.returnPercent),
+    training.returnPercent,
+  );
+  renderStrategyMetric(
+    "strategyTestReturn",
+    formatSignedPercent(validation.returnPercent),
+    validation.returnPercent,
+  );
+  renderStrategyMetric(
+    "strategyBenchmark",
+    formatSignedPercent(result.benchmarkReturn),
+    result.benchmarkReturn,
+  );
+  document.getElementById("strategyTrainDetails").textContent =
+    `${training.trades.length} ügylet · PF ${formatProfitFactor(training.profitFactor)}`;
+  document.getElementById("strategyTestDetails").textContent =
+    `${validation.trades.length} ügylet · PF ${formatProfitFactor(validation.profitFactor)}`;
+  document.getElementById("strategyBenchmarkDetails").textContent =
+    `Stratégia eltérése: ${formatSignedPercent(validation.returnPercent - result.benchmarkReturn)}`;
+  const overfit = assessOverfitting(result);
+  const overfitElement = document.getElementById("strategyOverfit");
+  overfitElement.textContent = overfit.label;
+  overfitElement.className = overfit.className;
+  document.getElementById("strategyOverfitDetails").textContent = overfit.details;
+  const verdict = document.getElementById("strategyVerdict");
+  verdict.textContent = overfit.verdict;
+  verdict.className = `strategy-verdict ${overfit.verdictClass}`;
+  renderStrategyHeatmap(result.heatmap);
+  renderStrategyWarnings(result, overfit);
+  renderBacktestTrades(validation.trades);
+  document.getElementById("backtestExportButton").disabled = !validation.trades.length;
+}
+
+function renderBacktestResult(result, interval) {
   document.getElementById("backtestTrades").textContent = String(result.trades.length);
   document.getElementById("backtestWinRate").textContent = `${formatNumber(result.winRate, 1)}%`;
   const pnl = result.finalCapital - result.initialCapital;
@@ -2550,7 +2750,7 @@ function renderBacktestResult(result) {
     `${formatNumber(result.maxDrawdown, 2)}%`;
   const durationHours = (result.endTime - result.startTime) / 3600000;
   document.getElementById("backtestPeriod").textContent =
-    `${formatNumber(durationHours, 1)} óra · ${result.candleCount} × ${formatIntervalShort(result.interval)}`;
+    `${formatNumber(durationHours, 1)} óra · ${result.candleCount} × ${formatIntervalShort(interval)}`;
   state.backtestChart?.destroy();
   if (typeof Chart === "undefined") return;
   state.backtestChart = new Chart(document.getElementById("backtestChart"), {
@@ -2571,6 +2771,162 @@ function renderBacktestResult(result) {
     },
     options: paperChartOptions("$"),
   });
+}
+
+function renderStrategyMetric(id, text, value) {
+  const element = document.getElementById(id);
+  element.textContent = text;
+  element.className = value > 0 ? "positive" : value < 0 ? "negative" : "";
+}
+
+function formatSignedPercent(value) {
+  return `${value > 0 ? "+" : ""}${formatNumber(value, 2)}%`;
+}
+
+function formatProfitFactor(value) {
+  return value === Infinity ? "∞" : formatNumber(value, 2);
+}
+
+function assessOverfitting(result) {
+  const train = result.training.returnPercent;
+  const test = result.validation.returnPercent;
+  const gap = Math.abs(train - test);
+  const tooFewTrades = result.validation.trades.length < 8;
+  const reversal = train > 0 && test < 0;
+  const highGap = gap > Math.max(5, Math.abs(train) * 0.75);
+  if (tooFewTrades) {
+    return {
+      label: "NEM MÉRHETŐ",
+      className: "neutral",
+      details: "Túl kevés ellenőrző ügylet",
+      verdict: "Az eredmény mintája túl kicsi. Hosszabb adatsor nélkül nem tekinthető megbízhatónak.",
+      verdictClass: "neutral",
+    };
+  }
+  if (reversal || highGap) {
+    return {
+      label: "MAGAS",
+      className: "negative",
+      details: `${formatNumber(gap, 2)} százalékpont eltérés`,
+      verdict: "A tanuló és ellenőrző eredmény jelentősen eltér. A stratégia túlillesztett lehet.",
+      verdictClass: "negative",
+    };
+  }
+  return {
+    label: "MÉRSÉKELT",
+    className: test > 0 ? "positive" : "neutral",
+    details: `${formatNumber(gap, 2)} százalékpont eltérés`,
+    verdict:
+      test > 0
+        ? "Az ellenőrző szakasz pozitív, de további adatokon és eltérő piaci helyzetekben is tesztelni kell."
+        : "Az eredmény konzisztens, de nem nyereséges. Éles kereskedésre nem ad megfelelő alapot.",
+    verdictClass: test > 0 ? "positive" : "neutral",
+  };
+}
+
+function renderStrategyHeatmap(heatmap) {
+  const container = document.getElementById("strategyHeatmap");
+  container.replaceChildren(
+    ...heatmap.map((cell) => {
+      const element = document.createElement("div");
+      element.className =
+        `heatmap-cell ${cell.result.returnPercent > 0 ? "positive" : cell.result.returnPercent < 0 ? "negative" : "neutral"}`;
+      const value = document.createElement("strong");
+      value.textContent = formatSignedPercent(cell.result.returnPercent);
+      const label = document.createElement("span");
+      label.textContent = `EMA ${cell.fastEma} / ${cell.slowEma} · ${cell.result.trades.length} ügylet`;
+      element.append(value, label);
+      return element;
+    }),
+  );
+}
+
+function renderStrategyWarnings(result, overfit) {
+  const warnings = [];
+  const validation = result.validation;
+  if (validation.trades.length < 20) {
+    warnings.push(["warning", `Mindössze ${validation.trades.length} ellenőrző ügylet áll rendelkezésre.`]);
+  }
+  if (validation.maxDrawdown > 10) {
+    warnings.push(["warning", `A ${formatNumber(validation.maxDrawdown, 1)}%-os visszaesés magas.`]);
+  }
+  if (validation.returnPercent < result.benchmarkReturn) {
+    warnings.push(["warning", "A stratégia elmaradt az egyszerű Buy & Hold benchmarktól."]);
+  }
+  const positiveVariants = result.heatmap.filter((cell) => cell.result.returnPercent > 0).length;
+  if (positiveVariants < result.heatmap.length / 2) {
+    warnings.push(["warning", "A tanuló szakaszon a közeli EMA-beállítások többsége veszteséges."]);
+  } else {
+    warnings.push(["success", "A tanuló szakaszon a közeli EMA-beállítások többsége pozitív lett."]);
+  }
+  if (overfit.className !== "negative" && validation.returnPercent > 0) {
+    warnings.push(["success", "Az ellenőrző szakasz költségek után is pozitív lett."]);
+  }
+  const list = document.getElementById("strategyWarnings");
+  list.replaceChildren(
+    ...warnings.map(([className, text]) => {
+      const item = document.createElement("li");
+      item.className = className;
+      item.textContent = text;
+      return item;
+    }),
+  );
+}
+
+function renderBacktestTrades(trades) {
+  const table = document.getElementById("backtestTradesTable");
+  table.replaceChildren();
+  if (!trades.length) {
+    appendEmptyTableRow(table, 7, "Az ellenőrző szakaszon nem nyílt ügylet.");
+    return;
+  }
+  trades.slice().reverse().slice(0, 100).forEach((trade) => {
+    const row = document.createElement("tr");
+    [
+      new Intl.DateTimeFormat("hu-HU", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(trade.openedAt),
+      trade.direction === "long" ? "LONG" : "SHORT",
+      `$${formatNumber(trade.entry, 2)}`,
+      `$${formatNumber(trade.exit, 2)}`,
+      trade.exitReason,
+      `$${formatNumber(trade.fees, 2)}`,
+      formatSignedUsd(trade.pnl),
+    ].forEach((value, index) => {
+      const cell = document.createElement("td");
+      cell.textContent = value;
+      if (index === 6) cell.className = valueClass(trade.pnl);
+      row.append(cell);
+    });
+    table.append(row);
+  });
+}
+
+function exportBacktestCsv() {
+  const result = state.strategyLabResult;
+  if (!result?.validation?.trades?.length) return;
+  const rows = [
+    ["opened_at", "closed_at", "direction", "entry", "exit", "quantity", "exit_reason", "fees", "pnl", "entry_reason"],
+    ...result.validation.trades.map((trade) => [
+      new Date(trade.openedAt).toISOString(),
+      new Date(trade.closedAt).toISOString(),
+      trade.direction,
+      trade.entry,
+      trade.exit,
+      trade.quantity,
+      trade.exitReason,
+      trade.fees,
+      trade.pnl,
+      trade.entryReason,
+    ]),
+  ];
+  const csv = rows
+    .map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(","))
+    .join("\n");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `strategy-backtest-${result.assetKey}-${formatIntervalShort(result.interval)}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 function calculateRisk() {
