@@ -3,6 +3,10 @@
 
   const YAHOO_INTERVALS = { 1: "1m", 5: "5m", 15: "15m", 60: "1h" };
   const TWELVE_INTERVALS = { 1: "1min", 5: "5min", 15: "15min", 60: "1h" };
+  const BINANCE_INTERVALS = { 1: "1m", 5: "5m", 15: "15m", 60: "1h" };
+  const KRAKEN_DAILY_INTERVAL = 1440;
+  const GOLD_KRAKEN_PAIR = "XAUUSD";
+  const GOLD_YAHOO_SYMBOLS = ["XAUUSD=X", "GC=F"];
 
   function cryptoAsset(key, name, shortName, icon, coingeckoId, krakenPair, chartColor, iconClass = "eth-icon") {
     return {
@@ -85,6 +89,8 @@
       sentimentKeywords: ["gold", "bullion", "xau"],
       sourceLabel: "Arany spot ár",
       dataType: "gold",
+      krakenPair: GOLD_KRAKEN_PAIR,
+      yahooSymbol: "GC=F",
     },
     ethereum: cryptoAsset("ethereum", "Ethereum", "ETH", "Ξ", "ethereum", "ETHUSD", "#627eea", "eth-icon"),
     solana: cryptoAsset("solana", "Solana", "SOL", "◎", "solana", "SOLUSD", "#14f195", "sol-icon"),
@@ -348,7 +354,7 @@
     };
   }
 
-  function buildAssetFromPoints(meta, points, currentPrice) {
+  function buildAssetFromPoints(meta, points, currentPrice, source = null, options = {}) {
     const previousPoint = points.at(-2);
     const change = previousPoint
       ? ((currentPrice - previousPoint.price) / previousPoint.price) * 100
@@ -359,7 +365,43 @@
       prices: points.map((point) => point.price),
       currentPrice,
       change,
+      source,
+      degraded: Boolean(options.degraded),
+      failedSources: options.failedSources || [],
     };
+  }
+
+  function getBinanceSymbol(meta) {
+    if (meta.binanceSymbol) return meta.binanceSymbol;
+    if (meta.shortName === "BTC") return "BTCUSDT";
+    return `${meta.shortName}USDT`;
+  }
+
+  function getYahooCryptoSymbol(meta) {
+    if (meta.yahooSymbol) return meta.yahooSymbol;
+    const ticker = meta.shortName === "BTC" ? "BTC" : meta.shortName;
+    return `${ticker}-USD`;
+  }
+
+  async function fetchWithFallbackChain(taskName, attempts) {
+    const failures = [];
+    for (const attempt of attempts) {
+      if (typeof attempt.when === "function" && !attempt.when()) continue;
+      try {
+        const result = await attempt.run();
+        if (result) {
+          if (failures.length) {
+            result.degraded = true;
+            result.failedSources = failures.map((item) => item.label);
+          }
+          return result;
+        }
+      } catch (error) {
+        failures.push({ label: attempt.label, error });
+      }
+    }
+    const chain = failures.map((item) => item.label).join(" → ");
+    throw new Error(`${taskName}: minden forrás sikertelen (${chain || "nincs próbált forrás"})`);
   }
 
   async function fetchJson(url, timeout = 12000, headers = {}) {
@@ -404,15 +446,67 @@
     const chartUrl =
       `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}` +
       `?interval=${interval}&range=${range}`;
-    try {
-      return await fetchJsonWithRetry(chartUrl, { timeout: 15000, retries: 1 });
-    } catch {
-      const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(chartUrl)}`;
-      return fetchJsonWithRetry(proxyUrl, { timeout: 20000, retries: 2 });
+    const attempts = [
+      () => fetchJsonWithRetry(chartUrl, { timeout: 15000, retries: 1 }),
+      () =>
+        fetchJsonWithRetry(`https://api.allorigins.win/raw?url=${encodeURIComponent(chartUrl)}`, {
+          timeout: 20000,
+          retries: 2,
+        }),
+      () =>
+        fetchJsonWithRetry(`https://corsproxy.io/?${encodeURIComponent(chartUrl)}`, {
+          timeout: 20000,
+          retries: 1,
+        }),
+    ];
+    let lastError = null;
+    for (const attempt of attempts) {
+      try {
+        return await attempt();
+      } catch (error) {
+        lastError = error;
+      }
     }
+    throw lastError || new Error(`Yahoo chart (${yahooSymbol}) sikertelen`);
   }
 
-  async function fetchCryptoDaily(meta, timeframe, settings) {
+  function parseKrakenCandles(series, interval) {
+    return (series || [])
+      .slice(-720)
+      .map((item) => ({
+        time: Number(item[0]) * 1000,
+        open: Number(item[1]),
+        high: Number(item[2]),
+        low: Number(item[3]),
+        close: Number(item[4]),
+        volume: Number(item[6]),
+      }))
+      .filter(isValidCandle)
+      .sort((left, right) => left.time - right.time);
+  }
+
+  async function fetchKrakenOhlc(meta, interval) {
+    const data = await fetchJsonWithRetry(
+      `https://api.kraken.com/0/public/OHLC?pair=${meta.krakenPair}&interval=${interval}`,
+      { timeout: 12000, retries: 2 },
+    );
+    if (data.error?.length) throw new Error(data.error.join(", "));
+    const series = Object.entries(data.result || {}).find(([key, value]) => {
+      return key !== "last" && Array.isArray(value);
+    })?.[1];
+    return parseKrakenCandles(series, interval);
+  }
+
+  async function fetchKrakenDaily(meta, timeframe) {
+    const candles = await fetchKrakenOhlc(meta, KRAKEN_DAILY_INTERVAL);
+    const points = candles
+      .map((candle) => ({ time: candle.time, price: candle.close }))
+      .slice(-timeframe);
+    if (points.length < 7) throw new Error(`Nincs elegendő ${meta.name}-adat`);
+    return buildAssetFromPoints(meta, points, points.at(-1).price, "Kraken · napi");
+  }
+
+  async function fetchCoinGeckoDaily(meta, timeframe, settings) {
     const url =
       `https://api.coingecko.com/api/v3/coins/${meta.coingeckoId}/market_chart` +
       `?vs_currency=usd&days=${timeframe}&interval=daily`;
@@ -426,29 +520,63 @@
     if (points.length < Math.min(7, timeframe)) {
       throw new Error(`Nincs elegendő ${meta.name}-adat`);
     }
-    return buildAssetFromPoints(meta, points, points.at(-1).price);
+    return buildAssetFromPoints(meta, points, points.at(-1).price, "CoinGecko · napi");
+  }
+
+  async function fetchBinanceDaily(meta, timeframe) {
+    const limit = Math.min(Math.max(timeframe, 7), 365);
+    const data = await fetchJsonWithRetry(
+      `https://api.binance.com/api/v3/klines?symbol=${getBinanceSymbol(meta)}&interval=1d&limit=${limit}`,
+      { timeout: 12000, retries: 2 },
+    );
+    const points = (Array.isArray(data) ? data : [])
+      .map((item) => ({ time: Number(item[0]), price: Number(item[4]) }))
+      .filter((point) => Number.isFinite(point.time) && Number.isFinite(point.price));
+    if (points.length < 7) throw new Error(`Nincs elegendő ${meta.name}-adat`);
+    return buildAssetFromPoints(meta, points, points.at(-1).price, "Binance · napi");
+  }
+
+  async function fetchYahooDailyBySymbol(meta, yahooSymbol, timeframe) {
+    const range = timeframe <= 7 ? "7d" : timeframe <= 30 ? "1mo" : timeframe <= 90 ? "3mo" : "1y";
+    const data = await fetchYahooChart(yahooSymbol, "1d", range);
+    const result = data.chart?.result?.[0];
+    const timestamps = result?.timestamp || [];
+    const closes = result?.indicators?.quote?.[0]?.close || [];
+    const points = timestamps
+      .map((time, index) => ({
+        time: Number(time) * 1000,
+        price: Number(closes[index]),
+      }))
+      .filter((point) => Number.isFinite(point.time) && Number.isFinite(point.price))
+      .sort((left, right) => left.time - right.time)
+      .slice(-timeframe);
+    if (points.length < 7) throw new Error(`Nincs elegendő ${meta.name}-adat`);
+    return buildAssetFromPoints(meta, points, points.at(-1).price, `Yahoo · napi (${yahooSymbol})`);
+  }
+
+  async function fetchCryptoDaily(meta, timeframe, settings) {
+    return fetchWithFallbackChain(`${meta.name} napi`, [
+      {
+        label: "Kraken",
+        run: () => fetchKrakenDaily(meta, timeframe),
+      },
+      {
+        label: "CoinGecko",
+        run: () => fetchCoinGeckoDaily(meta, timeframe, settings),
+      },
+      {
+        label: "Binance",
+        run: () => fetchBinanceDaily(meta, timeframe),
+      },
+      {
+        label: "Yahoo",
+        run: () => fetchYahooDailyBySymbol(meta, getYahooCryptoSymbol(meta), timeframe),
+      },
+    ]);
   }
 
   async function fetchKrakenIntraday(meta, interval, formatIntervalShort, formatIntervalLong) {
-    const data = await fetchJsonWithRetry(
-      `https://api.kraken.com/0/public/OHLC?pair=${meta.krakenPair}&interval=${interval}`,
-      { timeout: 12000, retries: 2 },
-    );
-    if (data.error?.length) throw new Error(data.error.join(", "));
-    const series = Object.entries(data.result || {}).find(([key, value]) => {
-      return key !== "last" && Array.isArray(value);
-    })?.[1];
-    const candles = (series || [])
-      .slice(-720)
-      .map((item) => ({
-        time: Number(item[0]) * 1000,
-        open: Number(item[1]),
-        high: Number(item[2]),
-        low: Number(item[3]),
-        close: Number(item[4]),
-        volume: Number(item[6]),
-      }))
-      .filter(isValidCandle);
+    const candles = await fetchKrakenOhlc(meta, interval);
     if (candles.length < 30) {
       throw new Error(`Nincs elegendő ${formatIntervalLong(interval)} ${meta.name}-adat`);
     }
@@ -460,10 +588,45 @@
     );
   }
 
-  async function fetchYahooIntraday(meta, interval, formatIntervalShort, formatIntervalLong) {
+  async function fetchBinanceIntraday(meta, interval, formatIntervalShort, formatIntervalLong) {
+    const binanceInterval = BINANCE_INTERVALS[interval] || "1m";
+    const limit = interval === 60 ? 500 : 720;
+    const data = await fetchJsonWithRetry(
+      `https://api.binance.com/api/v3/klines?symbol=${getBinanceSymbol(meta)}&interval=${binanceInterval}&limit=${limit}`,
+      { timeout: 12000, retries: 2 },
+    );
+    const candles = (Array.isArray(data) ? data : [])
+      .map((item) => ({
+        time: Number(item[0]),
+        open: Number(item[1]),
+        high: Number(item[2]),
+        low: Number(item[3]),
+        close: Number(item[4]),
+        volume: Number(item[5]),
+      }))
+      .filter(isValidCandle)
+      .sort((left, right) => left.time - right.time);
+    if (candles.length < 20) {
+      throw new Error(`Nincs elegendő ${formatIntervalLong(interval)} ${meta.name}-adat`);
+    }
+    return buildIntradayAsset(
+      meta,
+      candles,
+      `Binance · ${formatIntervalShort(interval)}`,
+      interval,
+    );
+  }
+
+  async function fetchYahooIntradayBySymbol(
+    meta,
+    yahooSymbol,
+    interval,
+    formatIntervalShort,
+    formatIntervalLong,
+  ) {
     const yahooInterval = YAHOO_INTERVALS[interval] || "1m";
     const range = interval === 60 ? "5d" : "1d";
-    const data = await fetchYahooChart(meta.yahooSymbol, yahooInterval, range);
+    const data = await fetchYahooChart(yahooSymbol, yahooInterval, range);
     const result = data.chart?.result?.[0];
     const timestamps = result?.timestamp || [];
     const quote = result?.indicators?.quote?.[0] || {};
@@ -489,45 +652,36 @@
     );
   }
 
-  async function fetchYahooDaily(meta, timeframe) {
-    const range = timeframe <= 7 ? "7d" : timeframe <= 30 ? "1mo" : timeframe <= 90 ? "3mo" : "1y";
-    const data = await fetchYahooChart(meta.yahooSymbol, "1d", range);
-    const result = data.chart?.result?.[0];
-    const timestamps = result?.timestamp || [];
-    const closes = result?.indicators?.quote?.[0]?.close || [];
-    const points = timestamps
-      .map((time, index) => ({
-        time: Number(time) * 1000,
-        price: Number(closes[index]),
-      }))
-      .filter((point) => Number.isFinite(point.time) && Number.isFinite(point.price))
-      .sort((left, right) => left.time - right.time)
-      .slice(-timeframe);
-    if (points.length < 7) throw new Error(`Nincs elegendő ${meta.name}-adat`);
-    return buildAssetFromPoints(meta, points, points.at(-1).price);
+  async function fetchYahooIntraday(meta, interval, formatIntervalShort, formatIntervalLong) {
+    return fetchYahooIntradayBySymbol(
+      meta,
+      meta.yahooSymbol,
+      interval,
+      formatIntervalShort,
+      formatIntervalLong,
+    );
   }
 
-  async function fetchGoldDaily(timeframe, settings, endpoints) {
-    if (settings.twelveDataKey) {
-      try {
-        const outputSize = Math.min(timeframe, 365);
-        const url =
-          `https://api.twelvedata.com/time_series?symbol=XAU%2FUSD&interval=1day` +
-          `&outputsize=${outputSize}&apikey=${encodeURIComponent(settings.twelveDataKey)}`;
-        const data = await fetchJson(url, 15000);
-        if (data.status === "error") throw new Error(data.message);
-        const points = (data.values || [])
-          .map((item) => ({ time: new Date(item.datetime).getTime(), price: Number(item.close) }))
-          .filter((point) => Number.isFinite(point.time) && Number.isFinite(point.price))
-          .sort((left, right) => left.time - right.time);
-        if (points.length >= 7) {
-          return buildAssetFromPoints(CATALOG.gold, points, points.at(-1).price);
-        }
-      } catch {
-        // Fall through to free sources.
-      }
-    }
+  async function fetchYahooDaily(meta, timeframe) {
+    return fetchYahooDailyBySymbol(meta, meta.yahooSymbol, timeframe);
+  }
 
+  async function fetchTwelveDataGoldDaily(timeframe, settings) {
+    const outputSize = Math.min(timeframe, 365);
+    const url =
+      `https://api.twelvedata.com/time_series?symbol=XAU%2FUSD&interval=1day` +
+      `&outputsize=${outputSize}&apikey=${encodeURIComponent(settings.twelveDataKey)}`;
+    const data = await fetchJson(url, 15000);
+    if (data.status === "error") throw new Error(data.message);
+    const points = (data.values || [])
+      .map((item) => ({ time: new Date(item.datetime).getTime(), price: Number(item.close) }))
+      .filter((point) => Number.isFinite(point.time) && Number.isFinite(point.price))
+      .sort((left, right) => left.time - right.time);
+    if (points.length < 7) throw new Error("Nincs elegendő aranyadat");
+    return buildAssetFromPoints(CATALOG.gold, points, points.at(-1).price, "Twelve Data · napi");
+  }
+
+  async function fetchGoldSpotDaily(timeframe, endpoints) {
     const [spotResult, historyResult] = await Promise.allSettled([
       fetchJson(endpoints.goldSpot),
       fetchJson(endpoints.goldHistory, 18000),
@@ -569,13 +723,33 @@
       CATALOG.gold,
       points,
       Number.isFinite(spotPrice) ? spotPrice : points.at(-1).price,
+      "Spot API · napi",
     );
     asset.warning = !historyIsFresh;
     return asset;
   }
 
-  async function fetchGoldIntraday(interval, settings, formatIntervalShort, formatIntervalLong) {
-    if (!settings.twelveDataKey) return null;
+  async function fetchGoldDaily(timeframe, settings, endpoints) {
+    const yahooAttempts = GOLD_YAHOO_SYMBOLS.map((symbol) => ({
+      label: `Yahoo (${symbol})`,
+      run: () => fetchYahooDailyBySymbol(CATALOG.gold, symbol, timeframe),
+    }));
+
+    return fetchWithFallbackChain("Arany napi", [
+      {
+        label: "Twelve Data",
+        when: () => Boolean(settings.twelveDataKey),
+        run: () => fetchTwelveDataGoldDaily(timeframe, settings),
+      },
+      {
+        label: "Spot API",
+        run: () => fetchGoldSpotDaily(timeframe, endpoints),
+      },
+      ...yahooAttempts,
+    ]);
+  }
+
+  async function fetchTwelveDataGoldIntraday(interval, settings, formatIntervalShort, formatIntervalLong) {
     const params = new URLSearchParams({
       symbol: "XAU/USD",
       interval: TWELVE_INTERVALS[interval] || "1min",
@@ -606,12 +780,127 @@
     );
   }
 
+  async function fetchGoldIntraday(interval, settings, formatIntervalShort, formatIntervalLong) {
+    const yahooAttempts = GOLD_YAHOO_SYMBOLS.map((symbol) => ({
+      label: `Yahoo (${symbol})`,
+      run: () =>
+        fetchYahooIntradayBySymbol(
+          CATALOG.gold,
+          symbol,
+          interval,
+          formatIntervalShort,
+          formatIntervalLong,
+        ),
+    }));
+
+    return fetchWithFallbackChain(`Arany ${formatIntervalShort(interval)}`, [
+      {
+        label: "Twelve Data",
+        when: () => Boolean(settings.twelveDataKey),
+        run: () =>
+          fetchTwelveDataGoldIntraday(interval, settings, formatIntervalShort, formatIntervalLong),
+      },
+      {
+        label: "Kraken",
+        run: () =>
+          fetchKrakenIntraday(CATALOG.gold, interval, formatIntervalShort, formatIntervalLong),
+      },
+      ...yahooAttempts,
+    ]);
+  }
+
+  async function fetchCryptoIntraday(meta, interval, settings, formatIntervalShort, formatIntervalLong) {
+    return fetchWithFallbackChain(`${meta.name} ${formatIntervalShort(interval)}`, [
+      {
+        label: "Kraken",
+        run: () => fetchKrakenIntraday(meta, interval, formatIntervalShort, formatIntervalLong),
+      },
+      {
+        label: "Binance",
+        run: () => fetchBinanceIntraday(meta, interval, formatIntervalShort, formatIntervalLong),
+      },
+      {
+        label: "CoinGecko",
+        run: async () => {
+          const url =
+            `https://api.coingecko.com/api/v3/coins/${meta.coingeckoId}/ohlc` +
+            `?vs_currency=usd&days=1`;
+          const headers = settings.coinGeckoKey
+            ? { "x-cg-demo-api-key": settings.coinGeckoKey }
+            : {};
+          const data = await fetchJsonWithRetry(url, { timeout: 12000, headers, retries: 1 });
+          const candles = (Array.isArray(data) ? data : [])
+            .map((item) => ({
+              time: Number(item[0]),
+              open: Number(item[1]),
+              high: Number(item[2]),
+              low: Number(item[3]),
+              close: Number(item[4]),
+              volume: 0,
+            }))
+            .filter(isValidCandle)
+            .sort((left, right) => left.time - right.time);
+          if (candles.length < 20) {
+            throw new Error(`Nincs elegendő ${formatIntervalLong(interval)} ${meta.name}-adat`);
+          }
+          return buildIntradayAsset(
+            meta,
+            candles,
+            `CoinGecko · ${formatIntervalShort(interval)}`,
+            interval,
+          );
+        },
+      },
+      {
+        label: "Yahoo",
+        run: () =>
+          fetchYahooIntradayBySymbol(
+            meta,
+            getYahooCryptoSymbol(meta),
+            interval,
+            formatIntervalShort,
+            formatIntervalLong,
+          ),
+      },
+    ]);
+  }
+
+  async function fetchYahooDailyWithFallback(meta, timeframe) {
+    return fetchWithFallbackChain(`${meta.name} napi`, [
+      {
+        label: "Yahoo",
+        run: () => fetchYahooDailyBySymbol(meta, meta.yahooSymbol, timeframe),
+      },
+    ]);
+  }
+
+  async function fetchYahooIntradayWithFallback(
+    meta,
+    interval,
+    formatIntervalShort,
+    formatIntervalLong,
+  ) {
+    return fetchWithFallbackChain(`${meta.name} ${formatIntervalShort(interval)}`, [
+      {
+        label: "Yahoo",
+        run: () =>
+          fetchYahooIntradayBySymbol(
+            meta,
+            meta.yahooSymbol,
+            interval,
+            formatIntervalShort,
+            formatIntervalLong,
+          ),
+      },
+    ]);
+  }
+
   async function fetchDaily(assetKey, timeframe, settings, endpoints) {
     const meta = getAsset(assetKey);
     if (!meta) throw new Error("Ismeretlen eszköz");
     if (meta.dataType === "crypto") return fetchCryptoDaily(meta, timeframe, settings);
     if (meta.dataType === "gold") return fetchGoldDaily(timeframe, settings, endpoints);
-    if (meta.dataType === "yahoo") return fetchYahooDaily(meta, timeframe);
+    if (meta.dataType === "yahoo") return fetchYahooDailyWithFallback(meta, timeframe);
     throw new Error(`Nincs napi adatforrás: ${meta.name}`);
   }
 
@@ -619,13 +908,13 @@
     const meta = getAsset(assetKey);
     if (!meta) throw new Error("Ismeretlen eszköz");
     if (meta.dataType === "crypto") {
-      return fetchKrakenIntraday(meta, interval, formatIntervalShort, formatIntervalLong);
+      return fetchCryptoIntraday(meta, interval, settings, formatIntervalShort, formatIntervalLong);
     }
     if (meta.dataType === "gold") {
       return fetchGoldIntraday(interval, settings, formatIntervalShort, formatIntervalLong);
     }
     if (meta.dataType === "yahoo") {
-      return fetchYahooIntraday(meta, interval, formatIntervalShort, formatIntervalLong);
+      return fetchYahooIntradayWithFallback(meta, interval, formatIntervalShort, formatIntervalLong);
     }
     throw new Error(`Nincs intraday adatforrás: ${meta.name}`);
   }

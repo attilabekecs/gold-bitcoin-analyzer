@@ -106,6 +106,47 @@ function getLoadedAssetKeys() {
   return Catalog.ALL_KEYS.filter((key) => state.assets[key]);
 }
 
+function getIntradayAssetKeys() {
+  return Catalog.ALL_KEYS.filter((key) => state.intraday[key]);
+}
+
+function getAssetSourceLabel(assetKey) {
+  return (
+    state.intraday[assetKey]?.source ||
+    state.assets[assetKey]?.source ||
+    null
+  );
+}
+
+function resolveAssetHealth(assetKey, asset) {
+  if (asset?.warning || asset?.degraded) return "warning";
+  if (state.intraday[assetKey] || asset) return "ok";
+  return state.dataHealth[assetKey] || "pending";
+}
+
+function buildDataStatusSummary() {
+  const loadedDaily = getLoadedAssetKeys().length;
+  const loadedIntraday = getIntradayAssetKeys().length;
+  if (!loadedDaily && !loadedIntraday) {
+    return "Egyetlen piaci adatforrás sem válaszol. A frissítés a háttérben folytatódik.";
+  }
+
+  const notes = [];
+  Catalog.FEATURED_KEYS.forEach((assetKey) => {
+    const health = state.dataHealth[assetKey];
+    const source = getAssetSourceLabel(assetKey);
+    const name = getAssetName(assetKey);
+    if (health === "error" && !state.assets[assetKey] && !state.intraday[assetKey]) {
+      notes.push(`${name}: nincs adat`);
+    } else if (health === "warning") {
+      notes.push(`${name}: tartalékforrás${source ? ` (${source})` : ""}`);
+    }
+  });
+
+  if (!notes.length) return null;
+  return `Egyes adatforrások korlátozottak – ${notes.join(" · ")}. A bot a rendelkezésre álló piaci adatokkal működik.`;
+}
+
 const endpoints = {
   goldSpot: "https://api.gold-api.com/price/XAU",
   goldHistory: "https://freegoldapi.com/data/latest.json",
@@ -235,7 +276,7 @@ async function loadDashboard() {
       .then((asset) => {
         if (!isCurrent()) return;
         state.assets[assetKey] = asset;
-        state.dataHealth[assetKey] = asset.warning ? "warning" : "ok";
+        state.dataHealth[assetKey] = resolveAssetHealth(assetKey, asset);
         state.assetRefreshMeta[assetKey] = {
           ...(state.assetRefreshMeta[assetKey] || {}),
           dailyAt: Date.now(),
@@ -245,9 +286,7 @@ async function loadDashboard() {
       })
       .catch(() => {
         if (!isCurrent()) return;
-        const name = getAssetName(assetKey);
-        if (Catalog.isFeatured(assetKey)) errors.push(`A ${name}-adatok most nem érhetők el.`);
-        state.dataHealth[assetKey] = "error";
+        if (!state.assets[assetKey]) state.dataHealth[assetKey] = "error";
         if (!state.assets[assetKey] && Catalog.isFeatured(assetKey)) renderUnavailableAsset(assetKey);
         renderMarketsGrid();
         renderDataHealth();
@@ -269,6 +308,18 @@ async function loadDashboard() {
             ...(state.assetRefreshMeta[assetKey] || {}),
             intradayAt: asset.fetchedAt || Date.now(),
           };
+          if (state.assets[assetKey]) {
+            state.dataHealth[assetKey] = resolveAssetHealth(assetKey, {
+              ...state.assets[assetKey],
+              degraded: asset.degraded,
+              warning: state.assets[assetKey].warning,
+            });
+          } else if (asset.degraded) {
+            state.dataHealth[assetKey] = "warning";
+          } else {
+            state.dataHealth[assetKey] = "ok";
+          }
+          renderDataHealth();
         }
         renderTradingCenter();
         updatePaperPositions(assetKey);
@@ -374,7 +425,8 @@ async function loadDashboard() {
   runVirtualBotTick();
   renderBotTrading();
 
-  if (errors.length) showError(errors.join(" "));
+  const statusSummary = buildDataStatusSummary();
+  if (statusSummary) showError(statusSummary);
   document.getElementById("lastUpdated").textContent = new Intl.DateTimeFormat("hu-HU", {
     hour: "2-digit",
     minute: "2-digit",
@@ -382,7 +434,8 @@ async function loadDashboard() {
     month: "short",
     day: "numeric",
   }).format(new Date());
-  setLoading(false, !state.assets.bitcoin && !state.assets.gold);
+  const hasAnyMarketData = getLoadedAssetKeys().length > 0 || getIntradayAssetKeys().length > 0;
+  setLoading(false, !hasAnyMarketData);
 }
 
 async function fetchJson(url, timeout = 12000, headers = {}) {
@@ -1536,10 +1589,10 @@ function renderTradingCenter() {
   empty.querySelector("strong").textContent = `Nincs ${formatIntervalLong(interval)} adat`;
   empty.querySelector("span").textContent =
     assetKey === "gold"
-      ? "Az arany több idősíkú nézetéhez megfelelő Twelve Data csomag szükséges."
+      ? "Az arany intraday adata átmenetileg nem érhető el – tartalékforrások (Kraken, Yahoo) próbálása folyamatban."
       : getAssetMeta(assetKey)?.dataType === "yahoo"
-        ? "A Yahoo Finance adatforrás átmenetileg nem elérhető."
-        : "Ez az idősík átmenetileg nem érhető el.";
+        ? "A Yahoo Finance adatforrás átmenetileg nem elérhető – CORS proxy próbálása folyamatban."
+        : "Ez az idősík átmenetileg nem érhető el – tartalékforrások próbálása folyamatban.";
   canvas.hidden = !decision.hasIntraday;
   renderIntradayChart(assetKey, decision.hasIntraday ? selectedSeries : null);
   renderTechnicalCharts(assetKey, decision.hasIntraday ? selectedSeries : null);
@@ -1840,7 +1893,7 @@ async function refreshAssetBundle(assetKey, options = {}) {
     try {
       const asset = await Catalog.fetchDaily(assetKey, state.timeframe, state.settings, endpoints);
       state.assets[assetKey] = asset;
-      state.dataHealth[assetKey] = asset.warning ? "warning" : "ok";
+      state.dataHealth[assetKey] = resolveAssetHealth(assetKey, asset);
       asset.analysis = analyzeAsset(asset, assetSpecificSentiment(assetKey));
       meta.dailyAt = Date.now();
       if (Catalog.isFeatured(assetKey)) renderAsset(assetKey);
@@ -1865,13 +1918,21 @@ async function refreshAssetBundle(assetKey, options = {}) {
         formatIntervalShort,
         formatIntervalLong,
       );
-      if (asset) state.intraday[assetKey] = asset;
+      if (asset) {
+        state.intraday[assetKey] = asset;
+        state.dataHealth[assetKey] = resolveAssetHealth(assetKey, {
+          ...state.assets[assetKey],
+          degraded: asset.degraded,
+          warning: state.assets[assetKey]?.warning,
+        });
+      }
       state.assetRefreshMeta[assetKey] = {
         ...(state.assetRefreshMeta[assetKey] || {}),
         intradayAt: asset?.fetchedAt || Date.now(),
       };
       renderTradingCenter();
       updatePaperPositions(assetKey);
+      renderDataHealth();
     } catch {
       // Keep the last valid intraday series during a temporary source failure.
     }
@@ -2043,7 +2104,14 @@ async function refreshLiveIntraday() {
           formatIntervalShort,
           formatIntervalLong,
         );
-        if (asset) state.intraday[assetKey] = asset;
+        if (asset) {
+          state.intraday[assetKey] = asset;
+          state.dataHealth[assetKey] = resolveAssetHealth(assetKey, {
+            ...state.assets[assetKey],
+            degraded: asset.degraded,
+            warning: state.assets[assetKey]?.warning,
+          });
+        }
         state.assetRefreshMeta[assetKey] = {
           ...(state.assetRefreshMeta[assetKey] || {}),
           intradayAt: asset?.fetchedAt || Date.now(),
@@ -2056,6 +2124,7 @@ async function refreshLiveIntraday() {
   );
   updateScanLoadProgress();
   renderTradingCenter();
+  renderDataHealth();
   runVirtualBotTick();
   renderBotTrading();
 }
@@ -3567,7 +3636,7 @@ function renderDataHealth() {
   const labels = {
     pending: ["Ellenőrzés…", ""],
     ok: ["Elérhető", "ok"],
-    warning: ["Korlátozott", "warning"],
+    warning: ["Tartalékforrás", "warning"],
     error: ["Nem elérhető", "error"],
   };
   [
@@ -3577,9 +3646,13 @@ function renderDataHealth() {
     ["sourceFx", "fx"],
   ].forEach(([elementId, key]) => {
     const element = document.getElementById(elementId);
-    const [text, className] = labels[state.dataHealth[key]];
-    element.textContent = text;
+    if (!element) return;
+    const health = state.dataHealth[key] || "pending";
+    const source = getAssetSourceLabel(key);
+    const [text, className] = labels[health] || labels.pending;
+    element.textContent = source ? `${text} · ${source}` : text;
     element.className = `source-state ${className}`;
+    element.title = source ? `Aktív adatforrás: ${source}` : "";
   });
 }
 
@@ -3849,7 +3922,7 @@ function setLoading(isLoading, failed = false) {
 
 function showError(message) {
   const banner = document.getElementById("errorBanner");
-  banner.textContent = `${message} Próbáld meg később a frissítés gombbal.`;
+  banner.textContent = `${message} A frissítés automatikusan folytatódik.`;
   banner.hidden = false;
 }
 
