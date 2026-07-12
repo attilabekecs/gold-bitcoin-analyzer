@@ -1073,11 +1073,14 @@
 
     if (summary) {
       summary.replaceChildren();
-      if (scanProgress && !scanProgress.complete && marketWide) {
+      if (scanProgress && marketWide) {
+        const progressText = scanProgress.complete
+          ? `Folyamatos frissítés: ${scanProgress.loaded}/${scanProgress.total} eszköz naprakész`
+          : `Háttérbetöltés: ${scanProgress.loaded}/${scanProgress.total} eszköz adata érkezett${scanProgress.pending ? ` · ${scanProgress.pending} várakozik` : ""}…`;
         summary.append(
           Object.assign(document.createElement("p"), {
             className: "helper-text",
-            textContent: `Háttérbetöltés: ${scanProgress.loaded}/${scanProgress.total} eszköz adata érkezett…`,
+            textContent: progressText,
           }),
         );
       } else if (marketWide && withDataCount < results.length) {

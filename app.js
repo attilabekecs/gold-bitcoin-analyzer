@@ -34,11 +34,23 @@ const state = {
   },
   refreshTimer: null,
   intradayTimer: null,
+  assetRefreshTimer: null,
+  assetRefreshCycleRunning: false,
+  assetRefreshMeta: Object.fromEntries(
+    Catalog.ALL_KEYS.map((key) => [key, { dailyAt: 0, timeframesAt: 0 }]),
+  ),
   botTickTimer: null,
   botTickInterval: null,
   loadSequence: 0,
   scanLoadProgress: null,
 };
+
+const INTRADAY_STALE_MS = 90000;
+const DAILY_STALE_MS = 300000;
+const TIMEFRAME_STALE_MS = 180000;
+const ASSET_REFRESH_TICK_MS = 15000;
+const ASSET_REFRESH_BATCH_SIZE = Catalog.SCAN_BATCH_SIZE;
+const ASSET_REFRESH_BATCH_DELAY_MS = Catalog.SCAN_BATCH_DELAY_MS;
 
 const VALID_VIEWS = [
   "overview",
@@ -223,6 +235,10 @@ async function loadDashboard() {
         if (!isCurrent()) return;
         state.assets[assetKey] = asset;
         state.dataHealth[assetKey] = asset.warning ? "warning" : "ok";
+        state.assetRefreshMeta[assetKey] = {
+          ...(state.assetRefreshMeta[assetKey] || {}),
+          dailyAt: Date.now(),
+        };
         renderProgressiveAsset(assetKey);
         renderDataHealth();
       })
@@ -268,6 +284,10 @@ async function loadDashboard() {
       .then((timeframes) => {
         if (!isCurrent()) return;
         state.multiTimeframe[assetKey] = timeframes;
+        state.assetRefreshMeta[assetKey] = {
+          ...(state.assetRefreshMeta[assetKey] || {}),
+          timeframesAt: Date.now(),
+        };
         renderTradingCenter();
       })
       .catch(() => {
@@ -279,30 +299,6 @@ async function loadDashboard() {
     loadAssetIntraday(assetKey),
     loadAssetTimeframes(assetKey),
   ]);
-
-  const loadBackgroundScanAssets = async () => {
-    if (!Catalog.SCAN_ONLY_KEYS.length) return;
-    state.scanLoadProgress = {
-      loaded: 0,
-      total: Catalog.SCAN_ONLY_KEYS.length,
-      complete: false,
-    };
-    await Catalog.runInBatches(
-      Catalog.SCAN_ONLY_KEYS,
-      async (assetKey) => {
-        await loadAssetDaily(assetKey);
-        await loadAssetIntraday(assetKey);
-        if (!isCurrent()) return;
-        state.scanLoadProgress.loaded += 1;
-        renderBotTrading();
-      },
-      Catalog.SCAN_BATCH_SIZE,
-      Catalog.SCAN_BATCH_DELAY_MS,
-    );
-    if (!isCurrent()) return;
-    state.scanLoadProgress.complete = true;
-    renderBotTrading();
-  };
 
   const ratesTask = fetchExchangeRates()
     .then((rates) => {
@@ -356,7 +352,8 @@ async function loadDashboard() {
   await Promise.allSettled([...assetTasks, ratesTask, newsTask]);
   if (!isCurrent()) return;
 
-  loadBackgroundScanAssets();
+  startContinuousAssetRefresh();
+  updateScanLoadProgress();
 
   runVirtualBotTick();
   renderBotTrading();
@@ -1813,16 +1810,190 @@ function renderTechnicalCharts(assetKey, intraday) {
   });
 }
 
-async function refreshLiveIntraday() {
+async function refreshAssetBundle(assetKey, options = {}) {
+  const { daily = true, intraday = true, timeframes = false } = options;
+  const meta = state.assetRefreshMeta[assetKey] || { dailyAt: 0, timeframesAt: 0 };
+  state.assetRefreshMeta[assetKey] = meta;
+
+  if (daily) {
+    try {
+      const asset = await Catalog.fetchDaily(assetKey, state.timeframe, state.settings, endpoints);
+      state.assets[assetKey] = asset;
+      state.dataHealth[assetKey] = asset.warning ? "warning" : "ok";
+      asset.analysis = analyzeAsset(asset, assetSpecificSentiment(assetKey));
+      meta.dailyAt = Date.now();
+      if (Catalog.isFeatured(assetKey)) renderAsset(assetKey);
+      renderMarketsGrid();
+      renderIndicators(state.selectedAsset);
+      renderPortfolio();
+      checkAlerts();
+      renderDataHealth();
+    } catch {
+      if (!state.assets[assetKey]) state.dataHealth[assetKey] = "error";
+      renderMarketsGrid();
+      renderDataHealth();
+    }
+  }
+
+  if (intraday) {
+    try {
+      const asset = await Catalog.fetchIntraday(
+        assetKey,
+        1,
+        state.settings,
+        formatIntervalShort,
+        formatIntervalLong,
+      );
+      if (asset) state.intraday[assetKey] = asset;
+      renderTradingCenter();
+      updatePaperPositions(assetKey);
+    } catch {
+      // Keep the last valid intraday series during a temporary source failure.
+    }
+  }
+
+  if (timeframes) {
+    try {
+      const timeframesData = await Catalog.fetchAdditionalTimeframes(
+        assetKey,
+        state.settings,
+        formatIntervalShort,
+        formatIntervalLong,
+        endpoints,
+      );
+      state.multiTimeframe[assetKey] = timeframesData;
+      meta.timeframesAt = Date.now();
+      renderTradingCenter();
+    } catch {
+      // Optional timeframes may be unavailable for some sources.
+    }
+  }
+}
+
+function isIntradayStale(assetKey) {
+  const intraday = state.intraday[assetKey];
+  if (!intraday?.updatedAt) return true;
+  return Date.now() - intraday.updatedAt > INTRADAY_STALE_MS;
+}
+
+function isDailyStale(assetKey) {
+  if (!state.assets[assetKey]) return true;
+  const dailyAt = state.assetRefreshMeta[assetKey]?.dailyAt || 0;
+  return !dailyAt || Date.now() - dailyAt > DAILY_STALE_MS;
+}
+
+function isTimeframesStale(assetKey) {
+  const timeframes = state.multiTimeframe[assetKey];
+  if (!timeframes || !Object.keys(timeframes).length) return true;
+  const timeframesAt = state.assetRefreshMeta[assetKey]?.timeframesAt || 0;
+  return !timeframesAt || Date.now() - timeframesAt > TIMEFRAME_STALE_MS;
+}
+
+function getAssetRefreshNeeds(assetKey, options = {}) {
+  const includeTimeframes = options.includeTimeframes ?? shouldRefreshTimeframes(assetKey);
+  return {
+    intraday: isIntradayStale(assetKey),
+    daily: isDailyStale(assetKey),
+    timeframes: includeTimeframes && isTimeframesStale(assetKey),
+  };
+}
+
+function shouldRefreshTimeframes(assetKey) {
   const botConfig = state.botState?.config;
-  const refreshKeys = new Set([
-    "bitcoin",
-    ...(botConfig?.marketWideMode
-      ? window.AssetCatalog?.ALL_KEYS || []
-      : botConfig?.assets || []),
-  ]);
+  if (botConfig?.marketWideMode) return true;
+  if (botConfig?.enabled && botConfig.assets?.includes(assetKey)) return true;
+  return Catalog.PRIORITY_KEYS.includes(assetKey);
+}
+
+function getStaleAssetKeys() {
+  const priorityRank = new Map(Catalog.PRIORITY_KEYS.map((key, index) => [key, index]));
+  return Catalog.ALL_KEYS.filter((assetKey) => {
+    const needs = getAssetRefreshNeeds(assetKey);
+    return needs.intraday || needs.daily || needs.timeframes;
+  }).sort((left, right) => {
+    const leftPriority = priorityRank.has(left) ? priorityRank.get(left) : 999;
+    const rightPriority = priorityRank.has(right) ? priorityRank.get(right) : 999;
+    if (leftPriority !== rightPriority) return leftPriority - rightPriority;
+    const leftAge = state.intraday[left]?.updatedAt || 0;
+    const rightAge = state.intraday[right]?.updatedAt || 0;
+    return leftAge - rightAge;
+  });
+}
+
+function updateScanLoadProgress(staleKeys = getStaleAssetKeys()) {
+  const total = Catalog.ALL_KEYS.length;
+  const loaded = total - staleKeys.length;
+  state.scanLoadProgress = {
+    loaded,
+    total,
+    complete: staleKeys.length === 0,
+    continuous: true,
+    pending: staleKeys.length,
+    updatedAt: Date.now(),
+  };
+}
+
+function startContinuousAssetRefresh() {
+  if (state.assetRefreshTimer) return;
+  updateScanLoadProgress();
+  runAssetRefreshCycle();
+  state.assetRefreshTimer = setInterval(runAssetRefreshCycle, ASSET_REFRESH_TICK_MS);
+}
+
+async function runAssetRefreshCycle() {
+  if (state.assetRefreshCycleRunning) return;
+  state.assetRefreshCycleRunning = true;
+  try {
+    const staleKeys = getStaleAssetKeys();
+    updateScanLoadProgress(staleKeys);
+
+    if (!staleKeys.length) {
+      renderBotTrading();
+      return;
+    }
+
+    const batch = staleKeys.slice(0, ASSET_REFRESH_BATCH_SIZE);
+    for (let index = 0; index < batch.length; index += 1) {
+      const assetKey = batch[index];
+      const needs = getAssetRefreshNeeds(assetKey);
+      await refreshAssetBundle(assetKey, {
+        daily: needs.daily,
+        intraday: needs.intraday,
+        timeframes: needs.timeframes,
+      });
+      updateScanLoadProgress(getStaleAssetKeys());
+      renderBotTrading();
+      if (index < batch.length - 1 && ASSET_REFRESH_BATCH_DELAY_MS > 0) {
+        await new Promise((resolve) => setTimeout(resolve, ASSET_REFRESH_BATCH_DELAY_MS));
+      }
+    }
+
+    renderTradingCenter();
+    runVirtualBotTick();
+  } finally {
+    state.assetRefreshCycleRunning = false;
+  }
+}
+
+function getLiveRefreshKeys() {
+  const botConfig = state.botState?.config;
+  const keys = new Set(["bitcoin", state.selectedTradeAsset]);
+  state.paperAccount?.positions?.forEach((position) => keys.add(position.asset));
+  state.botState?.positions?.forEach((position) => keys.add(position.asset));
+  if (botConfig?.marketWideMode) {
+    Catalog.ALL_KEYS.forEach((assetKey) => keys.add(assetKey));
+  } else if (botConfig?.assets?.length) {
+    botConfig.assets.forEach((assetKey) => keys.add(assetKey));
+  } else {
+    Catalog.PRIORITY_KEYS.forEach((assetKey) => keys.add(assetKey));
+  }
+  return [...keys];
+}
+
+async function refreshLiveIntraday() {
+  const refreshKeys = getLiveRefreshKeys();
   await Promise.allSettled(
-    [...refreshKeys].map(async (assetKey) => {
+    refreshKeys.map(async (assetKey) => {
       try {
         const asset = await Catalog.fetchIntraday(
           assetKey,
@@ -1838,6 +2009,7 @@ async function refreshLiveIntraday() {
       }
     }),
   );
+  updateScanLoadProgress();
   renderTradingCenter();
   runVirtualBotTick();
   renderBotTrading();
@@ -2099,6 +2271,7 @@ function applySettings() {
     state.refreshTimer = setInterval(loadDashboard, state.settings.refreshMinutes * 60000);
   }
   state.intradayTimer = setInterval(refreshLiveIntraday, 60000);
+  startContinuousAssetRefresh();
   scheduleBotTick();
 }
 
