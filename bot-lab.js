@@ -566,10 +566,12 @@
 
   function resetAccount() {
     if (!window.confirm("Biztosan törlöd a bot összes pozícióját és ügyletét?")) return;
-    const config = readConfigFromForm();
-    const state = getState();
-    if (!state) return;
-    state.botState = Bot.resetBot(config);
+    const botState = getBotState();
+    if (!botState) return;
+    Bot.applyCapitalFromConfig(botState, {
+      source: "kézi",
+      reason: "Számla kézi újraindítása",
+    });
     syncConfigForm();
     render();
     bridge?.showToast?.("A virtuális bot újraindult.");
@@ -755,9 +757,26 @@
     return String(value);
   }
 
+  function maybeReconcilePendingBalance() {
+    const botState = getBotState();
+    if (!botState?._balanceReconcilePending) return false;
+    const fxContext = bridge?.getBotFxContext?.();
+    const currency = getBotCurrency(botState.config);
+    if (!Bot.isFxReadyForCurrency?.(fxContext, currency)) return false;
+    const result = Bot.validateBalanceState(botState, getContext(), fxContext);
+    if (result.repaired || !result.pending) {
+      delete botState._balanceReconcilePending;
+      Bot.saveBotState(botState);
+      syncConfigForm();
+      return true;
+    }
+    return false;
+  }
+
   function render() {
     const botState = getBotState();
     if (!botState) return;
+    maybeReconcilePendingBalance();
     const metrics = Bot.getMetrics(botState, getContext());
     const { formatNumber, setMetricValue, valueClass, appendEmptyTableRow } = bridge;
     const currency = getBotCurrency(botState.config);
@@ -768,8 +787,8 @@
 
     setMetricValue(
       "botEquity",
-      bridge.formatBotMoney(metrics.equity, currency),
-      metrics.equity - botState.initialCapital,
+      bridge.formatBotMoney(botState.cash, currency),
+      botState.cash - botState.initialCapital,
     );
     setMetricValue(
       "botRealizedPnl",

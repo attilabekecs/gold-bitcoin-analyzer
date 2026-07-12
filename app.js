@@ -2620,6 +2620,17 @@ function saveSettings(event) {
   applySettings();
   closeSettings();
   showToast("Beállítások elmentve.");
+  if (state.botState && window.VirtualBot?.validateBalanceState) {
+    const result = window.VirtualBot.validateBalanceState(
+      state.botState,
+      getBotContext(),
+      getBotFxContext(),
+    );
+    if (result.repaired) {
+      window.VirtualBot.saveBotState(state.botState);
+      window.BotLab?.syncConfigForm?.();
+    }
+  }
   renderBotTrading();
   loadDashboard();
 }
@@ -3161,6 +3172,14 @@ function getBotContext() {
 
 function runVirtualBotTick() {
   if (!state.botState || !window.VirtualBot) return;
+  const currency = resolveBotCurrency(state.botState.config);
+  if (
+    window.VirtualBot.needsFxForCurrency?.(currency) &&
+    !window.VirtualBot.isFxReadyForCurrency?.(getBotFxContext(), currency)
+  ) {
+    state.botState._balanceReconcilePending = true;
+    return;
+  }
   window.VirtualBot.tick(state.botState, getBotContext());
   renderBotTrading();
 }
@@ -3181,6 +3200,7 @@ function initBotUi() {
     paperChartOptions,
     initialBotSection,
     getBotCurrency: (config) => resolveBotCurrency(config || state.botState?.config),
+    getBotFxContext,
     areExchangeRatesReady,
     convertToCurrency,
     convertFromCurrency,

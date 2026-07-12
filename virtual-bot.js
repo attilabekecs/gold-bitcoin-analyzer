@@ -251,16 +251,31 @@
     return true;
   }
 
+  function needsFxForCurrency(currency) {
+    return currency !== "USD";
+  }
+
+  function isFxReadyForCurrency(fxContext, currency) {
+    if (!needsFxForCurrency(currency)) return true;
+    return Boolean(fxContext?.ratesReady);
+  }
+
   function reconcileCapitalOnLoad(botState) {
     if (!botState?.config) return botState;
     const configCapital = botState.config.initialCapital;
     if (!Number.isFinite(configCapital) || configCapital < 100) return botState;
-    if (botState.initialCapital === configCapital) return botState;
+    if (Math.abs(botState.initialCapital - configCapital) <= 0.01) return botState;
 
-    applyCapitalFromConfig(botState, {
-      source: "beállítás",
-      reason: "Kezdőtőke szinkronizálva a mentett beállítással",
-    });
+    const idle = botState.positions.length === 0 && botState.trades.length === 0;
+    if (idle) {
+      botState.initialCapital = configCapital;
+      botState.cash = configCapital;
+      const now = Date.now();
+      botState.equityHistory = [{ time: now, equity: configCapital }];
+      return botState;
+    }
+
+    botState.initialCapital = configCapital;
     return botState;
   }
 
@@ -271,6 +286,10 @@
         const corrected = hufInput / hufRate;
         if (corrected >= 50 && corrected < storedUsd / 10) return corrected;
       }
+    }
+    if (storedUsd >= 50000 && storedUsd % 1000 === 0) {
+      const corrected = storedUsd / hufRate;
+      if (corrected >= 50 && corrected <= 10000) return corrected;
     }
     return null;
   }
@@ -317,43 +336,96 @@
     return botState.cash > maxCash + 0.01;
   }
 
-  function isEquityCorrupted(botState, context) {
-    const metrics = getMetrics(botState, context);
-    const maxAllowed = getMaxAllowedEquity(botState);
-    return metrics.equity > maxAllowed + 0.01;
+  function logAutoBalanceFix(botState, reason, fromCapital, toCapital) {
+    logConfigChanges(
+      botState,
+      "beállítás",
+      [
+        {
+          key: "accountReset",
+          from: fromCapital,
+          to: toCapital,
+          reason: `[Auto-javítás] ${reason}`,
+        },
+      ],
+      reason,
+    );
+    logActivity(botState, `[Auto-javítás] ${reason}`);
+  }
+
+  function syncIdleBalanceToConfig(botState) {
+    const configCapital = botState.config.initialCapital;
+    if (!Number.isFinite(configCapital) || configCapital < 100) return false;
+    if (botState.positions.length > 0 || botState.trades.length > 0) return false;
+    const cashDrift = Math.abs(botState.cash - configCapital) > 0.01;
+    const initialDrift = Math.abs(botState.initialCapital - configCapital) > 0.01;
+    if (!cashDrift && !initialDrift) return false;
+
+    const fromCapital = botState.cash;
+    botState.initialCapital = configCapital;
+    botState.cash = configCapital;
+    const now = Date.now();
+    botState.equityHistory = [{ time: now, equity: configCapital }];
+    logAutoBalanceFix(
+      botState,
+      "Tétlen számla egyenlege visszaállítva a mentett kezdőtőkére",
+      fromCapital,
+      configCapital,
+    );
+    return true;
   }
 
   function validateBalanceState(botState, context = null, fxContext = null) {
     if (!botState?.config) return { repaired: false, botState };
 
     const currency = fxContext?.resolveCurrency?.(botState.config) ?? "USD";
+    if (!isFxReadyForCurrency(fxContext, currency)) {
+      botState._balanceReconcilePending = true;
+      return { repaired: false, pending: true, botState };
+    }
+    delete botState._balanceReconcilePending;
+
     const hufRate = fxContext?.getRate?.("HUF");
     const hufIssue = scanUnconvertedHufFields(botState, currency, hufRate);
 
     if (hufIssue) {
-      botState.config.initialCapital = hufIssue.corrected;
+      const fromCapital = botState.cash;
+      if (hufIssue.field === "config") {
+        botState.config.initialCapital = hufIssue.corrected;
+      }
       applyCapitalFromConfig(botState, {
         source: "beállítás",
         reason:
           "Javítva: a tőke valószínűleg HUF-ként került USD-ként mentésre (hiányzó árfolyam)",
+        skipLog: true,
       });
-      logActivity(
+      logAutoBalanceFix(
         botState,
-        `Egyenleg helyreállítva: ${Math.round(hufIssue.corrected)} USD belső tőke (≈ ${Math.round(hufIssue.corrected * hufRate).toLocaleString("hu-HU")} HUF)`,
+        `HUF/USD átváltási hiba javítva (${Math.round(hufIssue.from).toLocaleString("hu-HU")} → belső ${Math.round(hufIssue.corrected)} USD)`,
+        fromCapital,
+        botState.config.initialCapital,
       );
       return { repaired: true, botState };
     }
 
     reconcileCapitalOnLoad(botState);
 
-    if (hasRunawayBalance(botState) || isEquityCorrupted(botState, context)) {
+    if (syncIdleBalanceToConfig(botState)) {
+      return { repaired: true, botState };
+    }
+
+    if (hasRunawayBalance(botState)) {
+      const fromCapital = botState.cash;
       applyCapitalFromConfig(botState, {
         source: "beállítás",
-        reason: "Javítva: szokatlanul magas egyenleg – számla visszaállítva a kezdőtőkére",
+        reason: "Javítva: szokatlanul magas készpénz – számla visszaállítva a kezdőtőkére",
+        skipLog: true,
       });
-      logActivity(
+      logAutoBalanceFix(
         botState,
-        "Egyenleg helyreállítva a mentett kezdőtőkére (inflált állapot észlelve).",
+        "Inflált készpénz egyenleg észlelve – számla visszaállítva",
+        fromCapital,
+        botState.config.initialCapital,
       );
       return { repaired: true, botState };
     }
@@ -1180,8 +1252,18 @@
   }
 
   function tick(botState, context) {
+    const currency =
+      context?.fxContext?.resolveCurrency?.(botState.config) ??
+      context?.botCurrency ??
+      "USD";
+    if (!isFxReadyForCurrency(context?.fxContext || null, currency)) {
+      botState._balanceReconcilePending = true;
+      return { opened: 0, closed: 0, skipped: "fx-pending" };
+    }
+
     const validation = validateBalanceState(botState, context, context?.fxContext || null);
     if (validation.repaired) saveBotState(botState);
+    if (validation.pending) return { opened: 0, closed: 0, skipped: "balance-pending" };
     if (!botState.config.enabled) return { opened: 0, closed: 0 };
     const now = Date.now();
     let opened = 0;
@@ -1714,6 +1796,8 @@
     reconcileCapitalOnLoad,
     reconcileBalanceOnLoad,
     validateBalanceState,
+    needsFxForCurrency,
+    isFxReadyForCurrency,
     getMaxAllowedEquity,
     closePosition,
     getCurrentPrice,
