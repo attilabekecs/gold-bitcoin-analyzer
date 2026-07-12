@@ -6,7 +6,13 @@ const state = {
   news: [],
   sentiment: { score: 0, label: "Semleges" },
   selectedAsset: "bitcoin",
+  selectedTradeAsset: "bitcoin",
   charts: {},
+  intradayChart: null,
+  intraday: {
+    bitcoin: null,
+    gold: null,
+  },
   timeframe: 30,
   exchangeRates: { USD: 1, EUR: 1, HUF: 1 },
   settings: null,
@@ -19,6 +25,7 @@ const state = {
     fx: "pending",
   },
   refreshTimer: null,
+  intradayTimer: null,
 };
 
 const endpoints = {
@@ -65,6 +72,9 @@ document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll("[data-timeframe]").forEach((button) => {
     button.addEventListener("click", () => selectTimeframe(Number(button.dataset.timeframe)));
   });
+  document.querySelectorAll("[data-trade-asset]").forEach((button) => {
+    button.addEventListener("click", () => selectTradeAsset(button.dataset.tradeAsset));
+  });
   applySettings();
   renderPortfolio();
   renderAlerts();
@@ -76,11 +86,20 @@ async function loadDashboard() {
   setLoading(true);
   hideError();
 
-  const [bitcoinResult, goldResult, newsResult, ratesResult] = await Promise.allSettled([
+  const [
+    bitcoinResult,
+    goldResult,
+    newsResult,
+    ratesResult,
+    bitcoinIntradayResult,
+    goldIntradayResult,
+  ] = await Promise.allSettled([
     fetchBitcoin(),
     fetchGold(),
     fetchNews(),
     fetchExchangeRates(),
+    fetchBitcoinIntraday(),
+    fetchGoldIntraday(),
   ]);
 
   const errors = [];
@@ -123,6 +142,11 @@ async function loadDashboard() {
     if (state.settings.currency !== "USD") errors.push("A devizaátváltás most nem érhető el.");
   }
 
+  state.intraday.bitcoin =
+    bitcoinIntradayResult.status === "fulfilled" ? bitcoinIntradayResult.value : null;
+  state.intraday.gold =
+    goldIntradayResult.status === "fulfilled" ? goldIntradayResult.value : null;
+
   ["bitcoin", "gold"].forEach((assetKey) => {
     const asset = state.assets[assetKey];
     if (asset) {
@@ -136,6 +160,7 @@ async function loadDashboard() {
   renderSentiment();
   renderNews();
   renderIndicators(state.selectedAsset);
+  renderTradingCenter();
   renderPortfolio();
   renderDataHealth();
   checkAlerts();
@@ -178,6 +203,75 @@ async function fetchBitcoin() {
 
   if (points.length < Math.min(7, state.timeframe)) throw new Error("Nincs elegendő Bitcoin-adat");
   return buildAsset("Bitcoin", points, points.at(-1).price);
+}
+
+async function fetchBitcoinIntraday() {
+  const data = await fetchJson(
+    "https://api.kraken.com/0/public/OHLC?pair=XBTUSD&interval=1",
+    12000,
+  );
+  if (data.error?.length) throw new Error(data.error.join(", "));
+  const series = Object.entries(data.result || {}).find(([key, value]) => {
+    return key !== "last" && Array.isArray(value);
+  })?.[1];
+  const candles = (series || [])
+    .slice(-180)
+    .map((item) => ({
+      time: Number(item[0]) * 1000,
+      open: Number(item[1]),
+      high: Number(item[2]),
+      low: Number(item[3]),
+      close: Number(item[4]),
+      volume: Number(item[6]),
+    }))
+    .filter(isValidCandle);
+  if (candles.length < 30) throw new Error("Nincs elegendő 1 perces Bitcoin-adat");
+  return buildIntradayAsset("Bitcoin", candles, "Kraken · 1p");
+}
+
+async function fetchGoldIntraday() {
+  if (!state.settings.twelveDataKey) return null;
+  const params = new URLSearchParams({
+    symbol: "XAU/USD",
+    interval: "1min",
+    outputsize: "180",
+    apikey: state.settings.twelveDataKey,
+  });
+  const data = await fetchJson(`https://api.twelvedata.com/time_series?${params}`, 15000);
+  if (data.status === "error") throw new Error(data.message || "Twelve Data hiba");
+  const candles = (data.values || [])
+    .map((item) => ({
+      time: new Date(`${item.datetime}Z`).getTime(),
+      open: Number(item.open),
+      high: Number(item.high),
+      low: Number(item.low),
+      close: Number(item.close),
+      volume: Number(item.volume || 0),
+    }))
+    .filter(isValidCandle)
+    .sort((left, right) => left.time - right.time);
+  if (candles.length < 30) throw new Error("Nincs elegendő 1 perces aranyadat");
+  return buildIntradayAsset("Arany", candles, "Twelve Data · 1p");
+}
+
+function isValidCandle(candle) {
+  return (
+    Number.isFinite(candle.time) &&
+    Number.isFinite(candle.open) &&
+    Number.isFinite(candle.high) &&
+    Number.isFinite(candle.low) &&
+    Number.isFinite(candle.close)
+  );
+}
+
+function buildIntradayAsset(name, candles, source) {
+  return {
+    name,
+    candles,
+    source,
+    currentPrice: candles.at(-1).close,
+    updatedAt: candles.at(-1).time,
+  };
 }
 
 async function fetchGold() {
@@ -547,6 +641,200 @@ function analyzeAsset(asset, sentimentScore) {
   };
 }
 
+function analyzeIntraday(assetKey) {
+  const intraday = state.intraday[assetKey];
+  if (!intraday) return buildDailyTradeFallback(assetKey);
+
+  const candles = intraday.candles;
+  const closes = candles.map((candle) => candle.close);
+  const currentPrice = closes.at(-1);
+  const ema9 = exponentialMovingAverage(closes, 9);
+  const ema21 = exponentialMovingAverage(closes, 21);
+  const ema12 = exponentialMovingAverage(closes, 12);
+  const ema26 = exponentialMovingAverage(closes, 26);
+  const macd = ema12 !== null && ema26 !== null ? ema12 - ema26 : null;
+  const rsi = calculateRsi(closes);
+  const atr = calculateAtr(candles, 14);
+  const minuteBase = closes.at(-2);
+  const momentumBase = closes.at(-16);
+  const minuteChange = minuteBase ? ((currentPrice - minuteBase) / minuteBase) * 100 : null;
+  const momentum15 = momentumBase ? ((currentPrice - momentumBase) / momentumBase) * 100 : null;
+  const volumes = candles.map((candle) => candle.volume).filter((volume) => volume > 0);
+  const averageVolume = average(volumes.slice(-31, -1));
+  const volumeRatio =
+    averageVolume && candles.at(-1).volume > 0 ? candles.at(-1).volume / averageVolume : null;
+  const dailyClass = state.assets[assetKey]?.analysis?.className;
+  let score = 0;
+  const reasons = [];
+
+  if (ema9 !== null && ema21 !== null) {
+    if (ema9 > ema21) {
+      score += 1.5;
+      reasons.push("EMA 9 a 21 felett");
+    } else {
+      score -= 1.5;
+      reasons.push("EMA 9 a 21 alatt");
+    }
+  }
+
+  if (rsi !== null) {
+    if (rsi > 72) {
+      score -= 1;
+      reasons.push("RSI túlvett");
+    } else if (rsi < 28) {
+      score += 0.5;
+      reasons.push("RSI túladott, fordulat még nem biztos");
+    } else if (rsi >= 52 && rsi <= 68) {
+      score += 0.75;
+      reasons.push("RSI támogatja az emelkedést");
+    } else if (rsi < 45) {
+      score -= 0.5;
+      reasons.push("RSI gyenge");
+    }
+  }
+
+  if (macd !== null) {
+    score += macd >= 0 ? 1 : -1;
+    reasons.push(macd >= 0 ? "Pozitív MACD" : "Negatív MACD");
+  }
+
+  if (momentum15 !== null) {
+    if (momentum15 > 0.12) score += 1;
+    else if (momentum15 < -0.12) score -= 1;
+    reasons.push(`15 perces lendület: ${formatPercent(momentum15)}`);
+  }
+
+  if (dailyClass === "positive") {
+    score += 1;
+    reasons.push("A napi trend is pozitív");
+  } else if (dailyClass === "negative") {
+    score -= 1;
+    reasons.push("A napi trend is negatív");
+  } else {
+    reasons.push("A napi trend nem erősít meg irányt");
+  }
+
+  if (volumeRatio !== null && volumeRatio > 1.3 && minuteChange !== null) {
+    score += minuteChange >= 0 ? 0.5 : -0.5;
+    reasons.push("Átlag feletti forgalom");
+  }
+
+  let signal = "KIVÁRÁS";
+  let className = "neutral";
+  if (score >= 2.5) {
+    signal = "VÉTELI JEL";
+    className = "positive";
+  } else if (score <= -2.5) {
+    signal = "ELADÁSI JEL";
+    className = "negative";
+  }
+
+  const ageMinutes = Math.max(0, (Date.now() - intraday.updatedAt) / 60000);
+  let confidence = Math.round(Math.min(88, 46 + Math.abs(score) * 7));
+  if (ageMinutes > 5) confidence = Math.min(confidence, 45);
+
+  const hasPlan = className !== "neutral" && atr !== null;
+  const isBuy = className === "positive";
+  const entryLow = hasPlan ? currentPrice - atr * (isBuy ? 0.2 : 0.1) : null;
+  const entryHigh = hasPlan ? currentPrice + atr * (isBuy ? 0.1 : 0.2) : null;
+  const stop = hasPlan ? currentPrice + atr * (isBuy ? -1.5 : 1.5) : null;
+  const target = hasPlan ? currentPrice + atr * (isBuy ? 3 : -3) : null;
+
+  const summaries = {
+    positive:
+      "A rövid és napi trend elegendő megerősítést ad egy óvatos vételi forgatókönyvhöz. Csak a jelzett stop mellett mérlegeld.",
+    negative:
+      "A rövid távú technikai kép gyenge. Új vétel most nem indokolt; meglévő pozíciónál a kockázat csökkentése mérlegelhető.",
+    neutral:
+      "Nincs elég egyirányú megerősítés. Most a kivárás fegyelmezettebb döntés, mint egy új pozíció nyitása.",
+  };
+
+  return {
+    signal,
+    className,
+    confidence,
+    currentPrice,
+    minuteChange,
+    momentum15,
+    ema9,
+    ema21,
+    rsi,
+    atr,
+    entryLow,
+    entryHigh,
+    stop,
+    target,
+    riskReward: hasPlan ? 2 : null,
+    reasons,
+    summary: summaries[className],
+    source: intraday.source,
+    updatedAt: intraday.updatedAt,
+    hasIntraday: true,
+  };
+}
+
+function buildDailyTradeFallback(assetKey) {
+  const asset = state.assets[assetKey];
+  const analysis = asset?.analysis;
+  if (!asset || !analysis) return null;
+  const signalMap = {
+    positive: "VÉTELI JEL",
+    negative: "ELADÁSI JEL",
+    neutral: "KIVÁRÁS",
+  };
+  return {
+    signal: signalMap[analysis.className] || "KIVÁRÁS",
+    className: analysis.className,
+    confidence: Math.min(50, analysis.confidence),
+    currentPrice: asset.currentPrice,
+    minuteChange: null,
+    momentum15: null,
+    ema9: null,
+    ema21: null,
+    rsi: analysis.rsi,
+    atr: null,
+    entryLow: null,
+    entryHigh: null,
+    stop: null,
+    target: null,
+    riskReward: null,
+    reasons: ["Nincs 1 perces adat", ...analysis.reasons],
+    summary:
+      "Csak a lassabb napi adatok érhetők el, ezért ez nem alkalmas azonnali belépési döntésre.",
+    source: assetKey === "gold" ? "Napi adat · Twelve Data kulcs szükséges" : "Napi tartalékadat",
+    updatedAt: Date.now(),
+    hasIntraday: false,
+  };
+}
+
+function calculateAtr(candles, period) {
+  if (candles.length <= period) return null;
+  const ranges = candles.slice(-period).map((candle, index, selected) => {
+    const sourceIndex = candles.length - period + index;
+    const previousClose =
+      sourceIndex > 0 ? candles[sourceIndex - 1].close : selected[index].open;
+    return Math.max(
+      candle.high - candle.low,
+      Math.abs(candle.high - previousClose),
+      Math.abs(candle.low - previousClose),
+    );
+  });
+  return average(ranges);
+}
+
+function exponentialMovingAverageSeries(values, period) {
+  const result = Array(values.length).fill(null);
+  if (values.length < period) return result;
+  const multiplier = 2 / (period + 1);
+  let ema = average(values.slice(0, period));
+  result[period - 1] = ema;
+  for (let index = period; index < values.length; index += 1) {
+    ema = (values[index] - ema) * multiplier + ema;
+    result[index] = ema;
+  }
+  return result;
+}
+
 function analyzeSentiment(articles) {
   if (!articles.length) return { score: 0, label: "Semleges" };
   const scores = articles.map((article) => scoreText(article.title));
@@ -673,6 +961,212 @@ function createGradient(canvas, color) {
   gradient.addColorStop(0, `${color}33`);
   gradient.addColorStop(1, `${color}00`);
   return gradient;
+}
+
+function selectTradeAsset(assetKey) {
+  state.selectedTradeAsset = assetKey;
+  document.querySelectorAll("[data-trade-asset]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.tradeAsset === assetKey);
+  });
+  renderTradingCenter();
+}
+
+function renderTradingCenter() {
+  const decisions = {
+    bitcoin: analyzeIntraday("bitcoin"),
+    gold: analyzeIntraday("gold"),
+  };
+  updateDecisionShortcut("bitcoin", decisions.bitcoin);
+  updateDecisionShortcut("gold", decisions.gold);
+
+  const assetKey = state.selectedTradeAsset;
+  const decision = decisions[assetKey];
+  const name = assetKey === "bitcoin" ? "Bitcoin" : "Arany";
+  const status = document.getElementById("intradayStatus");
+  const empty = document.getElementById("intradayEmpty");
+  const canvas = document.getElementById("intradayChart");
+  document.getElementById("tradeAssetName").textContent = `${name} rövid távú jelzés`;
+  document.getElementById("intradayChartTitle").textContent = `${name} · 1 perces`;
+
+  if (!decision) {
+    document.getElementById("tradeSignal").textContent = "NINCS ADAT";
+    document.getElementById("tradeSignal").className = "trade-signal neutral";
+    document.getElementById("tradeSummary").textContent =
+      "A technikai jelzéshez szükséges adatok most nem érhetők el.";
+    status.className = "live-data-state warning";
+    status.querySelector("strong").textContent = "Nincs intraday adat";
+    status.querySelector("small").textContent = "Próbáld újra később";
+    renderIntradayChart(assetKey, null);
+    return;
+  }
+
+  const signal = document.getElementById("tradeSignal");
+  signal.textContent = decision.signal;
+  signal.className = `trade-signal ${decision.className}`;
+  document.getElementById("tradePrice").textContent = formatMoney(
+    convertCurrency(decision.currentPrice),
+  );
+  const minuteChange = document.getElementById("tradeMinuteChange");
+  minuteChange.textContent =
+    decision.minuteChange === null ? "1p: nincs adat" : `1p: ${formatPercent(decision.minuteChange)}`;
+  minuteChange.className = valueClass(decision.minuteChange);
+  document.getElementById("tradeConfidence").textContent = `${decision.confidence}%`;
+  document.getElementById("tradeConfidenceBar").style.width = `${decision.confidence}%`;
+  document.getElementById("tradeSummary").textContent = decision.summary;
+  document.getElementById("tradeEma").textContent =
+    decision.ema9 === null || decision.ema21 === null
+      ? "–"
+      : decision.ema9 >= decision.ema21
+        ? "Emelkedő"
+        : "Csökkenő";
+  document.getElementById("tradeRsi").textContent =
+    decision.rsi === null ? "–" : formatNumber(decision.rsi, 1);
+  document.getElementById("tradeMomentum").textContent =
+    decision.momentum15 === null ? "–" : formatPercent(decision.momentum15);
+  document.getElementById("tradeAtr").textContent =
+    decision.atr === null ? "–" : formatMoney(convertCurrency(decision.atr));
+  document.getElementById("tradeEntry").textContent =
+    decision.entryLow === null
+      ? "Nincs aktív belépő"
+      : `${formatMoney(convertCurrency(decision.entryLow))} – ${formatMoney(convertCurrency(decision.entryHigh))}`;
+  document.getElementById("tradeStop").textContent =
+    decision.stop === null ? "–" : formatMoney(convertCurrency(decision.stop));
+  document.getElementById("tradeTarget").textContent =
+    decision.target === null ? "–" : formatMoney(convertCurrency(decision.target));
+  document.getElementById("tradeRiskReward").textContent =
+    decision.riskReward === null ? "–" : `1 : ${formatNumber(decision.riskReward, 1)}`;
+  document.getElementById("tradeReasons").replaceChildren(
+    ...decision.reasons.slice(0, 6).map((reason) => {
+      const item = document.createElement("span");
+      item.textContent = reason;
+      return item;
+    }),
+  );
+  document.getElementById("intradaySource").textContent = decision.source;
+
+  status.className = `live-data-state ${decision.hasIntraday ? "live" : "warning"}`;
+  status.querySelector("strong").textContent = decision.hasIntraday
+    ? "1 perces adat aktív"
+    : "Lassabb adat";
+  status.querySelector("small").textContent = decision.hasIntraday
+    ? "Automatikus frissítés"
+    : "API-kulcs vagy forrás szükséges";
+  empty.hidden = decision.hasIntraday;
+  canvas.hidden = !decision.hasIntraday;
+  renderIntradayChart(assetKey, decision.hasIntraday ? state.intraday[assetKey] : null);
+}
+
+function updateDecisionShortcut(assetKey, decision) {
+  const element = document.getElementById(
+    assetKey === "bitcoin" ? "decisionBtcSignal" : "decisionGoldSignal",
+  );
+  if (!element) return;
+  element.textContent = decision?.signal || "Nincs adat";
+  element.className = decision?.className || "neutral";
+}
+
+function renderIntradayChart(assetKey, intraday) {
+  state.intradayChart?.destroy();
+  state.intradayChart = null;
+  if (!intraday || typeof Chart === "undefined") {
+    document.getElementById("intradayUpdated").textContent =
+      "Az intraday diagram jelenleg nem elérhető.";
+    return;
+  }
+
+  const canvas = document.getElementById("intradayChart");
+  const closes = intraday.candles.map((candle) => candle.close);
+  const convertedCloses = closes.map(convertCurrency);
+  const ema9 = exponentialMovingAverageSeries(closes, 9).map((value) =>
+    value === null ? null : convertCurrency(value),
+  );
+  const ema21 = exponentialMovingAverageSeries(closes, 21).map((value) =>
+    value === null ? null : convertCurrency(value),
+  );
+  const priceColor = assetKey === "bitcoin" ? "#e2863b" : "#b98a35";
+  const labels = intraday.candles.map((candle) =>
+    new Intl.DateTimeFormat("hu-HU", {
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(candle.time),
+  );
+
+  state.intradayChart = new Chart(canvas, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "Ár",
+          data: convertedCloses,
+          borderColor: priceColor,
+          borderWidth: 2,
+          pointRadius: 0,
+          tension: 0.18,
+        },
+        {
+          label: "EMA 9",
+          data: ema9,
+          borderColor: "#286849",
+          borderWidth: 1.2,
+          pointRadius: 0,
+          tension: 0.18,
+        },
+        {
+          label: "EMA 21",
+          data: ema21,
+          borderColor: "#b98a35",
+          borderDash: [5, 4],
+          borderWidth: 1.2,
+          pointRadius: 0,
+          tension: 0.18,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { intersect: false, mode: "index" },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (item) => `${item.dataset.label}: ${formatMoney(item.raw)}`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: { color: "#8a8f8b", maxTicksLimit: 8, font: { size: 9 } },
+        },
+        y: {
+          position: "right",
+          grid: { color: "rgba(111, 119, 113, 0.12)" },
+          ticks: {
+            color: "#8a8f8b",
+            font: { size: 9 },
+            callback: (value) => formatNumber(value, state.settings.currency === "HUF" ? 0 : 2),
+          },
+        },
+      },
+    },
+  });
+  document.getElementById("intradayUpdated").textContent =
+    `Utolsó 1 perces gyertya: ${new Intl.DateTimeFormat("hu-HU", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }).format(intraday.updatedAt)} · ${intraday.candles.length} gyertya`;
+}
+
+async function refreshBitcoinIntraday() {
+  try {
+    state.intraday.bitcoin = await fetchBitcoinIntraday();
+    if (state.selectedTradeAsset === "bitcoin") renderTradingCenter();
+  } catch {
+    // Keep the last valid intraday series during a temporary source failure.
+  }
 }
 
 function renderIndicators(assetKey) {
@@ -887,9 +1381,11 @@ function applySettings() {
   document.getElementById("activeCurrency").textContent = currency;
   document.getElementById("riskCapitalLabel").textContent = `Tőke (${currency})`;
   clearInterval(state.refreshTimer);
+  clearInterval(state.intradayTimer);
   if (state.settings.refreshMinutes > 0) {
     state.refreshTimer = setInterval(loadDashboard, state.settings.refreshMinutes * 60000);
   }
+  state.intradayTimer = setInterval(refreshBitcoinIntraday, 60000);
 }
 
 function openSettings() {
@@ -1168,11 +1664,25 @@ function buildAnalysisPrompt() {
       `algoritmikus jelzés: ${analysis.signal} (${analysis.confidence}% becsült bizalom)`,
     ].join(", ");
   });
+  const intradayLines = ["bitcoin", "gold"].map((key) => {
+    const decision = analyzeIntraday(key);
+    if (!decision) return `${key} intraday: nincs adat`;
+    return [
+      `${key} intraday jelzés: ${decision.signal}`,
+      `bizalom: ${decision.confidence}%`,
+      `1 perces változás: ${decision.minuteChange === null ? "nincs adat" : formatPercent(decision.minuteChange)}`,
+      `15 perces momentum: ${decision.momentum15 === null ? "nincs adat" : formatPercent(decision.momentum15)}`,
+      `RSI: ${decision.rsi?.toFixed(1) ?? "nincs adat"}`,
+      `ATR: ${decision.atr?.toFixed(2) ?? "nincs adat"}`,
+      `adatforrás: ${decision.source}`,
+    ].join(", ");
+  });
 
   const headlines = state.news.slice(0, 8).map((article) => `- ${article.title}`).join("\n");
   return `Elemezd az alábbi Bitcoin- és aranypiaci pillanatképet magyarul.
 
 ${assetLines.join("\n")}
+${intradayLines.join("\n")}
 Hírek egyszerű kulcsszavas hangulata: ${state.sentiment.label}
 Portfólióelemek száma: ${state.portfolio.length}
 

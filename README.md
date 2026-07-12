@@ -6,10 +6,14 @@ indikátorokat, friss híreket, portfóliókövetést és kockázatkezelési esz
 ## Funkciók
 
 - 7, 30, 90 és 365 napos Bitcoin-időtávok
+- 1 perces Bitcoin intraday diagram Kraken-adatokkal és percenkénti frissítéssel
+- Opcionális 1 perces XAU/USD diagram Twelve Data API-kulccsal
 - Aktuális aranyár és opcionális Twelve Data történeti adatok
 - USD, EUR és HUF megjelenítés
 - RSI(14), SMA7/SMA21, momentum, MACD, Bollinger-sáv és árszintek
-- Vétel / tartás / eladás algoritmikus jelzés
+- Kiemelt vétel / kivárás / eladás technikai döntési központ
+- EMA9/EMA21, intraday RSI, MACD, ATR és 15 perces momentum
+- Feltételes belépési zóna, stop-loss, célár és kockázat/hozam terv
 - GDELT hírek egyszerű kulcsszavas hangulatelemzése
 - Helyben tárolt portfólió és nyereség/veszteség számítás
 - Pozícióméret- és kockázat/hozam kalkulátor
@@ -23,6 +27,7 @@ indikátorokat, friss híreket, portfóliókövetést és kockázatkezelési esz
 ## Ingyenes adatforrások
 
 - [CoinGecko](https://www.coingecko.com/en/api) – Bitcoin
+- [Kraken](https://docs.kraken.com/api/) – 1 perces Bitcoin OHLC-adatok
 - [Gold API](https://gold-api.com/) – aktuális aranyár
 - [Free Gold API](https://freegoldapi.com/) – korábbi aranyárak
 - [GDELT Project](https://www.gdeltproject.org/) – hírek
@@ -31,6 +36,7 @@ indikátorokat, friss híreket, portfóliókövetést és kockázatkezelési esz
 
 Az adatforrások korlátozhatják a lekérések számát, késhetnek vagy átmenetileg
 elérhetetlenné válhatnak. Az oldal ilyenkor részleges adatokat vagy hibaüzenetet mutat.
+Az intraday jelzés technikai forgatókönyv, nem automatikus kereskedési utasítás.
 
 ## GitHub Pages
 

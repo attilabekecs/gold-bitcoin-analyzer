@@ -36,6 +36,100 @@
     </header>
 
     <main>
+      <section class="decision-center" aria-labelledby="decisionTitle">
+        <div class="decision-header">
+          <div>
+            <p class="eyebrow">ÉLŐ KERESKEDÉSI KÖZPONT</p>
+            <h1 id="decisionTitle">Vétel, kivárás vagy eladás?</h1>
+            <p>
+              Rövid távú technikai jelzés 1 perces adatok, trend és kockázati szintek alapján.
+            </p>
+          </div>
+          <div id="intradayStatus" class="live-data-state pending">
+            <span></span>
+            <div><strong>Adatok betöltése</strong><small>1 perces nézet</small></div>
+          </div>
+        </div>
+
+        <div class="decision-switcher" role="tablist" aria-label="Kereskedési eszköz">
+          <button class="decision-asset active" data-trade-asset="bitcoin" type="button">
+            <span><b>₿</b> Bitcoin</span>
+            <strong id="decisionBtcSignal" class="neutral">Elemzés…</strong>
+          </button>
+          <button class="decision-asset" data-trade-asset="gold" type="button">
+            <span><b>Au</b> Arany</span>
+            <strong id="decisionGoldSignal" class="neutral">Elemzés…</strong>
+          </button>
+        </div>
+
+        <div class="decision-grid">
+          <article class="trade-call">
+            <div class="trade-call-heading">
+              <div>
+                <span id="tradeAssetName">Bitcoin rövid távú jelzés</span>
+                <strong id="tradeSignal" class="trade-signal neutral">Elemzés…</strong>
+              </div>
+              <div class="trade-price">
+                <strong id="tradePrice">–</strong>
+                <span id="tradeMinuteChange">1p: –</span>
+              </div>
+            </div>
+
+            <div class="confidence-block">
+              <div><span>Jelzés megbízhatósága</span><strong id="tradeConfidence">–</strong></div>
+              <div class="confidence-track"><span id="tradeConfidenceBar"></span></div>
+            </div>
+
+            <p id="tradeSummary" class="trade-summary">
+              A rövid távú technikai adatok betöltése folyamatban.
+            </p>
+
+            <div class="trade-metrics">
+              <div><span>EMA 9 / 21</span><strong id="tradeEma">–</strong></div>
+              <div><span>RSI (14)</span><strong id="tradeRsi">–</strong></div>
+              <div><span>15 perces lendület</span><strong id="tradeMomentum">–</strong></div>
+              <div><span>ATR volatilitás</span><strong id="tradeAtr">–</strong></div>
+            </div>
+
+            <div class="trade-plan">
+              <div><span>Belépési zóna</span><strong id="tradeEntry">–</strong></div>
+              <div><span>Stop-loss</span><strong id="tradeStop">–</strong></div>
+              <div><span>Célár</span><strong id="tradeTarget">–</strong></div>
+              <div><span>Kockázat / hozam</span><strong id="tradeRiskReward">–</strong></div>
+            </div>
+            <div id="tradeReasons" class="trade-reasons"></div>
+          </article>
+
+          <article class="intraday-panel">
+            <div class="intraday-heading">
+              <div>
+                <span>INTRADAY ÁRFOLYAM</span>
+                <h2 id="intradayChartTitle">Bitcoin · 1 perces</h2>
+              </div>
+              <span id="intradaySource" class="source-chip">–</span>
+            </div>
+            <div class="intraday-legend">
+              <span><i class="legend-price"></i> Ár</span>
+              <span><i class="legend-fast"></i> EMA 9</span>
+              <span><i class="legend-slow"></i> EMA 21</span>
+            </div>
+            <div class="intraday-chart-wrap">
+              <canvas id="intradayChart"></canvas>
+              <div id="intradayEmpty" class="intraday-empty" hidden>
+                <strong>Nincs 1 perces adat</strong>
+                <span>Az arany intraday nézetéhez adj meg Twelve Data API-kulcsot.</span>
+              </div>
+            </div>
+            <p id="intradayUpdated" class="intraday-updated">Frissítés folyamatban…</p>
+          </article>
+        </div>
+
+        <p class="decision-disclaimer">
+          Technikai, oktatási célú jelzés, nem személyre szabott befektetési tanács.
+          A stop-loss sem garantálja a veszteség korlátozását.
+        </p>
+      </section>
+
       <section class="hero">
         <div>
           <p class="eyebrow">INGYENES PIACI IRÁNYTŰ</p>
