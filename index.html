@@ -39,8 +39,8 @@
     <link rel="stylesheet" href="styles.css?v=20260712-22" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
     <script src="assets-catalog.js?v=20260712-22" defer></script>
-    <script src="virtual-bot.js?v=20260712-22" defer></script>
-    <script src="bot-lab.js?v=20260712-22" defer></script>
+    <script src="virtual-bot.js?v=20260712-23" defer></script>
+    <script src="bot-lab.js?v=20260712-23" defer></script>
     <script src="practice-lab.js?v=20260712-22" defer></script>
     <script src="app.js?v=20260712-22" defer></script>
     <script src="strategy-engine.js?v=20260712-22" defer></script>
@@ -468,7 +468,7 @@
             </label>
             <label class="toggle-switch bot-toggle learn-toggle">
               <span class="toggle-label">Auto-tanulás</span>
-              <input id="botAutoLearn" type="checkbox" />
+              <input id="botAutoLearn" type="checkbox" checked />
               <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
             </label>
           </div>
@@ -556,21 +556,21 @@
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Max. nyitott pozíció</span>
-                    <output for="botMaxPositions" id="botMaxPositionsOut">4</output>
+                    <output for="botMaxPositions" id="botMaxPositionsOut">2</output>
                   </span>
-                  <input id="botMaxPositions" type="range" min="1" max="10" step="1" value="4" />
+                  <input id="botMaxPositions" type="range" min="1" max="10" step="1" value="2" />
                 </label>
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Cooldown (perc)</span>
-                    <output for="botCooldown" id="botCooldownOut">20</output>
+                    <output for="botCooldown" id="botCooldownOut">30</output>
                   </span>
-                  <input id="botCooldown" type="range" min="5" max="120" step="5" value="20" />
+                  <input id="botCooldown" type="range" min="5" max="120" step="5" value="30" />
                 </label>
                 <label>Primér idősík
                   <select id="botPrimaryInterval">
                     <option value="1">1 perc</option>
-                    <option value="5">5 perc</option>
+                    <option value="5" selected>5 perc</option>
                     <option value="15">15 perc</option>
                     <option value="60">1 óra</option>
                   </select>
@@ -604,23 +604,23 @@
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Pro: magas pontszám küszöb (azonnali belépés)</span>
-                    <output for="botProHighScore" id="botProHighScoreOut">75</output>
+                    <output for="botProHighScore" id="botProHighScoreOut">85</output>
                   </span>
-                  <input id="botProHighScore" type="range" min="60" max="95" step="5" value="75" />
+                  <input id="botProHighScore" type="range" min="60" max="95" step="5" value="85" />
                 </label>
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Pro: rövid pihenő nyertes után (perc)</span>
-                    <output for="botProWinCooldown" id="botProWinCooldownOut">2</output>
+                    <output for="botProWinCooldown" id="botProWinCooldownOut">5</output>
                   </span>
-                  <input id="botProWinCooldown" type="range" min="0" max="10" step="1" value="2" />
+                  <input id="botProWinCooldown" type="range" min="0" max="10" step="1" value="5" />
                 </label>
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Pro: min. bizalom padló (%)</span>
-                    <output for="botProConfidenceFloor" id="botProConfidenceFloorOut">45</output>
+                    <output for="botProConfidenceFloor" id="botProConfidenceFloorOut">55</output>
                   </span>
-                  <input id="botProConfidenceFloor" type="range" min="40" max="60" step="5" value="45" />
+                  <input id="botProConfidenceFloor" type="range" min="40" max="60" step="5" value="55" />
                 </label>
                 <fieldset class="bot-asset-fieldset">
                   <legend>Követett eszközök <span class="helper-text inline-helper">(piaci módban inaktív)</span></legend>
@@ -639,22 +639,22 @@
                   <input id="botRsiPeriod" type="number" min="5" max="30" step="1" value="14" />
                 </label>
                 <label>LONG RSI min
-                  <input id="botRsiLongMin" type="number" min="20" max="70" step="1" value="52" />
+                  <input id="botRsiLongMin" type="number" min="20" max="70" step="1" value="54" />
                 </label>
                 <label>LONG RSI max
-                  <input id="botRsiLongMax" type="number" min="30" max="90" step="1" value="68" />
+                  <input id="botRsiLongMax" type="number" min="30" max="90" step="1" value="65" />
                 </label>
                 <label>SHORT RSI min
-                  <input id="botRsiShortMin" type="number" min="20" max="60" step="1" value="32" />
+                  <input id="botRsiShortMin" type="number" min="20" max="60" step="1" value="35" />
                 </label>
                 <label>SHORT RSI max
-                  <input id="botRsiShortMax" type="number" min="30" max="70" step="1" value="48" />
+                  <input id="botRsiShortMax" type="number" min="30" max="70" step="1" value="46" />
                 </label>
                 <label>RSI túlvett
-                  <input id="botRsiOverbought" type="number" min="60" max="95" step="1" value="72" />
+                  <input id="botRsiOverbought" type="number" min="60" max="95" step="1" value="70" />
                 </label>
                 <label>RSI túladott
-                  <input id="botRsiOversold" type="number" min="5" max="40" step="1" value="28" />
+                  <input id="botRsiOversold" type="number" min="5" max="40" step="1" value="30" />
                 </label>
                 <label>Momentum ablak (perc)
                   <input id="botMomentumLookback" type="number" min="3" max="60" step="1" value="15" />
@@ -662,23 +662,44 @@
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Momentum küszöb (%)</span>
-                    <output for="botMomentumThreshold" id="botMomentumThresholdOut">0.12</output>
+                    <output for="botMomentumThreshold" id="botMomentumThresholdOut">0.18</output>
                   </span>
-                  <input id="botMomentumThreshold" type="range" min="0.03" max="0.5" step="0.01" value="0.12" />
+                  <input id="botMomentumThreshold" type="range" min="0.03" max="0.5" step="0.01" value="0.18" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>LONG momentum min (%)</span>
+                    <output for="botLongMomentumMin" id="botLongMomentumMinOut">0.15</output>
+                  </span>
+                  <input id="botLongMomentumMin" type="range" min="0.03" max="0.5" step="0.01" value="0.15" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>SHORT momentum min (%)</span>
+                    <output for="botShortMomentumMin" id="botShortMomentumMinOut">0.15</output>
+                  </span>
+                  <input id="botShortMomentumMin" type="range" min="0.03" max="0.5" step="0.01" value="0.15" />
                 </label>
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Jelzésküszöb (pont)</span>
-                    <output for="botSignalScore" id="botSignalScoreOut">2.5</output>
+                    <output for="botSignalScore" id="botSignalScoreOut">3</output>
                   </span>
-                  <input id="botSignalScore" type="range" min="1.5" max="4" step="0.25" value="2.5" />
+                  <input id="botSignalScore" type="range" min="1.5" max="4" step="0.25" value="3" />
                 </label>
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Min. megbízhatóság (%)</span>
-                    <output for="botMinConfidence" id="botMinConfidenceOut">55</output>
+                    <output for="botMinConfidence" id="botMinConfidenceOut">65</output>
                   </span>
-                  <input id="botMinConfidence" type="range" min="40" max="90" step="1" value="55" />
+                  <input id="botMinConfidence" type="range" min="40" max="90" step="1" value="65" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Min. lehetőség pontszám</span>
+                    <output for="botMinOpportunityScore" id="botMinOpportunityScoreOut">85</output>
+                  </span>
+                  <input id="botMinOpportunityScore" type="range" min="60" max="120" step="5" value="85" />
                 </label>
                 <label class="toggle-switch">
                   <span class="toggle-label">MACD megerősítés</span>
@@ -692,7 +713,12 @@
                 </label>
                 <label class="toggle-switch wide-check">
                   <span class="toggle-label">Idősík-egyezés kötelező</span>
-                  <input id="botRequireAlignment" type="checkbox" />
+                  <input id="botRequireAlignment" type="checkbox" checked />
+                  <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                </label>
+                <label class="toggle-switch wide-check">
+                  <span class="toggle-label">Napi trend ellen tiltás</span>
+                  <input id="botBlockAgainstDailyTrend" type="checkbox" checked />
                   <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
                 </label>
                 <label>Min. egyező idősíkok
@@ -701,9 +727,9 @@
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Min. egyezési arány (%)</span>
-                    <output for="botMinAlignmentRatio" id="botMinAlignmentRatioOut">75</output>
+                    <output for="botMinAlignmentRatio" id="botMinAlignmentRatioOut">80</output>
                   </span>
-                  <input id="botMinAlignmentRatio" type="range" min="0.5" max="1" step="0.05" value="0.75" data-display-scale="100" />
+                  <input id="botMinAlignmentRatio" type="range" min="0.5" max="1" step="0.05" value="0.8" data-display-scale="100" />
                 </label>
               </div>
 
@@ -711,27 +737,92 @@
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Kockázat / ügylet (%)</span>
-                    <output for="botRiskPercent" id="botRiskPercentOut">1</output>
+                    <output for="botRiskPercent" id="botRiskPercentOut">1.5</output>
                   </span>
-                  <input id="botRiskPercent" type="range" min="0.1" max="5" step="0.1" value="1" />
+                  <input id="botRiskPercent" type="range" min="0.1" max="5" step="0.1" value="1.5" />
                 </label>
                 <label>ATR periódus
                   <input id="botAtrPeriod" type="number" min="5" max="50" step="1" value="14" />
                 </label>
                 <label class="control-slider">
                   <span class="control-header">
-                    <span>ATR stop szorzó</span>
-                    <output for="botAtrStopMultiplier" id="botAtrStopMultiplierOut">1.5</output>
+                    <span>ATR stop szorzó (alap)</span>
+                    <output for="botAtrStopMultiplier" id="botAtrStopMultiplierOut">2.5</output>
                   </span>
-                  <input id="botAtrStopMultiplier" type="range" min="0.5" max="5" step="0.25" value="1.5" />
+                  <input id="botAtrStopMultiplier" type="range" min="0.5" max="5" step="0.25" value="2.5" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>ATR stop LONG</span>
+                    <output for="botAtrStopMultiplierLong" id="botAtrStopMultiplierLongOut">2.5</output>
+                  </span>
+                  <input id="botAtrStopMultiplierLong" type="range" min="0.5" max="5" step="0.25" value="2.5" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>ATR stop SHORT</span>
+                    <output for="botAtrStopMultiplierShort" id="botAtrStopMultiplierShortOut">2.75</output>
+                  </span>
+                  <input id="botAtrStopMultiplierShort" type="range" min="0.5" max="5" step="0.25" value="2.75" />
                 </label>
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Célár (R)</span>
-                    <output for="botRewardRatio" id="botRewardRatioOut">2</output>
+                    <output for="botRewardRatio" id="botRewardRatioOut">2.5</output>
                   </span>
-                  <input id="botRewardRatio" type="range" min="1" max="5" step="0.25" value="2" />
+                  <input id="botRewardRatio" type="range" min="1" max="5" step="0.25" value="2.5" />
                 </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Max. napi veszteség (%)</span>
+                    <output for="botMaxDailyLoss" id="botMaxDailyLossOut">5</output>
+                  </span>
+                  <input id="botMaxDailyLoss" type="range" min="1" max="15" step="0.5" value="5" />
+                </label>
+                <label class="toggle-switch wide-check">
+                  <span class="toggle-label">Követő stop (trailing)</span>
+                  <input id="botUseTrailingStop" type="checkbox" checked />
+                  <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Követő ATR szorzó</span>
+                    <output for="botTrailingAtrMultiplier" id="botTrailingAtrMultiplierOut">1.5</output>
+                  </span>
+                  <input id="botTrailingAtrMultiplier" type="range" min="0.5" max="4" step="0.25" value="1.5" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Követő aktiválás (R)</span>
+                    <output for="botTrailingActivationR" id="botTrailingActivationROut">0.75</output>
+                  </span>
+                  <input id="botTrailingActivationR" type="range" min="0.25" max="2" step="0.25" value="0.75" />
+                </label>
+                <label class="toggle-switch wide-check">
+                  <span class="toggle-label">Részleges profitvétel</span>
+                  <input id="botPartialTakeProfit" type="checkbox" checked />
+                  <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Részleges TP (R)</span>
+                    <output for="botPartialTakeProfitR" id="botPartialTakeProfitROut">1</output>
+                  </span>
+                  <input id="botPartialTakeProfitR" type="range" min="0.5" max="3" step="0.25" value="1" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Részleges TP (%)</span>
+                    <output for="botPartialTakeProfitPercent" id="botPartialTakeProfitPercentOut">50</output>
+                  </span>
+                  <input id="botPartialTakeProfitPercent" type="range" min="25" max="75" step="5" value="50" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Max. pozíció életkor (perc)</span>
+                    <output for="botMaxPositionAge" id="botMaxPositionAgeOut">120</output>
+                  </span>
+                  <input id="botMaxPositionAge" type="range" min="30" max="480" step="15" value="120" />
               </div>
 
               <div id="botConfigPanelExecution" class="bot-config-panel-group" data-bot-config-panel="execution" role="tabpanel" hidden>
@@ -748,6 +839,20 @@
                   <span class="toggle-label">Kereskedési óra szűrő</span>
                   <input id="botUseTradingHours" type="checkbox" />
                   <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Fordulás min. bizalom (%)</span>
+                    <output for="botReversalMinConfidence" id="botReversalMinConfidenceOut">72</output>
+                  </span>
+                  <input id="botReversalMinConfidence" type="range" min="55" max="90" step="5" value="72" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Fordulás min. pontszám</span>
+                    <output for="botReversalMinScore" id="botReversalMinScoreOut">3</output>
+                  </span>
+                  <input id="botReversalMinScore" type="range" min="2" max="4" step="0.25" value="3" />
                 </label>
                 <label>Kezdő óra (helyi)
                   <input id="botTradingHoursStart" type="number" min="0" max="23" step="1" value="8" />
