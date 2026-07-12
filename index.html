@@ -14,16 +14,24 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=20260712-3" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
-    <script src="app.js" defer></script>
+    <script src="app.js?v=20260712-3" defer></script>
   </head>
-  <body>
+  <body data-view="overview">
     <header class="site-header">
       <a class="brand" href="#" aria-label="Kezdőlap">
         <span class="brand-mark">A&S</span>
         <span>Aurum & Satoshi</span>
       </a>
+      <nav class="main-nav" aria-label="Fő navigáció">
+        <button class="nav-link active" data-view-target="overview" type="button">Áttekintés</button>
+        <button class="nav-link" data-view-target="bitcoin" type="button">Bitcoin</button>
+        <button class="nav-link" data-view-target="gold" type="button">Arany</button>
+        <button class="nav-link" data-view-target="news" type="button">Hírek</button>
+        <button class="nav-link" data-view-target="portfolio" type="button">Portfólió</button>
+        <button class="nav-link" data-view-target="ai" type="button">AI</button>
+      </nav>
       <div class="header-actions">
         <span id="marketStatus" class="status"><span></span> Adatok betöltése</span>
         <button id="refreshButton" class="icon-button" type="button" aria-label="Adatok frissítése">
@@ -36,7 +44,7 @@
     </header>
 
     <main>
-      <section class="decision-center" aria-labelledby="decisionTitle">
+      <section class="decision-center" data-pages="overview bitcoin gold" aria-labelledby="decisionTitle">
         <div class="decision-header">
           <div>
             <p class="eyebrow">ÉLŐ KERESKEDÉSI KÖZPONT</p>
@@ -124,13 +132,28 @@
           </article>
         </div>
 
+        <div id="technicalMiniCharts" class="technical-mini-grid">
+          <article>
+            <div><span>RSI (14)</span><strong id="miniRsiValue">–</strong></div>
+            <div class="mini-chart-wrap"><canvas id="rsiChart"></canvas></div>
+          </article>
+          <article>
+            <div><span>MACD lendület</span><strong id="miniMacdValue">–</strong></div>
+            <div class="mini-chart-wrap"><canvas id="macdChart"></canvas></div>
+          </article>
+          <article>
+            <div><span>Forgalom</span><strong id="miniVolumeValue">–</strong></div>
+            <div class="mini-chart-wrap"><canvas id="volumeChart"></canvas></div>
+          </article>
+        </div>
+
         <p class="decision-disclaimer">
           Technikai, oktatási célú jelzés, nem személyre szabott befektetési tanács.
           A stop-loss sem garantálja a veszteség korlátozását.
         </p>
       </section>
 
-      <section class="hero">
+      <section class="hero" data-pages="overview">
         <div>
           <p class="eyebrow">INGYENES PIACI IRÁNYTŰ</p>
           <h1>Arany és Bitcoin.<br /><em>Tisztább döntések.</em></h1>
@@ -147,7 +170,7 @@
 
       <div id="errorBanner" class="error-banner" role="alert" hidden></div>
 
-      <div class="market-toolbar">
+      <div class="market-toolbar" data-pages="overview bitcoin gold">
         <div>
           <span>Megjelenített pénznem</span>
           <strong id="activeCurrency">USD</strong>
@@ -160,7 +183,7 @@
         </div>
       </div>
 
-      <section class="asset-grid" aria-label="Eszközök áttekintése">
+      <section class="asset-grid" data-pages="overview bitcoin gold" aria-label="Eszközök áttekintése">
         <article class="asset-card bitcoin-card" data-asset="bitcoin">
           <div class="asset-heading">
             <div class="asset-icon bitcoin-icon">₿</div>
@@ -216,7 +239,7 @@
         </article>
       </section>
 
-      <section class="insights-grid">
+      <section class="insights-grid" data-pages="overview bitcoin gold">
         <article class="panel indicators-panel">
           <div class="section-heading">
             <div>
@@ -278,7 +301,7 @@
         </article>
       </section>
 
-      <section class="pro-section">
+      <section class="pro-section" data-pages="portfolio">
         <div class="section-heading">
           <div>
             <p class="eyebrow">SAJÁT PÉNZÜGYI KÖZPONT</p>
@@ -361,7 +384,7 @@
         </div>
       </section>
 
-      <section class="workspace-grid alerts-grid">
+      <section class="workspace-grid alerts-grid" data-pages="portfolio">
         <article class="panel">
           <div class="section-heading compact-heading">
             <div>
@@ -402,7 +425,7 @@
         </article>
       </section>
 
-      <section class="macro-section">
+      <section class="macro-section" data-pages="news">
         <div class="section-heading">
           <div>
             <p class="eyebrow">MAKROGAZDASÁGI HÁTTÉR</p>
@@ -417,7 +440,7 @@
         </div>
       </section>
 
-      <section class="news-section">
+      <section class="news-section" data-pages="news">
         <div class="section-heading">
           <div>
             <p class="eyebrow">FRISS HÍREK</p>
@@ -436,7 +459,7 @@
         </div>
       </section>
 
-      <section class="chatgpt-panel">
+      <section class="chatgpt-panel" data-pages="ai">
         <div>
           <p class="eyebrow">MÉLYEBB ELEMZÉS</p>
           <h2>Vidd tovább ChatGPT-be</h2>
@@ -457,7 +480,7 @@
         <div id="aiResult" class="ai-result" hidden></div>
       </section>
 
-      <section class="disclaimer">
+      <section class="disclaimer" data-pages="overview bitcoin gold news portfolio ai">
         <strong>Fontos kockázati figyelmeztetés</strong>
         <p>
           Az oldal kizárólag oktatási és tájékoztatási célú. Nem minősül befektetési

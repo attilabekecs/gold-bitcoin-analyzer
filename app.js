@@ -7,8 +7,10 @@ const state = {
   sentiment: { score: 0, label: "Semleges" },
   selectedAsset: "bitcoin",
   selectedTradeAsset: "bitcoin",
+  activeView: "overview",
   charts: {},
   intradayChart: null,
+  technicalCharts: {},
   intraday: {
     bitcoin: null,
     gold: null,
@@ -26,6 +28,7 @@ const state = {
   },
   refreshTimer: null,
   intradayTimer: null,
+  loadSequence: 0,
 };
 
 const endpoints = {
@@ -75,6 +78,19 @@ document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll("[data-trade-asset]").forEach((button) => {
     button.addEventListener("click", () => selectTradeAsset(button.dataset.tradeAsset));
   });
+  document.querySelectorAll("[data-view-target]").forEach((button) => {
+    button.addEventListener("click", () => setActiveView(button.dataset.viewTarget));
+  });
+  document.querySelector(".brand").addEventListener("click", (event) => {
+    event.preventDefault();
+    setActiveView("overview");
+  });
+  const initialView = ["overview", "bitcoin", "gold", "news", "portfolio", "ai"].includes(
+    window.location.hash.slice(1),
+  )
+    ? window.location.hash.slice(1)
+    : "overview";
+  setActiveView(initialView, false);
   applySettings();
   renderPortfolio();
   renderAlerts();
@@ -83,87 +99,137 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 async function loadDashboard() {
+  const sequence = ++state.loadSequence;
   setLoading(true);
   hideError();
-
-  const [
-    bitcoinResult,
-    goldResult,
-    newsResult,
-    ratesResult,
-    bitcoinIntradayResult,
-    goldIntradayResult,
-  ] = await Promise.allSettled([
-    fetchBitcoin(),
-    fetchGold(),
-    fetchNews(),
-    fetchExchangeRates(),
-    fetchBitcoinIntraday(),
-    fetchGoldIntraday(),
-  ]);
-
   const errors = [];
-
-  if (bitcoinResult.status === "fulfilled") {
-    state.assets.bitcoin = bitcoinResult.value;
-    state.dataHealth.bitcoin = "ok";
-  } else {
-    errors.push("A Bitcoin-adatok most nem érhetők el.");
-    state.assets.bitcoin = null;
-    state.dataHealth.bitcoin = "error";
-  }
-
-  if (goldResult.status === "fulfilled") {
-    state.assets.gold = goldResult.value;
-    state.dataHealth.gold = goldResult.value.warning ? "warning" : "ok";
-  } else {
-    errors.push("Az aranyadatok most nem érhetők el.");
-    state.assets.gold = null;
-    state.dataHealth.gold = "error";
-  }
-
-  if (newsResult.status === "fulfilled") {
-    state.news = newsResult.value;
-    state.sentiment = analyzeSentiment(state.news);
-    state.dataHealth.news = state.news.length ? "ok" : "warning";
-  } else {
-    errors.push("A hírfolyam most nem érhető el.");
-    state.news = [];
-    state.sentiment = { score: 0, label: "Semleges" };
-    state.dataHealth.news = "error";
-  }
-
-  if (ratesResult.status === "fulfilled") {
-    state.exchangeRates = { USD: 1, ...ratesResult.value };
-    state.dataHealth.fx = "ok";
-  } else {
-    state.exchangeRates = { USD: 1, EUR: 1, HUF: 1 };
-    state.dataHealth.fx = state.settings.currency === "USD" ? "warning" : "error";
-    if (state.settings.currency !== "USD") errors.push("A devizaátváltás most nem érhető el.");
-  }
-
-  state.intraday.bitcoin =
-    bitcoinIntradayResult.status === "fulfilled" ? bitcoinIntradayResult.value : null;
-  state.intraday.gold =
-    goldIntradayResult.status === "fulfilled" ? goldIntradayResult.value : null;
-
-  ["bitcoin", "gold"].forEach((assetKey) => {
-    const asset = state.assets[assetKey];
-    if (asset) {
-      asset.analysis = analyzeAsset(asset, assetSpecificSentiment(assetKey));
-      renderAsset(assetKey);
-    } else {
-      renderUnavailableAsset(assetKey);
+  let firstMarketPaint = false;
+  const isCurrent = () => sequence === state.loadSequence;
+  const revealMarket = () => {
+    if (!firstMarketPaint && isCurrent()) {
+      firstMarketPaint = true;
+      setLoading(false);
     }
-  });
+  };
+  const renderProgressiveAsset = (assetKey) => {
+    const asset = state.assets[assetKey];
+    if (!asset || !isCurrent()) return;
+    asset.analysis = analyzeAsset(asset, assetSpecificSentiment(assetKey));
+    renderAsset(assetKey);
+    renderIndicators(state.selectedAsset);
+    renderTradingCenter();
+    renderPortfolio();
+    checkAlerts();
+    revealMarket();
+  };
 
-  renderSentiment();
-  renderNews();
-  renderIndicators(state.selectedAsset);
-  renderTradingCenter();
-  renderPortfolio();
-  renderDataHealth();
-  checkAlerts();
+  const bitcoinTask = fetchBitcoin()
+    .then((asset) => {
+      if (!isCurrent()) return;
+      state.assets.bitcoin = asset;
+      state.dataHealth.bitcoin = "ok";
+      renderProgressiveAsset("bitcoin");
+      renderDataHealth();
+    })
+    .catch(() => {
+      if (!isCurrent()) return;
+      errors.push("A Bitcoin-adatok most nem érhetők el.");
+      state.dataHealth.bitcoin = "error";
+      if (!state.assets.bitcoin) renderUnavailableAsset("bitcoin");
+      renderDataHealth();
+    });
+
+  const bitcoinIntradayTask = fetchBitcoinIntraday()
+    .then((asset) => {
+      if (!isCurrent()) return;
+      state.intraday.bitcoin = asset;
+      renderTradingCenter();
+      revealMarket();
+    })
+    .catch(() => {
+      if (!isCurrent()) return;
+      if (!state.intraday.bitcoin) renderTradingCenter();
+    });
+
+  const goldTask = fetchGold()
+    .then((asset) => {
+      if (!isCurrent()) return;
+      state.assets.gold = asset;
+      state.dataHealth.gold = asset.warning ? "warning" : "ok";
+      renderProgressiveAsset("gold");
+      renderDataHealth();
+    })
+    .catch(() => {
+      if (!isCurrent()) return;
+      errors.push("Az aranyadatok most nem érhetők el.");
+      state.dataHealth.gold = "error";
+      if (!state.assets.gold) renderUnavailableAsset("gold");
+      renderDataHealth();
+    });
+
+  const goldIntradayTask = fetchGoldIntraday()
+    .then((asset) => {
+      if (!isCurrent()) return;
+      state.intraday.gold = asset;
+      renderTradingCenter();
+    })
+    .catch(() => {
+      if (!isCurrent()) return;
+      if (!state.intraday.gold) renderTradingCenter();
+    });
+
+  const ratesTask = fetchExchangeRates()
+    .then((rates) => {
+      if (!isCurrent()) return;
+      state.exchangeRates = { USD: 1, ...rates };
+      state.dataHealth.fx = "ok";
+      ["bitcoin", "gold"].forEach((assetKey) => {
+        if (state.assets[assetKey]) renderAsset(assetKey);
+      });
+      renderTradingCenter();
+      renderPortfolio();
+      renderDataHealth();
+    })
+    .catch(() => {
+      if (!isCurrent()) return;
+      state.dataHealth.fx = state.settings.currency === "USD" ? "warning" : "error";
+      if (state.settings.currency !== "USD") {
+        errors.push("A devizaátváltás most nem érhető el.");
+      }
+      renderDataHealth();
+    });
+
+  const newsTask = fetchNews()
+    .then((articles) => {
+      if (!isCurrent()) return;
+      state.news = articles;
+      state.sentiment = analyzeSentiment(state.news);
+      state.dataHealth.news = state.news.length ? "ok" : "warning";
+      ["bitcoin", "gold"].forEach((assetKey) => {
+        if (state.assets[assetKey]) renderProgressiveAsset(assetKey);
+      });
+      renderSentiment();
+      renderNews();
+      renderDataHealth();
+    })
+    .catch(() => {
+      if (!isCurrent()) return;
+      errors.push("A hírfolyam most nem érhető el.");
+      state.dataHealth.news = "error";
+      renderSentiment();
+      renderNews();
+      renderDataHealth();
+    });
+
+  await Promise.allSettled([
+    bitcoinTask,
+    bitcoinIntradayTask,
+    goldTask,
+    goldIntradayTask,
+    ratesTask,
+    newsTask,
+  ]);
+  if (!isCurrent()) return;
 
   if (errors.length) showError(errors.join(" "));
   document.getElementById("lastUpdated").textContent = new Intl.DateTimeFormat("hu-HU", {
@@ -173,7 +239,7 @@ async function loadDashboard() {
     month: "short",
     day: "numeric",
   }).format(new Date());
-  setLoading(false, errors.length >= 4);
+  setLoading(false, !state.assets.bitcoin && !state.assets.gold);
 }
 
 async function fetchJson(url, timeout = 12000, headers = {}) {
@@ -963,6 +1029,34 @@ function createGradient(canvas, color) {
   return gradient;
 }
 
+function setActiveView(view, updateHash = true) {
+  state.activeView = view;
+  document.body.dataset.view = view;
+  document.querySelectorAll("[data-view-target]").forEach((button) => {
+    const isActive = button.dataset.viewTarget === view;
+    button.classList.toggle("active", isActive);
+    if (isActive) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
+  });
+  document.querySelectorAll("[data-pages]").forEach((section) => {
+    section.hidden = !section.dataset.pages.split(" ").includes(view);
+  });
+  document.querySelectorAll(".asset-card[data-asset]").forEach((card) => {
+    card.hidden = (view === "bitcoin" || view === "gold") && card.dataset.asset !== view;
+  });
+  if (view === "bitcoin" || view === "gold") {
+    selectTradeAsset(view);
+    selectIndicatorAsset(view);
+  }
+  if (updateHash) window.history.replaceState(null, "", `#${view}`);
+  window.scrollTo({ top: 0, behavior: "smooth" });
+  requestAnimationFrame(() => {
+    state.intradayChart?.resize();
+    Object.values(state.charts).forEach((chart) => chart?.resize());
+    Object.values(state.technicalCharts).forEach((chart) => chart?.resize());
+  });
+}
+
 function selectTradeAsset(assetKey) {
   state.selectedTradeAsset = assetKey;
   document.querySelectorAll("[data-trade-asset]").forEach((button) => {
@@ -997,6 +1091,7 @@ function renderTradingCenter() {
     status.querySelector("strong").textContent = "Nincs intraday adat";
     status.querySelector("small").textContent = "Próbáld újra később";
     renderIntradayChart(assetKey, null);
+    renderTechnicalCharts(assetKey, null);
     return;
   }
 
@@ -1054,6 +1149,7 @@ function renderTradingCenter() {
   empty.hidden = decision.hasIntraday;
   canvas.hidden = !decision.hasIntraday;
   renderIntradayChart(assetKey, decision.hasIntraday ? state.intraday[assetKey] : null);
+  renderTechnicalCharts(assetKey, decision.hasIntraday ? state.intraday[assetKey] : null);
 }
 
 function updateDecisionShortcut(assetKey, decision) {
@@ -1158,6 +1254,111 @@ function renderIntradayChart(assetKey, intraday) {
       minute: "2-digit",
       second: "2-digit",
     }).format(intraday.updatedAt)} · ${intraday.candles.length} gyertya`;
+}
+
+function renderTechnicalCharts(assetKey, intraday) {
+  Object.values(state.technicalCharts).forEach((chart) => chart?.destroy());
+  state.technicalCharts = {};
+  const container = document.getElementById("technicalMiniCharts");
+  container.hidden = !intraday;
+  if (!intraday || typeof Chart === "undefined") return;
+
+  const candles = intraday.candles;
+  const closes = candles.map((candle) => candle.close);
+  const labels = candles.map((candle) =>
+    new Intl.DateTimeFormat("hu-HU", { hour: "2-digit", minute: "2-digit" }).format(candle.time),
+  );
+  const rsiSeries = closes.map((_, index) => {
+    if (index < 14) return null;
+    return calculateRsi(closes.slice(index - 14, index + 1), 14);
+  });
+  const ema12Series = exponentialMovingAverageSeries(closes, 12);
+  const ema26Series = exponentialMovingAverageSeries(closes, 26);
+  const macdSeries = ema12Series.map((value, index) => {
+    return value === null || ema26Series[index] === null ? null : value - ema26Series[index];
+  });
+  const volumes = candles.map((candle) => candle.volume || 0);
+  const latestRsi = rsiSeries.at(-1);
+  const latestMacd = macdSeries.at(-1);
+  const latestVolume = volumes.at(-1);
+  document.getElementById("miniRsiValue").textContent =
+    latestRsi === null ? "–" : formatNumber(latestRsi, 1);
+  document.getElementById("miniMacdValue").textContent =
+    latestMacd === null ? "–" : formatNumber(latestMacd, assetKey === "bitcoin" ? 2 : 3);
+  document.getElementById("miniVolumeValue").textContent =
+    latestVolume > 0 ? formatCompactNumber(latestVolume) : "Nincs adat";
+
+  const baseOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 350 },
+    interaction: { intersect: false, mode: "index" },
+    plugins: {
+      legend: { display: false },
+      tooltip: { displayColors: false },
+    },
+    scales: {
+      x: { display: false },
+      y: {
+        position: "right",
+        grid: { color: "rgba(255, 255, 255, 0.06)" },
+        ticks: { color: "rgba(255,255,255,0.45)", font: { size: 8 }, maxTicksLimit: 4 },
+      },
+    },
+  };
+
+  state.technicalCharts.rsi = new Chart(document.getElementById("rsiChart"), {
+    type: "line",
+    data: {
+      labels,
+      datasets: [{
+        data: rsiSeries,
+        borderColor: "#5fd39a",
+        borderWidth: 1.5,
+        pointRadius: 0,
+        fill: true,
+        backgroundColor: "rgba(95, 211, 154, 0.08)",
+        tension: 0.2,
+      }],
+    },
+    options: {
+      ...baseOptions,
+      scales: {
+        ...baseOptions.scales,
+        y: { ...baseOptions.scales.y, min: 0, max: 100 },
+      },
+    },
+  });
+
+  state.technicalCharts.macd = new Chart(document.getElementById("macdChart"), {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [{
+        data: macdSeries,
+        backgroundColor: macdSeries.map((value) =>
+          value !== null && value >= 0 ? "rgba(95, 211, 154, 0.7)" : "rgba(220, 103, 88, 0.7)",
+        ),
+        borderRadius: 2,
+      }],
+    },
+    options: baseOptions,
+  });
+
+  state.technicalCharts.volume = new Chart(document.getElementById("volumeChart"), {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [{
+        data: volumes,
+        backgroundColor: candles.map((candle) =>
+          candle.close >= candle.open ? "rgba(95, 211, 154, 0.55)" : "rgba(226, 134, 59, 0.55)",
+        ),
+        borderRadius: 2,
+      }],
+    },
+    options: baseOptions,
+  });
 }
 
 async function refreshBitcoinIntraday() {
@@ -1806,6 +2007,14 @@ function formatMoney(value) {
 function formatNumber(value, maximumFractionDigits = 2) {
   if (!Number.isFinite(value)) return "–";
   return new Intl.NumberFormat("hu-HU", { maximumFractionDigits }).format(value);
+}
+
+function formatCompactNumber(value) {
+  if (!Number.isFinite(value)) return "–";
+  return new Intl.NumberFormat("hu-HU", {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
 }
 
 function formatPercent(value) {
