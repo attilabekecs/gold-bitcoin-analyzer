@@ -335,8 +335,13 @@
   }
 
   function switchConfigTab(tab) {
+    const validTabs = ["general", "signals", "risk", "execution"];
+    if (!validTabs.includes(tab)) tab = "general";
+
     document.querySelectorAll("[data-bot-config-tab]").forEach((button) => {
-      button.classList.toggle("active", button.dataset.botConfigTab === tab);
+      const isActive = button.dataset.botConfigTab === tab;
+      button.classList.toggle("active", isActive);
+      button.setAttribute("aria-selected", String(isActive));
     });
     document.querySelectorAll("[data-bot-config-panel]").forEach((panel) => {
       panel.hidden = panel.dataset.botConfigPanel !== tab;
@@ -425,19 +430,58 @@
       );
       return;
     }
+
+    const capitalChanged = before.initialCapital !== next.initialCapital;
+    const currencyChanged = before.currency !== next.currency;
+    const needsAccountReset = capitalChanged || currencyChanged;
+
+    if (needsAccountReset && botState.positions.length > 0) {
+      const confirmed = window.confirm(
+        "A kezdőtőke vagy pénznem módosítása újraindítja a számlát és törli a nyitott pozíciókat. Folytatod?",
+      );
+      if (!confirmed) return;
+    }
+
     const changes = Bot.diffConfigs(before, next).map((change) => ({
       ...change,
-      reason: "Kézi beállítás mentése",
+      reason: needsAccountReset && change.key === "initialCapital"
+        ? "Kezdőtőke mentése – számla újraindítva"
+        : "Kézi beállítás mentése",
     }));
     botState.config = next;
-    if (changes.length) {
+
+    if (needsAccountReset) {
+      Bot.applyCapitalFromConfig(botState, {
+        skipLog: true,
+        source: "kézi",
+        reason: capitalChanged
+          ? "Kezdőtőke mentése – számla újraindítva"
+          : "Pénznem módosítása – számla újraindítva",
+      });
+      Bot.logConfigChanges(botState, "kézi", [
+        ...changes,
+        {
+          key: "accountReset",
+          from: before.initialCapital,
+          to: next.initialCapital,
+          reason: capitalChanged
+            ? "Kezdőtőke mentése – számla újraindítva"
+            : "Pénznem módosítása – számla újraindítva",
+        },
+      ]);
+    } else if (changes.length) {
       Bot.logConfigChanges(botState, "kézi", changes);
     } else {
       Bot.saveBotState(botState);
     }
+
     render();
     bridge?.scheduleBotTick?.();
-    bridge?.showToast?.("Bot beállítások elmentve.");
+    if (needsAccountReset) {
+      bridge?.showToast?.("Kezdőtőke mentése újraindította a számlát.");
+    } else {
+      bridge?.showToast?.("Bot beállítások elmentve.");
+    }
     if (botState.config.enabled) bridge?.runTick?.();
   }
 
@@ -540,11 +584,11 @@
       }).format(entry.time);
       const sourceLabel = Bot.SOURCE_LABELS?.[entry.source] || entry.source;
       const fromText =
-        entry.key === "initialCapital"
+        entry.key === "initialCapital" || entry.key === "accountReset"
           ? bridge.formatBotMoney(entry.from, getBotCurrency(botState.config))
           : Bot.formatConfigValue(entry.key, entry.from);
       const toText =
-        entry.key === "initialCapital"
+        entry.key === "initialCapital" || entry.key === "accountReset"
           ? bridge.formatBotMoney(entry.to, getBotCurrency(botState.config))
           : Bot.formatConfigValue(entry.key, entry.to);
       card.innerHTML = `
@@ -875,8 +919,11 @@
     const points = botState.equityHistory;
     const chartOptions = bridge?.paperChartOptions?.() || { responsive: true, maintainAspectRatio: false };
     if (chartOptions.scales?.y?.ticks) {
-      chartOptions.scales.y.ticks.callback = (value) =>
-        bridge.formatNumber(value, currency === "HUF" ? 0 : 0);
+      chartOptions.scales.y.ticks.callback = (value) => {
+        const rate = bridge.convertToCurrency(1, currency);
+        const usdValue = Number.isFinite(rate) && rate > 0 ? value / rate : value;
+        return bridge.formatBotMoney(usdValue, currency);
+      };
     }
     equityChart = new Chart(canvas, {
       type: "line",

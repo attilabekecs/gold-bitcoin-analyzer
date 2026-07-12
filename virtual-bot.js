@@ -81,6 +81,7 @@
     currency: "Pénznem",
     assets: "Követett eszközök",
     initialCapital: "Kezdőtőke",
+    accountReset: "Számla újraindítás",
     riskPercent: "Kockázat / ügylet",
     maxPositions: "Max. pozíció",
     cooldownMinutes: "Cooldown (perc)",
@@ -205,10 +206,57 @@
         capturedCount: 0,
         missedLog: [],
       };
-      return saved;
+      return reconcileCapitalOnLoad(saved);
     } catch {
       return createBotState();
     }
+  }
+
+  function applyCapitalFromConfig(botState, options = {}) {
+    if (!botState?.config) return false;
+    const newCapital = botState.config.initialCapital;
+    if (!Number.isFinite(newCapital) || newCapital < 100) return false;
+
+    const oldCapital = botState.initialCapital;
+    const now = Date.now();
+    botState.initialCapital = newCapital;
+    botState.cash = newCapital;
+    botState.positions = [];
+    botState.trades = [];
+    botState.equityHistory = [{ time: now, equity: newCapital }];
+    botState.lastActionAt = {};
+    botState.lastActionOutcome = {};
+
+    if (!options.skipLog) {
+      logConfigChanges(
+        botState,
+        options.source || "kézi",
+        [
+          {
+            key: "accountReset",
+            from: oldCapital,
+            to: newCapital,
+            reason: options.reason || "Kezdőtőke mentése – számla újraindítva",
+          },
+        ],
+      );
+    } else {
+      saveBotState(botState);
+    }
+    return true;
+  }
+
+  function reconcileCapitalOnLoad(botState) {
+    if (!botState?.config) return botState;
+    const configCapital = botState.config.initialCapital;
+    if (!Number.isFinite(configCapital) || configCapital < 100) return botState;
+    if (botState.initialCapital === configCapital) return botState;
+
+    applyCapitalFromConfig(botState, {
+      source: "beállítás",
+      reason: "Kezdőtőke szinkronizálva a mentett beállítással",
+    });
+    return botState;
   }
 
   function saveBotState(botState) {
@@ -1127,7 +1175,9 @@
     if (key === "primaryInterval") return INTERVAL_LABELS[value] || `${value} perc`;
     if (key === "currency") return CURRENCY_LABELS[value] || String(value);
     if (key === "minAlignmentRatio") return `${Math.round(value * 100)}%`;
-    if (key === "initialCapital") return `$${Number(value).toLocaleString("hu-HU", { maximumFractionDigits: 0 })}`;
+    if (key === "initialCapital" || key === "accountReset") {
+      return `$${Number(value).toLocaleString("hu-HU", { maximumFractionDigits: 0 })} (belső USD)`;
+    }
     if (typeof value === "number") return Number.isInteger(value) ? String(value) : value.toFixed(2);
     return String(value);
   }
@@ -1502,6 +1552,8 @@
     buildSuggestions,
     runAutoLearn,
     resetBot,
+    applyCapitalFromConfig,
+    reconcileCapitalOnLoad,
     closePosition,
     getCurrentPrice,
     isWithinTradingHours,

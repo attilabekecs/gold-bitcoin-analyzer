@@ -15,7 +15,7 @@
           base = "/" + parts[0] + "/";
         }
         window.__APP_BASE__ = base;
-        var icon = base + "favicon.svg?v=20260712-17";
+        var icon = base + "favicon.svg?v=20260712-18";
         [
           ["icon", "image/svg+xml"],
           ["shortcut icon", null],
@@ -36,15 +36,15 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=20260712-17" />
+    <link rel="stylesheet" href="styles.css?v=20260712-18" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
-    <script src="assets-catalog.js?v=20260712-17" defer></script>
-    <script src="virtual-bot.js?v=20260712-17" defer></script>
-    <script src="bot-lab.js?v=20260712-17" defer></script>
-    <script src="practice-lab.js?v=20260712-17" defer></script>
-    <script src="app.js?v=20260712-17" defer></script>
-    <script src="strategy-engine.js?v=20260712-17" defer></script>
-    <script src="strategy-lab.js?v=20260712-17" defer></script>
+    <script src="assets-catalog.js?v=20260712-18" defer></script>
+    <script src="virtual-bot.js?v=20260712-18" defer></script>
+    <script src="bot-lab.js?v=20260712-18" defer></script>
+    <script src="practice-lab.js?v=20260712-18" defer></script>
+    <script src="app.js?v=20260712-18" defer></script>
+    <script src="strategy-engine.js?v=20260712-18" defer></script>
+    <script src="strategy-lab.js?v=20260712-18" defer></script>
   </head>
   <body data-view="overview">
     <header class="site-header">
@@ -525,13 +525,13 @@
               </div>
             </div>
             <div class="bot-config-tabs" role="tablist" aria-label="Bot beállítás csoportok">
-              <button class="active" data-bot-config-tab="general" type="button">Általános</button>
-              <button data-bot-config-tab="signals" type="button">Jelzések</button>
-              <button data-bot-config-tab="risk" type="button">Kockázat</button>
-              <button data-bot-config-tab="execution" type="button">Végrehajtás</button>
+              <button class="active" data-bot-config-tab="general" type="button" role="tab" aria-selected="true" aria-controls="botConfigPanelGeneral">Általános</button>
+              <button data-bot-config-tab="signals" type="button" role="tab" aria-selected="false" aria-controls="botConfigPanelSignals">Jelzések</button>
+              <button data-bot-config-tab="risk" type="button" role="tab" aria-selected="false" aria-controls="botConfigPanelRisk">Kockázat</button>
+              <button data-bot-config-tab="execution" type="button" role="tab" aria-selected="false" aria-controls="botConfigPanelExecution">Végrehajtás</button>
             </div>
             <form id="botConfigForm" class="form-grid bot-config-form">
-              <div class="bot-config-panel-group" data-bot-config-panel="general">
+              <div id="botConfigPanelGeneral" class="bot-config-panel-group" data-bot-config-panel="general" role="tabpanel">
                 <label>Pénznem
                   <select id="botCurrency">
                     <option value="sync">Szinkron (globális beállítás)</option>
@@ -547,6 +547,7 @@
                 <label id="botInitialCapitalLabel"><span id="botCapitalLabelText">Kezdőtőke (USD)</span>
                   <input id="botInitialCapital" type="number" min="100" step="100" value="10000" />
                 </label>
+                <p class="helper-text">A kezdőtőke mentése újraindítja a számlát (törli a pozíciókat és ügyleteket).</p>
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Max. nyitott pozíció</span>
@@ -622,7 +623,7 @@
                 </fieldset>
               </div>
 
-              <div class="bot-config-panel-group" data-bot-config-panel="signals" hidden>
+              <div id="botConfigPanelSignals" class="bot-config-panel-group" data-bot-config-panel="signals" role="tabpanel" hidden>
                 <label>Gyors EMA
                   <input id="botFastEma" type="number" min="3" max="50" step="1" value="9" />
                 </label>
@@ -701,7 +702,7 @@
                 </label>
               </div>
 
-              <div class="bot-config-panel-group" data-bot-config-panel="risk" hidden>
+              <div id="botConfigPanelRisk" class="bot-config-panel-group" data-bot-config-panel="risk" role="tabpanel" hidden>
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Kockázat / ügylet (%)</span>
@@ -728,7 +729,7 @@
                 </label>
               </div>
 
-              <div class="bot-config-panel-group" data-bot-config-panel="execution" hidden>
+              <div id="botConfigPanelExecution" class="bot-config-panel-group" data-bot-config-panel="execution" role="tabpanel" hidden>
                 <label>Díj oldalanként (%)
                   <input id="botFeePercent" type="number" min="0" max="2" step="0.01" value="0.10" />
                 </label>
