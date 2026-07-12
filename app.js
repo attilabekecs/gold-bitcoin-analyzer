@@ -44,6 +44,8 @@ const state = {
   loadSequence: 0,
   scanLoadProgress: null,
   initialLoadComplete: false,
+  newsLoadRunning: false,
+  newsLoadedAt: 0,
 };
 
 const INTRADAY_STALE_MS = 90000;
@@ -52,6 +54,7 @@ const TIMEFRAME_STALE_MS = 180000;
 const ASSET_REFRESH_TICK_MS = 15000;
 const ASSET_REFRESH_BATCH_SIZE = Catalog.SCAN_BATCH_SIZE;
 const ASSET_REFRESH_BATCH_DELAY_MS = Catalog.SCAN_BATCH_DELAY_MS;
+const NEWS_STALE_MS = 600000;
 
 const VALID_VIEWS = [
   "overview",
@@ -386,7 +389,15 @@ async function loadDashboard() {
     );
   };
 
-  const assetTasks = [loadPriorityAssets().then(() => bootstrapRemainingAssets())];
+  const assetTasks = [
+    loadPriorityAssets().then(async () => {
+      if (isCurrent()) {
+        state.initialLoadComplete = true;
+        startContinuousAssetRefresh();
+      }
+      await bootstrapRemainingAssets();
+    }),
+  ];
 
   const ratesTask = fetchExchangeRates()
     .then((rates) => {
@@ -415,33 +426,14 @@ async function loadDashboard() {
       renderDataHealth();
     });
 
-  const newsTask = fetchNews()
-    .then((articles) => {
-      if (!isCurrent()) return;
-      state.news = articles;
-      state.sentiment = analyzeSentiment(state.news);
-      state.dataHealth.news = state.news.length ? "ok" : "warning";
-      Catalog.ALL_KEYS.forEach((assetKey) => {
-        if (state.assets[assetKey]) renderProgressiveAsset(assetKey);
-      });
-      renderSentiment();
-      renderNews();
-      renderDataHealth();
-    })
-    .catch(() => {
-      if (!isCurrent()) return;
-      errors.push("A hírfolyam most nem érhető el.");
-      state.dataHealth.news = "error";
-      renderSentiment();
-      renderNews();
-      renderDataHealth();
-    });
-
-  await Promise.allSettled([...assetTasks, ratesTask, newsTask]);
+  await Promise.allSettled([...assetTasks, ratesTask]);
   if (!isCurrent()) return;
 
   state.initialLoadComplete = true;
-  restartContinuousAssetRefresh();
+  startContinuousAssetRefresh();
+  if (shouldAutoRefreshNews()) {
+    refreshNewsInBackground();
+  }
   updateScanLoadProgress();
 
   runVirtualBotTick();
@@ -754,6 +746,49 @@ async function fetchNews() {
       domain: article.domain || new URL(article.url).hostname.replace("www.", ""),
       date: parseGdeltDate(article.seendate),
     }));
+}
+
+function shouldAutoRefreshNews() {
+  return state.activeView === "news";
+}
+
+function isNewsStale() {
+  return !state.newsLoadedAt || Date.now() - state.newsLoadedAt > NEWS_STALE_MS;
+}
+
+async function refreshNews() {
+  if (state.newsLoadRunning) return;
+  state.newsLoadRunning = true;
+  try {
+    const articles = await fetchNews();
+    state.news = articles;
+    state.newsLoadedAt = Date.now();
+    state.sentiment = analyzeSentiment(state.news);
+    state.dataHealth.news = state.news.length ? "ok" : "warning";
+    Catalog.ALL_KEYS.forEach((assetKey) => {
+      if (state.assets[assetKey]) {
+        state.assets[assetKey].analysis = analyzeAsset(
+          state.assets[assetKey],
+          assetSpecificSentiment(assetKey),
+        );
+        if (Catalog.isFeatured(assetKey)) renderAsset(assetKey);
+      }
+    });
+    renderSentiment();
+    renderNews();
+    renderDataHealth();
+  } catch {
+    state.dataHealth.news = "error";
+    renderSentiment();
+    renderNews();
+    renderDataHealth();
+  } finally {
+    state.newsLoadRunning = false;
+  }
+}
+
+function refreshNewsInBackground() {
+  void refreshNews();
 }
 
 function isMarketNewsTitle(title) {
@@ -1338,8 +1373,11 @@ function setActiveView(view, updateHash = true) {
     renderMarketsGrid();
     renderBotTrading();
     if (view === "bot" && state.initialLoadComplete && !state.assetRefreshTimer) {
-      restartContinuousAssetRefresh();
+      startContinuousAssetRefresh();
     }
+  }
+  if (view === "news" && (isNewsStale() || !state.news.length)) {
+    refreshNewsInBackground();
   }
   if (updateHash) {
     const botSection = view === "bot" ? window.BotLab?.getActiveSection?.() || "summary" : null;
@@ -2431,7 +2469,7 @@ function applySettings() {
   }
   state.intradayTimer = setInterval(refreshLiveIntraday, 60000);
   if (state.initialLoadComplete) {
-    restartContinuousAssetRefresh();
+    startContinuousAssetRefresh();
   }
   scheduleBotTick();
 }
