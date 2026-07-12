@@ -8,7 +8,10 @@ indikátorokat, friss híreket, portfóliókövetést és kockázatkezelési esz
 - 7, 30, 90 és 365 napos Bitcoin-időtávok
 - 1 perces Bitcoin intraday diagram Kraken-adatokkal és percenkénti frissítéssel
 - Opcionális 1 perces XAU/USD diagram Twelve Data API-kulccsal
-- Külön Áttekintés, Bitcoin, Arany, Hírek, Portfólió és AI nézet
+- Külön Áttekintés, Bitcoin, Arany, Hírek, Portfólió, Szimulátor és AI nézet
+- Helyi papírkereskedési számla LONG/SHORT pozíciókkal, automatikus stoppal és célárral
+- Kereskedési napló, találati arány, profit factor, visszaesés és egyenleggörbe
+- 1 perces EMA/RSI/ATR backtest állítható kereskedési díjjal
 - Interaktív intraday ár-, RSI-, MACD- és volumendiagramok
 - Fokozatos adatbetöltés: a gyors piaci adatok nem várnak a lassabb hírforrásokra
 - Aktuális aranyár és opcionális Twelve Data történeti adatok

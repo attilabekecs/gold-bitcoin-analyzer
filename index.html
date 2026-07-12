@@ -14,9 +14,9 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=20260712-3" />
+    <link rel="stylesheet" href="styles.css?v=20260712-5" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
-    <script src="app.js?v=20260712-3" defer></script>
+    <script src="app.js?v=20260712-5" defer></script>
   </head>
   <body data-view="overview">
     <header class="site-header">
@@ -30,6 +30,7 @@
         <button class="nav-link" data-view-target="gold" type="button">Arany</button>
         <button class="nav-link" data-view-target="news" type="button">Hírek</button>
         <button class="nav-link" data-view-target="portfolio" type="button">Portfólió</button>
+        <button class="nav-link" data-view-target="simulator" type="button">Szimulátor</button>
         <button class="nav-link" data-view-target="ai" type="button">AI</button>
       </nav>
       <div class="header-actions">
@@ -301,6 +302,161 @@
         </article>
       </section>
 
+      <section class="simulator-section" data-pages="simulator">
+        <div class="simulator-hero">
+          <div>
+            <p class="eyebrow">KOCKÁZATMENTES GYAKORLÁS</p>
+            <h1>Papírkereskedés és backtest</h1>
+            <p>
+              Teszteld a jelzéseket virtuális tőkével. Az eredmények helyben maradnak,
+              és nem indítanak valódi megbízást.
+            </p>
+          </div>
+          <div class="paper-capital-control">
+            <label>Virtuális kezdőtőke (USD)
+              <input id="paperInitialCapital" type="number" min="100" step="100" value="10000" />
+            </label>
+            <button id="paperResetButton" class="text-button" type="button">Szimulátor újraindítása</button>
+          </div>
+        </div>
+
+        <div class="paper-summary">
+          <div><span>Aktuális egyenleg</span><strong id="paperEquity">–</strong></div>
+          <div><span>Realizált eredmény</span><strong id="paperRealizedPnl">–</strong></div>
+          <div><span>Nyitott eredmény</span><strong id="paperOpenPnl">–</strong></div>
+          <div><span>Találati arány</span><strong id="paperWinRate">–</strong></div>
+          <div><span>Profit factor</span><strong id="paperProfitFactor">–</strong></div>
+          <div><span>Max. visszaesés</span><strong id="paperDrawdown">–</strong></div>
+        </div>
+
+        <div class="simulator-grid">
+          <article class="panel paper-order-panel">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">VIRTUÁLIS MEGBÍZÁS</p>
+                <h3>Új papírpozíció</h3>
+              </div>
+              <button id="paperUseSignalButton" class="text-button" type="button">Jelzett szintek használata</button>
+            </div>
+            <form id="paperOrderForm" class="form-grid">
+              <label>Eszköz
+                <select id="paperAsset">
+                  <option value="bitcoin">Bitcoin</option>
+                  <option value="gold">Arany</option>
+                </select>
+              </label>
+              <label>Irány
+                <select id="paperDirection">
+                  <option value="long">LONG – emelkedés</option>
+                  <option value="short">SHORT – esés</option>
+                </select>
+              </label>
+              <label>Kockázat (%)
+                <input id="paperRiskPercent" type="number" min="0.1" max="5" step="0.1" value="1" />
+              </label>
+              <label>Aktuális belépési ár
+                <input id="paperEntry" type="number" readonly />
+              </label>
+              <label>Stop-loss
+                <input id="paperStop" type="number" min="0" step="any" required />
+              </label>
+              <label>Célár
+                <input id="paperTarget" type="number" min="0" step="any" required />
+              </label>
+              <button class="primary-button form-action" type="submit">Papírpozíció nyitása</button>
+            </form>
+            <p id="paperOrderPreview" class="order-preview">Az adatok betöltése után számolható pozícióméret.</p>
+          </article>
+
+          <article class="panel">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">EGYENLEGGÖRBE</p>
+                <h3>Virtuális számla</h3>
+              </div>
+            </div>
+            <div class="paper-chart-wrap"><canvas id="paperEquityChart"></canvas></div>
+          </article>
+        </div>
+
+        <article class="panel positions-panel">
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="eyebrow">ÉLŐ SZIMULÁCIÓ</p>
+              <h3>Nyitott pozíciók</h3>
+            </div>
+            <span id="paperPositionCount" class="local-badge">0 pozíció</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Eszköz</th><th>Irány</th><th>Mennyiség</th><th>Belépés</th><th>Aktuális</th><th>Stop</th><th>Cél</th><th>Eredmény</th><th></th></tr>
+              </thead>
+              <tbody id="paperPositionsTable"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <div class="simulator-grid backtest-area">
+          <article class="panel">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">TÖRTÉNETI TESZT</p>
+                <h3>1 perces backtest</h3>
+              </div>
+            </div>
+            <form id="backtestForm" class="form-grid">
+              <label>Eszköz
+                <select id="backtestAsset">
+                  <option value="bitcoin">Bitcoin</option>
+                  <option value="gold">Arany</option>
+                </select>
+              </label>
+              <label>Kezdőtőke (USD)
+                <input id="backtestCapital" type="number" min="100" step="100" value="10000" />
+              </label>
+              <label>Díj oldalanként (%)
+                <input id="backtestFee" type="number" min="0" max="2" step="0.01" value="0.10" />
+              </label>
+              <button class="primary-button form-action" type="submit">Backtest futtatása</button>
+            </form>
+            <p class="helper-text">
+              EMA9/EMA21, RSI, lendület és ATR alapú teszt. A belépés mindig a jelzést követő
+              gyertya nyitóárán történik.
+            </p>
+          </article>
+
+          <article class="panel">
+            <div class="backtest-stats">
+              <div><span>Ügyletek</span><strong id="backtestTrades">–</strong></div>
+              <div><span>Találati arány</span><strong id="backtestWinRate">–</strong></div>
+              <div><span>Nettó eredmény</span><strong id="backtestPnl">–</strong></div>
+              <div><span>Profit factor</span><strong id="backtestProfitFactor">–</strong></div>
+              <div><span>Max. visszaesés</span><strong id="backtestDrawdown">–</strong></div>
+              <div><span>Vizsgált időszak</span><strong id="backtestPeriod">–</strong></div>
+            </div>
+            <div class="paper-chart-wrap"><canvas id="backtestChart"></canvas></div>
+          </article>
+        </div>
+
+        <article class="panel trade-history-panel">
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="eyebrow">KERESKEDÉSI NAPLÓ</p>
+              <h3>Lezárt papírügyletek</h3>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Idő</th><th>Eszköz</th><th>Irány</th><th>Belépés</th><th>Kilépés</th><th>Ok</th><th>Eredmény</th></tr>
+              </thead>
+              <tbody id="paperTradesTable"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
       <section class="pro-section" data-pages="portfolio">
         <div class="section-heading">
           <div>
@@ -480,7 +636,7 @@
         <div id="aiResult" class="ai-result" hidden></div>
       </section>
 
-      <section class="disclaimer" data-pages="overview bitcoin gold news portfolio ai">
+      <section class="disclaimer" data-pages="overview bitcoin gold news portfolio simulator ai">
         <strong>Fontos kockázati figyelmeztetés</strong>
         <p>
           Az oldal kizárólag oktatási és tájékoztatási célú. Nem minősül befektetési

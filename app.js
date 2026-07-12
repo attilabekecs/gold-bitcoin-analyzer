@@ -20,6 +20,9 @@ const state = {
   settings: null,
   portfolio: [],
   alerts: [],
+  paperAccount: null,
+  paperEquityChart: null,
+  backtestChart: null,
   dataHealth: {
     bitcoin: "pending",
     gold: "pending",
@@ -54,6 +57,7 @@ document.addEventListener("DOMContentLoaded", () => {
   state.settings = loadSettings();
   state.portfolio = loadLocalArray("aurum-portfolio");
   state.alerts = loadLocalArray("aurum-alerts");
+  state.paperAccount = loadPaperAccount();
   document.getElementById("year").textContent = new Date().getFullYear();
   document.getElementById("portfolioDate").valueAsDate = new Date();
   document.getElementById("refreshButton").addEventListener("click", loadDashboard);
@@ -66,6 +70,15 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("portfolioForm").addEventListener("submit", addPortfolioEntry);
   document.getElementById("alertForm").addEventListener("submit", addAlert);
   document.getElementById("notificationButton").addEventListener("click", requestNotifications);
+  document.getElementById("paperOrderForm").addEventListener("submit", openPaperPosition);
+  document.getElementById("paperAsset").addEventListener("change", updatePaperOrderForm);
+  document.getElementById("paperDirection").addEventListener("change", updatePaperOrderForm);
+  document.getElementById("paperRiskPercent").addEventListener("input", updatePaperOrderForm);
+  document.getElementById("paperStop").addEventListener("input", updatePaperOrderPreview);
+  document.getElementById("paperTarget").addEventListener("input", updatePaperOrderPreview);
+  document.getElementById("paperUseSignalButton").addEventListener("click", useSignalForPaperOrder);
+  document.getElementById("paperResetButton").addEventListener("click", resetPaperAccount);
+  document.getElementById("backtestForm").addEventListener("submit", runBacktest);
   ["riskCapital", "riskPercent", "riskEntry", "riskStop", "riskTarget"].forEach((id) => {
     document.getElementById(id).addEventListener("input", calculateRisk);
   });
@@ -85,7 +98,15 @@ document.addEventListener("DOMContentLoaded", () => {
     event.preventDefault();
     setActiveView("overview");
   });
-  const initialView = ["overview", "bitcoin", "gold", "news", "portfolio", "ai"].includes(
+  const initialView = [
+    "overview",
+    "bitcoin",
+    "gold",
+    "news",
+    "portfolio",
+    "simulator",
+    "ai",
+  ].includes(
     window.location.hash.slice(1),
   )
     ? window.location.hash.slice(1)
@@ -94,6 +115,8 @@ document.addEventListener("DOMContentLoaded", () => {
   applySettings();
   renderPortfolio();
   renderAlerts();
+  renderPaperTrading();
+  updatePaperOrderForm();
   calculateRisk();
   loadDashboard();
 });
@@ -120,6 +143,7 @@ async function loadDashboard() {
     renderTradingCenter();
     renderPortfolio();
     checkAlerts();
+    updatePaperPositions(assetKey);
     revealMarket();
   };
 
@@ -144,6 +168,7 @@ async function loadDashboard() {
       if (!isCurrent()) return;
       state.intraday.bitcoin = asset;
       renderTradingCenter();
+      updatePaperPositions("bitcoin");
       revealMarket();
     })
     .catch(() => {
@@ -172,6 +197,7 @@ async function loadDashboard() {
       if (!isCurrent()) return;
       state.intraday.gold = asset;
       renderTradingCenter();
+      updatePaperPositions("gold");
     })
     .catch(() => {
       if (!isCurrent()) return;
@@ -281,7 +307,7 @@ async function fetchBitcoinIntraday() {
     return key !== "last" && Array.isArray(value);
   })?.[1];
   const candles = (series || [])
-    .slice(-180)
+    .slice(-720)
     .map((item) => ({
       time: Number(item[0]) * 1000,
       open: Number(item[1]),
@@ -300,7 +326,7 @@ async function fetchGoldIntraday() {
   const params = new URLSearchParams({
     symbol: "XAU/USD",
     interval: "1min",
-    outputsize: "180",
+    outputsize: "500",
     apikey: state.settings.twelveDataKey,
   });
   const data = await fetchJson(`https://api.twelvedata.com/time_series?${params}`, 15000);
@@ -711,7 +737,7 @@ function analyzeIntraday(assetKey) {
   const intraday = state.intraday[assetKey];
   if (!intraday) return buildDailyTradeFallback(assetKey);
 
-  const candles = intraday.candles;
+  const candles = intraday.candles.slice(-180);
   const closes = candles.map((candle) => candle.close);
   const currentPrice = closes.at(-1);
   const ema9 = exponentialMovingAverage(closes, 9);
@@ -1054,6 +1080,8 @@ function setActiveView(view, updateHash = true) {
     state.intradayChart?.resize();
     Object.values(state.charts).forEach((chart) => chart?.resize());
     Object.values(state.technicalCharts).forEach((chart) => chart?.resize());
+    state.paperEquityChart?.resize();
+    state.backtestChart?.resize();
   });
 }
 
@@ -1171,7 +1199,8 @@ function renderIntradayChart(assetKey, intraday) {
   }
 
   const canvas = document.getElementById("intradayChart");
-  const closes = intraday.candles.map((candle) => candle.close);
+  const candles = intraday.candles.slice(-180);
+  const closes = candles.map((candle) => candle.close);
   const convertedCloses = closes.map(convertCurrency);
   const ema9 = exponentialMovingAverageSeries(closes, 9).map((value) =>
     value === null ? null : convertCurrency(value),
@@ -1180,7 +1209,7 @@ function renderIntradayChart(assetKey, intraday) {
     value === null ? null : convertCurrency(value),
   );
   const priceColor = assetKey === "bitcoin" ? "#e2863b" : "#b98a35";
-  const labels = intraday.candles.map((candle) =>
+  const labels = candles.map((candle) =>
     new Intl.DateTimeFormat("hu-HU", {
       hour: "2-digit",
       minute: "2-digit",
@@ -1263,7 +1292,7 @@ function renderTechnicalCharts(assetKey, intraday) {
   container.hidden = !intraday;
   if (!intraday || typeof Chart === "undefined") return;
 
-  const candles = intraday.candles;
+  const candles = intraday.candles.slice(-180);
   const closes = candles.map((candle) => candle.close);
   const labels = candles.map((candle) =>
     new Intl.DateTimeFormat("hu-HU", { hour: "2-digit", minute: "2-digit" }).format(candle.time),
@@ -1560,6 +1589,45 @@ function loadSettings() {
   }
 }
 
+function loadPaperAccount() {
+  const fallback = createPaperAccount(10000);
+  try {
+    const saved = JSON.parse(localStorage.getItem("aurum-paper-account") || "null");
+    if (
+      !saved ||
+      !Number.isFinite(saved.initialCapital) ||
+      !Number.isFinite(saved.cash) ||
+      !Array.isArray(saved.positions) ||
+      !Array.isArray(saved.trades) ||
+      !Array.isArray(saved.equityHistory)
+    ) {
+      return fallback;
+    }
+    return saved;
+  } catch {
+    return fallback;
+  }
+}
+
+function createPaperAccount(initialCapital) {
+  const now = Date.now();
+  return {
+    initialCapital,
+    cash: initialCapital,
+    positions: [],
+    trades: [],
+    equityHistory: [{ time: now, equity: initialCapital }],
+  };
+}
+
+function savePaperAccount() {
+  try {
+    localStorage.setItem("aurum-paper-account", JSON.stringify(state.paperAccount));
+  } catch {
+    showToast("A böngésző nem tudta menteni a papírszámlát.");
+  }
+}
+
 function loadLocalArray(key) {
   try {
     const value = JSON.parse(localStorage.getItem(key) || "[]");
@@ -1716,6 +1784,573 @@ function renderPortfolio() {
   const returnElement = document.getElementById("portfolioReturn");
   returnElement.textContent = hasEntries ? formatPercent(returnPercent) : "–";
   returnElement.className = hasEntries ? valueClass(returnPercent) : "";
+}
+
+function getPaperCurrentPrice(assetKey) {
+  return state.intraday[assetKey]?.currentPrice ?? state.assets[assetKey]?.currentPrice ?? null;
+}
+
+function useSignalForPaperOrder() {
+  const assetKey = document.getElementById("paperAsset").value;
+  const decision = analyzeIntraday(assetKey);
+  if (decision?.className === "negative") {
+    document.getElementById("paperDirection").value = "short";
+  } else if (decision?.className === "positive") {
+    document.getElementById("paperDirection").value = "long";
+  }
+  updatePaperOrderForm(true);
+}
+
+function updatePaperOrderForm(forceLevels = false) {
+  const assetKey = document.getElementById("paperAsset").value;
+  const direction = document.getElementById("paperDirection").value;
+  const entry = getPaperCurrentPrice(assetKey);
+  const entryInput = document.getElementById("paperEntry");
+  entryInput.value = Number.isFinite(entry) ? entry.toFixed(assetKey === "bitcoin" ? 2 : 3) : "";
+  const intraday = state.intraday[assetKey];
+  const atr = intraday ? calculateAtr(intraday.candles, 14) : null;
+  const fallbackDistance = Number.isFinite(entry) ? entry * 0.01 : null;
+  const distance = atr ? atr * 1.5 : fallbackDistance;
+  const stopInput = document.getElementById("paperStop");
+  const targetInput = document.getElementById("paperTarget");
+  if (Number.isFinite(entry) && distance && (forceLevels || !(Number(stopInput.value) > 0))) {
+    stopInput.value = (entry + (direction === "long" ? -distance : distance)).toFixed(
+      assetKey === "bitcoin" ? 2 : 3,
+    );
+  }
+  if (Number.isFinite(entry) && distance && (forceLevels || !(Number(targetInput.value) > 0))) {
+    targetInput.value = (entry + (direction === "long" ? distance * 2 : -distance * 2)).toFixed(
+      assetKey === "bitcoin" ? 2 : 3,
+    );
+  }
+  updatePaperOrderPreview();
+}
+
+function calculatePaperOrder() {
+  const entry = Number(document.getElementById("paperEntry").value);
+  const stop = Number(document.getElementById("paperStop").value);
+  const target = Number(document.getElementById("paperTarget").value);
+  const riskPercent = Number(document.getElementById("paperRiskPercent").value);
+  const direction = document.getElementById("paperDirection").value;
+  if (!(entry > 0) || !(stop > 0) || !(target > 0) || !(riskPercent > 0)) return null;
+  const levelsValid =
+    direction === "long" ? stop < entry && target > entry : stop > entry && target < entry;
+  if (!levelsValid) return { error: "A stop és célár nem megfelelő az irányhoz." };
+  const desiredRiskAmount = state.paperAccount.cash * riskPercent / 100;
+  const unitRisk = Math.abs(entry - stop);
+  const estimatedRoundTripFeePerUnit = (entry + stop) * 0.001;
+  const unitRiskWithFees = unitRisk + estimatedRoundTripFeePerUnit;
+  const riskSizedQuantity = unitRiskWithFees ? desiredRiskAmount / unitRiskWithFees : 0;
+  const cashLimitedQuantity = state.paperAccount.cash / entry;
+  const quantity = Math.min(riskSizedQuantity, cashLimitedQuantity);
+  if (!(quantity > 0)) return null;
+  return {
+    entry,
+    stop,
+    target,
+    direction,
+    riskPercent,
+    riskAmount: quantity * unitRiskWithFees,
+    desiredRiskAmount,
+    quantity,
+    notional: quantity * entry,
+    riskReward: Math.abs(target - entry) / unitRisk,
+  };
+}
+
+function updatePaperOrderPreview() {
+  const preview = document.getElementById("paperOrderPreview");
+  const order = calculatePaperOrder();
+  if (!order) {
+    preview.textContent = "Az adatok betöltése után számolható pozícióméret.";
+    preview.className = "order-preview";
+    return;
+  }
+  if (order.error) {
+    preview.textContent = order.error;
+    preview.className = "order-preview negative";
+    return;
+  }
+  preview.className = "order-preview";
+  preview.textContent =
+    `Javasolt mennyiség: ${formatNumber(order.quantity, 6)} · ` +
+    `becsült kockázat díjjal: $${formatNumber(order.riskAmount, 2)} · ` +
+    `névérték: $${formatNumber(order.notional, 2)} · ` +
+    `R/R: 1 : ${formatNumber(order.riskReward, 2)}`;
+}
+
+function openPaperPosition(event) {
+  event.preventDefault();
+  const order = calculatePaperOrder();
+  if (!order || order.error) {
+    showToast(order?.error || "A papírpozíció adatai hiányosak.");
+    return;
+  }
+  const asset = document.getElementById("paperAsset").value;
+  const now = Date.now();
+  state.paperAccount.positions.push({
+    id: `${now}-${Math.random().toString(16).slice(2)}`,
+    asset,
+    direction: order.direction,
+    quantity: order.quantity,
+    entry: order.entry,
+    stop: order.stop,
+    target: order.target,
+    riskPercent: order.riskPercent,
+    openedAt: now,
+    lastCheckedAt: now,
+  });
+  savePaperAccount();
+  renderPaperTrading();
+  showToast("Papírpozíció megnyitva – valódi megbízás nem történt.");
+}
+
+function updatePaperPositions(assetKey) {
+  if (!state.paperAccount?.positions.length) {
+    renderPaperTrading();
+    updatePaperOrderForm();
+    return;
+  }
+  const intraday = state.intraday[assetKey];
+  const currentPrice = getPaperCurrentPrice(assetKey);
+  if (!Number.isFinite(currentPrice)) return;
+  const closures = [];
+  state.paperAccount.positions
+    .filter((position) => position.asset === assetKey)
+    .forEach((position) => {
+      const newCandles = (intraday?.candles || []).filter(
+        (candle) => candle.time > position.lastCheckedAt,
+      );
+      for (const candle of newCandles) {
+        const stopHit =
+          position.direction === "long"
+            ? candle.low <= position.stop
+            : candle.high >= position.stop;
+        const targetHit =
+          position.direction === "long"
+            ? candle.high >= position.target
+            : candle.low <= position.target;
+        if (stopHit) {
+          closures.push({
+            id: position.id,
+            price: position.stop,
+            reason: targetHit ? "Stop (azonos gyertyában a célárral)" : "Stop-loss",
+            time: candle.time,
+          });
+          break;
+        }
+        if (targetHit) {
+          closures.push({
+            id: position.id,
+            price: position.target,
+            reason: "Célár",
+            time: candle.time,
+          });
+          break;
+        }
+        position.lastCheckedAt = candle.time;
+      }
+    });
+  closures.forEach((closure) => {
+    closePaperPositionInternal(closure.id, closure.price, closure.reason, closure.time, false);
+  });
+  recordPaperEquity();
+  savePaperAccount();
+  renderPaperTrading();
+  updatePaperOrderForm();
+}
+
+function closePaperPosition(id) {
+  const position = state.paperAccount.positions.find((item) => item.id === id);
+  const currentPrice = position ? getPaperCurrentPrice(position.asset) : null;
+  if (!position || !Number.isFinite(currentPrice)) {
+    showToast("A pozíció most nem zárható: nincs aktuális ár.");
+    return;
+  }
+  closePaperPositionInternal(id, currentPrice, "Kézi zárás", Date.now(), true);
+}
+
+function closePaperPositionInternal(id, exitPrice, reason, closedAt, shouldRender) {
+  const index = state.paperAccount.positions.findIndex((position) => position.id === id);
+  if (index < 0) return;
+  const [position] = state.paperAccount.positions.splice(index, 1);
+  const directionMultiplier = position.direction === "long" ? 1 : -1;
+  const grossPnl = (exitPrice - position.entry) * position.quantity * directionMultiplier;
+  const fees = (position.entry + exitPrice) * position.quantity * 0.001;
+  const pnl = grossPnl - fees;
+  state.paperAccount.cash += pnl;
+  state.paperAccount.trades.unshift({
+    ...position,
+    exit: exitPrice,
+    reason,
+    closedAt,
+    fees,
+    pnl,
+  });
+  state.paperAccount.trades = state.paperAccount.trades.slice(0, 250);
+  recordPaperEquity(closedAt);
+  savePaperAccount();
+  if (shouldRender) {
+    renderPaperTrading();
+    updatePaperOrderForm();
+    showToast(`Papírpozíció lezárva: ${pnl >= 0 ? "+" : ""}$${formatNumber(pnl, 2)}`);
+  }
+}
+
+function getPaperMetrics() {
+  const openPnl = state.paperAccount.positions.reduce((sum, position) => {
+    const price = getPaperCurrentPrice(position.asset);
+    if (!Number.isFinite(price)) return sum;
+    const multiplier = position.direction === "long" ? 1 : -1;
+    return sum + (price - position.entry) * position.quantity * multiplier;
+  }, 0);
+  const equity = state.paperAccount.cash + openPnl;
+  const wins = state.paperAccount.trades.filter((trade) => trade.pnl > 0);
+  const losses = state.paperAccount.trades.filter((trade) => trade.pnl < 0);
+  const grossProfit = wins.reduce((sum, trade) => sum + trade.pnl, 0);
+  const grossLoss = Math.abs(losses.reduce((sum, trade) => sum + trade.pnl, 0));
+  const winRate = state.paperAccount.trades.length
+    ? (wins.length / state.paperAccount.trades.length) * 100
+    : null;
+  const profitFactor = grossLoss ? grossProfit / grossLoss : grossProfit > 0 ? Infinity : null;
+  const equityValues = [...state.paperAccount.equityHistory.map((point) => point.equity), equity];
+  return {
+    equity,
+    openPnl,
+    realizedPnl: state.paperAccount.cash - state.paperAccount.initialCapital,
+    winRate,
+    profitFactor,
+    maxDrawdown: calculateMaxDrawdown(equityValues),
+  };
+}
+
+function calculateMaxDrawdown(values) {
+  if (!values.length) return 0;
+  let peak = values[0];
+  let maxDrawdown = 0;
+  values.forEach((value) => {
+    peak = Math.max(peak, value);
+    if (peak > 0) maxDrawdown = Math.max(maxDrawdown, ((peak - value) / peak) * 100);
+  });
+  return maxDrawdown;
+}
+
+function recordPaperEquity(time = Date.now()) {
+  const metrics = getPaperMetrics();
+  const last = state.paperAccount.equityHistory.at(-1);
+  const point = { time, equity: metrics.equity };
+  if (last && time - last.time < 60000) {
+    state.paperAccount.equityHistory[state.paperAccount.equityHistory.length - 1] = point;
+  } else {
+    state.paperAccount.equityHistory.push(point);
+  }
+  state.paperAccount.equityHistory = state.paperAccount.equityHistory.slice(-500);
+}
+
+function renderPaperTrading() {
+  if (!state.paperAccount) return;
+  const metrics = getPaperMetrics();
+  document.getElementById("paperInitialCapital").value = state.paperAccount.initialCapital;
+  setMetricValue("paperEquity", `$${formatNumber(metrics.equity, 2)}`, metrics.equity - state.paperAccount.initialCapital);
+  setMetricValue("paperRealizedPnl", formatSignedUsd(metrics.realizedPnl), metrics.realizedPnl);
+  setMetricValue("paperOpenPnl", formatSignedUsd(metrics.openPnl), metrics.openPnl);
+  document.getElementById("paperWinRate").textContent =
+    metrics.winRate === null ? "–" : `${formatNumber(metrics.winRate, 1)}%`;
+  document.getElementById("paperProfitFactor").textContent =
+    metrics.profitFactor === null
+      ? "–"
+      : metrics.profitFactor === Infinity
+        ? "∞"
+        : formatNumber(metrics.profitFactor, 2);
+  document.getElementById("paperDrawdown").textContent =
+    `${formatNumber(metrics.maxDrawdown, 2)}%`;
+  document.getElementById("paperPositionCount").textContent =
+    `${state.paperAccount.positions.length} pozíció`;
+  renderPaperPositions();
+  renderPaperTrades();
+  renderPaperEquityChart();
+}
+
+function setMetricValue(id, text, value) {
+  const element = document.getElementById(id);
+  element.textContent = text;
+  element.className = valueClass(value);
+}
+
+function formatSignedUsd(value) {
+  return `${value >= 0 ? "+" : ""}$${formatNumber(value, 2)}`;
+}
+
+function renderPaperPositions() {
+  const table = document.getElementById("paperPositionsTable");
+  table.replaceChildren();
+  if (!state.paperAccount.positions.length) {
+    appendEmptyTableRow(table, 9, "Nincs nyitott papírpozíció.");
+    return;
+  }
+  state.paperAccount.positions.forEach((position) => {
+    const currentPrice = getPaperCurrentPrice(position.asset);
+    const multiplier = position.direction === "long" ? 1 : -1;
+    const pnl = Number.isFinite(currentPrice)
+      ? (currentPrice - position.entry) * position.quantity * multiplier
+      : null;
+    const row = document.createElement("tr");
+    [
+      position.asset === "bitcoin" ? "Bitcoin" : "Arany",
+      position.direction.toUpperCase(),
+      formatNumber(position.quantity, 6),
+      `$${formatNumber(position.entry, 2)}`,
+      Number.isFinite(currentPrice) ? `$${formatNumber(currentPrice, 2)}` : "–",
+      `$${formatNumber(position.stop, 2)}`,
+      `$${formatNumber(position.target, 2)}`,
+      pnl === null ? "–" : formatSignedUsd(pnl),
+    ].forEach((text, index) => {
+      const cell = document.createElement("td");
+      cell.textContent = text;
+      if (index === 7 && pnl !== null) cell.className = valueClass(pnl);
+      row.append(cell);
+    });
+    const action = document.createElement("td");
+    const button = document.createElement("button");
+    button.className = "delete-button";
+    button.type = "button";
+    button.textContent = "Zárás";
+    button.addEventListener("click", () => closePaperPosition(position.id));
+    action.append(button);
+    row.append(action);
+    table.append(row);
+  });
+}
+
+function renderPaperTrades() {
+  const table = document.getElementById("paperTradesTable");
+  table.replaceChildren();
+  if (!state.paperAccount.trades.length) {
+    appendEmptyTableRow(table, 7, "Még nincs lezárt papírügylet.");
+    return;
+  }
+  state.paperAccount.trades.slice(0, 50).forEach((trade) => {
+    const row = document.createElement("tr");
+    [
+      new Intl.DateTimeFormat("hu-HU", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(trade.closedAt),
+      trade.asset === "bitcoin" ? "Bitcoin" : "Arany",
+      trade.direction.toUpperCase(),
+      `$${formatNumber(trade.entry, 2)}`,
+      `$${formatNumber(trade.exit, 2)}`,
+      trade.reason,
+      formatSignedUsd(trade.pnl),
+    ].forEach((text, index) => {
+      const cell = document.createElement("td");
+      cell.textContent = text;
+      if (index === 6) cell.className = valueClass(trade.pnl);
+      row.append(cell);
+    });
+    table.append(row);
+  });
+}
+
+function appendEmptyTableRow(table, columnCount, text) {
+  const row = document.createElement("tr");
+  const cell = document.createElement("td");
+  cell.colSpan = columnCount;
+  cell.className = "empty-table-cell";
+  cell.textContent = text;
+  row.append(cell);
+  table.append(row);
+}
+
+function renderPaperEquityChart() {
+  state.paperEquityChart?.destroy();
+  if (typeof Chart === "undefined") return;
+  const points = state.paperAccount.equityHistory;
+  state.paperEquityChart = new Chart(document.getElementById("paperEquityChart"), {
+    type: "line",
+    data: {
+      labels: points.map((point) =>
+        new Intl.DateTimeFormat("hu-HU", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(point.time),
+      ),
+      datasets: [{
+        data: points.map((point) => point.equity),
+        borderColor: "#286849",
+        backgroundColor: "rgba(40, 104, 73, 0.10)",
+        borderWidth: 2,
+        pointRadius: points.length < 20 ? 2 : 0,
+        fill: true,
+        tension: 0.25,
+      }],
+    },
+    options: paperChartOptions("$"),
+  });
+}
+
+function paperChartOptions(prefix = "") {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { grid: { display: false }, ticks: { maxTicksLimit: 6, font: { size: 8 } } },
+      y: {
+        position: "right",
+        grid: { color: "rgba(111, 119, 113, 0.12)" },
+        ticks: { font: { size: 8 }, callback: (value) => `${prefix}${formatNumber(value, 0)}` },
+      },
+    },
+  };
+}
+
+function resetPaperAccount() {
+  const initialCapital = Number(document.getElementById("paperInitialCapital").value);
+  if (!(initialCapital >= 100)) {
+    showToast("A kezdőtőke legalább 100 USD legyen.");
+    return;
+  }
+  if (!window.confirm("Biztosan törlöd az összes papírpozíciót és korábbi szimulált ügyletet?")) {
+    return;
+  }
+  state.paperAccount = createPaperAccount(initialCapital);
+  savePaperAccount();
+  renderPaperTrading();
+  updatePaperOrderForm(true);
+  showToast("A papírszámla újraindult.");
+}
+
+function runBacktest(event) {
+  event.preventDefault();
+  const assetKey = document.getElementById("backtestAsset").value;
+  const capital = Number(document.getElementById("backtestCapital").value);
+  const feeRate = Number(document.getElementById("backtestFee").value) / 100;
+  const candles = state.intraday[assetKey]?.candles || [];
+  if (candles.length < 60) {
+    showToast("Ehhez az eszközhöz nincs elegendő 1 perces adat.");
+    return;
+  }
+  const result = executeBacktest(candles, capital, feeRate);
+  renderBacktestResult(result);
+}
+
+function executeBacktest(candles, initialCapital, feeRate) {
+  let capital = initialCapital;
+  let position = null;
+  const trades = [];
+  const equity = [{ time: candles[30].time, equity: capital }];
+
+  for (let index = 31; index < candles.length; index += 1) {
+    const candle = candles[index];
+    if (position) {
+      const stopHit =
+        position.direction === "long" ? candle.low <= position.stop : candle.high >= position.stop;
+      const targetHit =
+        position.direction === "long"
+          ? candle.high >= position.target
+          : candle.low <= position.target;
+      if (stopHit || targetHit) {
+        const exit = stopHit ? position.stop : position.target;
+        const multiplier = position.direction === "long" ? 1 : -1;
+        const gross = (exit - position.entry) * position.quantity * multiplier;
+        const fees = (position.entry + exit) * position.quantity * feeRate;
+        const pnl = gross - fees;
+        capital += pnl;
+        trades.push({ ...position, exit, pnl, closedAt: candle.time });
+        equity.push({ time: candle.time, equity: capital });
+        position = null;
+        continue;
+      }
+    }
+    if (position) continue;
+
+    const history = candles.slice(0, index);
+    const closes = history.map((item) => item.close);
+    const ema9 = exponentialMovingAverage(closes, 9);
+    const ema21 = exponentialMovingAverage(closes, 21);
+    const rsi = calculateRsi(closes, 14);
+    const momentumBase = closes.at(-16);
+    const momentum = momentumBase ? ((closes.at(-1) - momentumBase) / momentumBase) * 100 : 0;
+    const atr = calculateAtr(history, 14);
+    if (ema9 === null || ema21 === null || rsi === null || atr === null || !(capital > 0)) continue;
+    const gap = ((ema9 - ema21) / ema21) * 100;
+    let direction = null;
+    if (gap > 0.015 && rsi >= 50 && rsi <= 68 && momentum > 0.06) direction = "long";
+    if (gap < -0.015 && rsi >= 32 && rsi <= 50 && momentum < -0.06) direction = "short";
+    if (!direction) continue;
+
+    const entry = candle.open;
+    const stopDistance = atr * 1.5;
+    const riskAmount = capital * 0.01;
+    const unitRiskWithFees = stopDistance + (entry * 2) * feeRate;
+    const quantity = Math.min(riskAmount / unitRiskWithFees, capital / entry);
+    if (!(quantity > 0)) continue;
+    position = {
+      direction,
+      entry,
+      quantity,
+      stop: entry + (direction === "long" ? -stopDistance : stopDistance),
+      target: entry + (direction === "long" ? stopDistance * 2 : -stopDistance * 2),
+      openedAt: candle.time,
+    };
+  }
+
+  if (position) {
+    const last = candles.at(-1);
+    const multiplier = position.direction === "long" ? 1 : -1;
+    const gross = (last.close - position.entry) * position.quantity * multiplier;
+    const fees = (position.entry + last.close) * position.quantity * feeRate;
+    const pnl = gross - fees;
+    capital += pnl;
+    trades.push({ ...position, exit: last.close, pnl, closedAt: last.time });
+    equity.push({ time: last.time, equity: capital });
+  }
+
+  const wins = trades.filter((trade) => trade.pnl > 0);
+  const losses = trades.filter((trade) => trade.pnl < 0);
+  const grossProfit = wins.reduce((sum, trade) => sum + trade.pnl, 0);
+  const grossLoss = Math.abs(losses.reduce((sum, trade) => sum + trade.pnl, 0));
+  return {
+    initialCapital,
+    finalCapital: capital,
+    trades,
+    equity,
+    winRate: trades.length ? (wins.length / trades.length) * 100 : 0,
+    profitFactor: grossLoss ? grossProfit / grossLoss : grossProfit > 0 ? Infinity : 0,
+    maxDrawdown: calculateMaxDrawdown(equity.map((point) => point.equity)),
+    startTime: candles[0].time,
+    endTime: candles.at(-1).time,
+    candleCount: candles.length,
+  };
+}
+
+function renderBacktestResult(result) {
+  document.getElementById("backtestTrades").textContent = String(result.trades.length);
+  document.getElementById("backtestWinRate").textContent = `${formatNumber(result.winRate, 1)}%`;
+  const pnl = result.finalCapital - result.initialCapital;
+  setMetricValue("backtestPnl", formatSignedUsd(pnl), pnl);
+  document.getElementById("backtestProfitFactor").textContent =
+    result.profitFactor === Infinity ? "∞" : formatNumber(result.profitFactor, 2);
+  document.getElementById("backtestDrawdown").textContent =
+    `${formatNumber(result.maxDrawdown, 2)}%`;
+  const durationHours = (result.endTime - result.startTime) / 3600000;
+  document.getElementById("backtestPeriod").textContent =
+    `${formatNumber(durationHours, 1)} óra · ${result.candleCount} gyertya`;
+  state.backtestChart?.destroy();
+  if (typeof Chart === "undefined") return;
+  state.backtestChart = new Chart(document.getElementById("backtestChart"), {
+    type: "line",
+    data: {
+      labels: result.equity.map((point) =>
+        new Intl.DateTimeFormat("hu-HU", { hour: "2-digit", minute: "2-digit" }).format(point.time),
+      ),
+      datasets: [{
+        data: result.equity.map((point) => point.equity),
+        borderColor: pnl >= 0 ? "#286849" : "#a3473d",
+        backgroundColor: pnl >= 0 ? "rgba(40, 104, 73, 0.10)" : "rgba(163, 71, 61, 0.10)",
+        borderWidth: 2,
+        pointRadius: result.equity.length < 30 ? 2 : 0,
+        fill: true,
+        tension: 0.2,
+      }],
+    },
+    options: paperChartOptions("$"),
+  });
 }
 
 function calculateRisk() {
