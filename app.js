@@ -46,6 +46,8 @@ const state = {
   initialLoadComplete: false,
   newsLoadRunning: false,
   newsLoadedAt: 0,
+  assetRefreshing: Object.fromEntries(Catalog.ALL_KEYS.map((key) => [key, false])),
+  scanRowCache: {},
 };
 
 const INTRADAY_STALE_MS = 90000;
@@ -99,6 +101,45 @@ function getAssetName(assetKey) {
 
 function getAssetDecimals(assetKey) {
   return getAssetMeta(assetKey)?.priceDecimals ?? 2;
+}
+
+function isAssetRefreshing(assetKey) {
+  return Boolean(state.assetRefreshing[assetKey]);
+}
+
+function setAssetRefreshing(assetKey, refreshing) {
+  state.assetRefreshing[assetKey] = Boolean(refreshing);
+}
+
+function mergeMultiTimeframe(assetKey, incoming) {
+  if (!incoming || !Object.keys(incoming).length) return;
+  state.multiTimeframe[assetKey] = {
+    ...(state.multiTimeframe[assetKey] || {}),
+    ...incoming,
+  };
+}
+
+function getLastKnownPrice(assetKey) {
+  const intraday = state.intraday[assetKey];
+  const daily = state.assets[assetKey];
+  if (Number.isFinite(intraday?.currentPrice)) return intraday.currentPrice;
+  if (Number.isFinite(daily?.currentPrice)) return daily.currentPrice;
+  const cached = state.scanRowCache[assetKey];
+  if (Number.isFinite(cached?.price)) return cached.price;
+  return null;
+}
+
+function hasKnownAssetData(assetKey) {
+  return Boolean(
+    state.intraday[assetKey] ||
+      state.assets[assetKey] ||
+      state.scanRowCache[assetKey],
+  );
+}
+
+function updateScanRowCache(assetKey, row) {
+  if (!row) return;
+  state.scanRowCache[assetKey] = { ...row, updatedAt: Date.now() };
 }
 
 function isTradeableAsset(assetKey) {
@@ -250,7 +291,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
 async function loadDashboard() {
   const sequence = ++state.loadSequence;
-  setLoading(true);
+  const hasExistingMarketData =
+    state.initialLoadComplete ||
+    getLoadedAssetKeys().length > 0 ||
+    getIntradayAssetKeys().length > 0;
+  if (!hasExistingMarketData) setLoading(true);
   hideError();
   const errors = [];
   let firstMarketPaint = false;
@@ -275,8 +320,9 @@ async function loadDashboard() {
     revealMarket();
   };
 
-  const loadAssetDaily = (assetKey) =>
-    Catalog.fetchDaily(assetKey, state.timeframe, state.settings, endpoints)
+  const loadAssetDaily = (assetKey) => {
+    setAssetRefreshing(assetKey, true);
+    return Catalog.fetchDaily(assetKey, state.timeframe, state.settings, endpoints)
       .then((asset) => {
         if (!isCurrent()) return;
         state.assets[assetKey] = asset;
@@ -294,10 +340,15 @@ async function loadDashboard() {
         if (!state.assets[assetKey] && Catalog.isFeatured(assetKey)) renderUnavailableAsset(assetKey);
         renderMarketsGrid();
         renderDataHealth();
+      })
+      .finally(() => {
+        if (isCurrent()) setAssetRefreshing(assetKey, false);
       });
+  };
 
-  const loadAssetIntraday = (assetKey) =>
-    Catalog.fetchIntraday(
+  const loadAssetIntraday = (assetKey) => {
+    setAssetRefreshing(assetKey, true);
+    return Catalog.fetchIntraday(
       assetKey,
       1,
       state.settings,
@@ -333,7 +384,11 @@ async function loadDashboard() {
       .catch(() => {
         if (!isCurrent()) return;
         renderTradingCenter();
+      })
+      .finally(() => {
+        if (isCurrent()) setAssetRefreshing(assetKey, false);
       });
+  };
 
   const loadAssetTimeframes = (assetKey) =>
     Catalog.fetchAdditionalTimeframes(
@@ -345,7 +400,7 @@ async function loadDashboard() {
     )
       .then((timeframes) => {
         if (!isCurrent()) return;
-        state.multiTimeframe[assetKey] = timeframes;
+        mergeMultiTimeframe(assetKey, timeframes);
         state.assetRefreshMeta[assetKey] = {
           ...(state.assetRefreshMeta[assetKey] || {}),
           timeframesAt: Date.now(),
@@ -1443,8 +1498,11 @@ function renderMarketCard(assetKey, target) {
   const meta = getAssetMeta(assetKey);
   const asset = state.assets[assetKey];
   const decision = analyzeIntraday(assetKey);
+  const refreshing = isAssetRefreshing(assetKey);
+  const hasDisplayData = Boolean(asset || state.intraday[assetKey] || state.scanRowCache[assetKey]);
+  const displayPrice = getLastKnownPrice(assetKey);
   const card = document.createElement("article");
-  card.className = `market-card ${meta.cardClass}`;
+  card.className = `market-card ${meta.cardClass}${refreshing && hasDisplayData ? " stale-data" : ""}`;
   card.dataset.asset = assetKey;
 
   const heading = document.createElement("div");
@@ -1454,16 +1512,18 @@ function renderMarketCard(assetKey, target) {
     `<div><p>${meta.name}</p><span>${meta.pair}</span></div>`;
   const change = document.createElement("span");
   change.className = `change ${valueClass(asset?.change)}`;
-  change.textContent = asset?.change === null ? "–" : formatPercent(asset.change);
+  change.textContent = asset?.change === null || asset?.change === undefined ? "–" : formatPercent(asset.change);
   heading.append(change);
   card.append(heading);
 
   const priceRow = document.createElement("div");
   priceRow.className = "market-price-row";
   const price = document.createElement("strong");
-  price.textContent = asset
-    ? formatNumber(convertCurrency(asset.currentPrice), getAssetDecimals(assetKey))
-    : "Nem elérhető";
+  price.textContent = Number.isFinite(displayPrice)
+    ? formatNumber(convertCurrency(displayPrice), getAssetDecimals(assetKey))
+    : hasDisplayData
+      ? "–"
+      : "Nem elérhető";
   priceRow.append(price, document.createTextNode(` ${state.settings.currency}`));
   card.append(priceRow);
 
@@ -1476,9 +1536,14 @@ function renderMarketCard(assetKey, target) {
 
   const signalRow = document.createElement("div");
   signalRow.className = "market-signal-row";
+  const signalText =
+    decision?.signal ||
+    state.scanRowCache[assetKey]?.signal ||
+    (hasDisplayData ? "KIVÁRÁS" : "Nincs adat");
+  const signalClass = decision?.className || state.scanRowCache[assetKey]?.className || "neutral";
   signalRow.innerHTML =
-    `<div><span>Jelzés</span><strong class="signal ${decision?.className || "neutral"}">${decision?.signal || "Nincs adat"}</strong></div>` +
-    `<div><span>Bizalom</span><strong>${decision?.confidence ?? "–"}${decision?.confidence ? "%" : ""}</strong></div>`;
+    `<div><span>Jelzés</span><strong class="signal ${signalClass}">${signalText}</strong></div>` +
+    `<div><span>Bizalom</span><strong>${decision?.confidence ?? state.scanRowCache[assetKey]?.confidence ?? "–"}${decision?.confidence || state.scanRowCache[assetKey]?.confidence ? "%" : ""}</strong></div>`;
   card.append(signalRow);
 
   const source = document.createElement("small");
@@ -1548,12 +1613,14 @@ function renderMarketsGrid() {
       const meta = getAssetMeta(assetKey);
       const asset = state.assets[assetKey];
       const decision = analyzeIntraday(assetKey);
+      const displayPrice = getLastKnownPrice(assetKey);
+      const hasDisplayData = hasKnownAssetData(assetKey);
       const item = document.createElement("article");
-      item.className = "market-preview-card";
+      item.className = `market-preview-card${isAssetRefreshing(assetKey) && hasDisplayData ? " stale-data" : ""}`;
       item.innerHTML =
         `<span class="asset-icon ${meta.iconClass}">${meta.icon}</span>` +
-        `<div><strong>${meta.name}</strong><small>${asset ? `$${formatNumber(asset.currentPrice, getAssetDecimals(assetKey))}` : "Betöltés…"}</small></div>` +
-        `<span class="signal ${decision?.className || "neutral"}">${decision?.signal || "–"}</span>`;
+        `<div><strong>${meta.name}</strong><small>${Number.isFinite(displayPrice) ? `$${formatNumber(displayPrice, getAssetDecimals(assetKey))}` : hasDisplayData ? "–" : "Betöltés…"}</small></div>` +
+        `<span class="signal ${decision?.className || state.scanRowCache[assetKey]?.className || "neutral"}">${decision?.signal || state.scanRowCache[assetKey]?.signal || (hasDisplayData ? "KIVÁRÁS" : "–")}</span>`;
       item.addEventListener("click", () => setActiveView("markets"));
       preview.append(item);
     });
@@ -1586,6 +1653,20 @@ function renderTradingCenter() {
   renderSignalHistory(assetKey);
 
   if (!decision) {
+    const cached = state.scanRowCache[state.selectedTradeAsset];
+    if (cached && (isAssetRefreshing(assetKey) || hasKnownAssetData(assetKey))) {
+      document.getElementById("tradeSignal").textContent = cached.signal || "KIVÁRÁS";
+      document.getElementById("tradeSignal").className = `trade-signal ${cached.className || "neutral"}`;
+      document.getElementById("tradeSummary").textContent =
+        "Háttérfrissítés folyamatban – az utolsó ismert jelzés látható.";
+      status.className = "live-data-state warning";
+      status.querySelector("strong").textContent = "Frissítés folyamatban";
+      status.querySelector("small").textContent = "Utolsó ismert adat megjelenítve";
+      if (Number.isFinite(cached.price)) {
+        document.getElementById("tradePrice").textContent = formatMoney(convertCurrency(cached.price));
+      }
+      return;
+    }
     document.getElementById("tradeSignal").textContent = "NINCS ADAT";
     document.getElementById("tradeSignal").className = "trade-signal neutral";
     document.getElementById("tradeSummary").textContent =
@@ -1669,8 +1750,13 @@ function renderTradingCenter() {
 function updateDecisionShortcut(assetKey, decision) {
   const element = document.getElementById(`decisionSignal-${assetKey}`);
   if (!element) return;
-  element.textContent = decision?.signal || "Nincs adat";
-  element.className = decision?.className || "neutral";
+  const cached = state.scanRowCache[assetKey];
+  const hasDisplayData = hasKnownAssetData(assetKey);
+  element.textContent =
+    decision?.signal ||
+    cached?.signal ||
+    (hasDisplayData ? "KIVÁRÁS" : "Nincs adat");
+  element.className = decision?.className || cached?.className || "neutral";
 }
 
 function trackSignalChange(assetKey, decision) {
@@ -1956,71 +2042,76 @@ async function refreshAssetBundle(assetKey, options = {}) {
   const { daily = true, intraday = true, timeframes = false } = options;
   const meta = state.assetRefreshMeta[assetKey] || { dailyAt: 0, timeframesAt: 0 };
   state.assetRefreshMeta[assetKey] = meta;
+  setAssetRefreshing(assetKey, true);
 
-  if (daily) {
-    try {
-      const asset = await Catalog.fetchDaily(assetKey, state.timeframe, state.settings, endpoints);
-      state.assets[assetKey] = asset;
-      state.dataHealth[assetKey] = resolveAssetHealth(assetKey, asset);
-      asset.analysis = analyzeAsset(asset, assetSpecificSentiment(assetKey));
-      meta.dailyAt = Date.now();
-      if (Catalog.isFeatured(assetKey)) renderAsset(assetKey);
-      renderMarketsGrid();
-      renderIndicators(state.selectedAsset);
-      renderPortfolio();
-      checkAlerts();
-      renderDataHealth();
-    } catch {
-      if (!state.assets[assetKey]) state.dataHealth[assetKey] = "error";
-      renderMarketsGrid();
-      renderDataHealth();
-    }
-  }
-
-  if (intraday) {
-    try {
-      const asset = await Catalog.fetchIntraday(
-        assetKey,
-        1,
-        state.settings,
-        formatIntervalShort,
-        formatIntervalLong,
-      );
-      if (asset) {
-        state.intraday[assetKey] = asset;
-        state.dataHealth[assetKey] = resolveAssetHealth(assetKey, {
-          ...state.assets[assetKey],
-          degraded: asset.degraded,
-          warning: state.assets[assetKey]?.warning,
-        });
+  try {
+    if (daily) {
+      try {
+        const asset = await Catalog.fetchDaily(assetKey, state.timeframe, state.settings, endpoints);
+        state.assets[assetKey] = asset;
+        state.dataHealth[assetKey] = resolveAssetHealth(assetKey, asset);
+        asset.analysis = analyzeAsset(asset, assetSpecificSentiment(assetKey));
+        meta.dailyAt = Date.now();
+        if (Catalog.isFeatured(assetKey)) renderAsset(assetKey);
+        renderMarketsGrid();
+        renderIndicators(state.selectedAsset);
+        renderPortfolio();
+        checkAlerts();
+        renderDataHealth();
+      } catch {
+        if (!state.assets[assetKey]) state.dataHealth[assetKey] = "error";
+        renderMarketsGrid();
+        renderDataHealth();
       }
-      state.assetRefreshMeta[assetKey] = {
-        ...(state.assetRefreshMeta[assetKey] || {}),
-        intradayAt: asset?.fetchedAt || Date.now(),
-      };
-      renderTradingCenter();
-      updatePaperPositions(assetKey);
-      renderDataHealth();
-    } catch {
-      // Keep the last valid intraday series during a temporary source failure.
     }
-  }
 
-  if (timeframes) {
-    try {
-      const timeframesData = await Catalog.fetchAdditionalTimeframes(
-        assetKey,
-        state.settings,
-        formatIntervalShort,
-        formatIntervalLong,
-        endpoints,
-      );
-      state.multiTimeframe[assetKey] = timeframesData;
-      meta.timeframesAt = Date.now();
-      renderTradingCenter();
-    } catch {
-      // Optional timeframes may be unavailable for some sources.
+    if (intraday) {
+      try {
+        const asset = await Catalog.fetchIntraday(
+          assetKey,
+          1,
+          state.settings,
+          formatIntervalShort,
+          formatIntervalLong,
+        );
+        if (asset) {
+          state.intraday[assetKey] = asset;
+          state.dataHealth[assetKey] = resolveAssetHealth(assetKey, {
+            ...state.assets[assetKey],
+            degraded: asset.degraded,
+            warning: state.assets[assetKey]?.warning,
+          });
+        }
+        state.assetRefreshMeta[assetKey] = {
+          ...(state.assetRefreshMeta[assetKey] || {}),
+          intradayAt: asset?.fetchedAt || Date.now(),
+        };
+        renderTradingCenter();
+        updatePaperPositions(assetKey);
+        renderDataHealth();
+      } catch {
+        // Keep the last valid intraday series during a temporary source failure.
+      }
     }
+
+    if (timeframes) {
+      try {
+        const timeframesData = await Catalog.fetchAdditionalTimeframes(
+          assetKey,
+          state.settings,
+          formatIntervalShort,
+          formatIntervalLong,
+          endpoints,
+        );
+        mergeMultiTimeframe(assetKey, timeframesData);
+        meta.timeframesAt = Date.now();
+        renderTradingCenter();
+      } catch {
+        // Optional timeframes may be unavailable for some sources.
+      }
+    }
+  } finally {
+    setAssetRefreshing(assetKey, false);
   }
 }
 
@@ -2179,6 +2270,7 @@ async function refreshLiveIntraday() {
   const refreshKeys = getLiveRefreshKeys();
   await Promise.allSettled(
     refreshKeys.map(async (assetKey) => {
+      setAssetRefreshing(assetKey, true);
       try {
         const asset = await Catalog.fetchIntraday(
           assetKey,
@@ -2202,6 +2294,8 @@ async function refreshLiveIntraday() {
         updatePaperPositions(assetKey);
       } catch {
         // Keep the last valid intraday series during a temporary source failure.
+      } finally {
+        setAssetRefreshing(assetKey, false);
       }
     }),
   );
@@ -3093,6 +3187,10 @@ function initBotUi() {
     resizeBotCharts: () => {
       state.botEquityChart?.resize();
     },
+    updateScanRowCache,
+    isAssetRefreshing,
+    hasKnownAssetData,
+    getLastKnownPrice,
   });
   scheduleBotTick();
 }

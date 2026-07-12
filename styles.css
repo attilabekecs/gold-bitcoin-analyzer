@@ -2157,6 +2157,19 @@ h2 {
   opacity: 0.72;
 }
 
+.bot-scan-row.stale-data,
+.market-card.stale-data,
+.market-preview-card.stale-data {
+  opacity: 0.88;
+}
+
+.market-card.stale-data .market-source::after,
+.bot-scan-row.stale-data .bot-scan-details::after {
+  content: " ↻";
+  color: var(--muted);
+  font-size: 10px;
+}
+
 .bot-scan-row-reasons {
   color: var(--muted);
   font-size: 10px;

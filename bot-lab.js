@@ -998,6 +998,86 @@
     if (state) state.botEquityChart = equityChart;
   }
 
+  function resolveScanRow(result, appState, botState) {
+    const assetKey = result.assetKey;
+    const liveAsset = appState?.assets?.[assetKey];
+    const liveIntraday = appState?.intraday?.[assetKey];
+    const cached = appState?.scanRowCache?.[assetKey];
+    const lastScanRow = botState?.lastScan?.results?.find((entry) => entry.assetKey === assetKey);
+    const fallback = cached || (lastScanRow
+      ? {
+          price:
+            lastScanRow.decision?.currentPrice ??
+            liveIntraday?.currentPrice ??
+            liveAsset?.currentPrice,
+          change: lastScanRow.decision?.momentum15 ?? lastScanRow.decision?.minuteChange,
+          signal: lastScanRow.signal,
+          className: lastScanRow.className,
+          confidence: lastScanRow.confidence,
+          opportunityScore: lastScanRow.opportunityScore,
+          score: lastScanRow.score,
+          scoreBreakdown: lastScanRow.scoreBreakdown,
+        }
+      : null);
+    const refreshing = appState?.assetRefreshing?.[assetKey];
+    const hasLiveData = Boolean(
+      result.decision ||
+        liveIntraday ||
+        liveAsset ||
+        (result.signal && result.signal !== "Nincs adat"),
+    );
+
+    const price =
+      result.decision?.currentPrice ??
+      liveIntraday?.currentPrice ??
+      liveAsset?.currentPrice ??
+      fallback?.price;
+    const change = result.decision?.momentum15 ?? result.decision?.minuteChange ?? fallback?.change;
+    const signal =
+      result.signal && result.signal !== "Nincs adat"
+        ? result.signal
+        : result.decision?.signal || fallback?.signal;
+    const className = result.className || result.decision?.className || fallback?.className || "neutral";
+    const confidence = result.confidence ?? result.decision?.confidence ?? fallback?.confidence;
+    const opportunityScore = result.opportunityScore ?? fallback?.opportunityScore;
+    const score = result.score ?? result.decision?.score ?? fallback?.score;
+    const stale = Boolean(refreshing && fallback && !result.decision);
+    const hasData = hasLiveData || Boolean(fallback);
+
+    if (hasLiveData) {
+      if (typeof appState?.updateScanRowCache === "function") {
+        appState.updateScanRowCache(assetKey, {
+          price,
+          change,
+          signal,
+          className,
+          confidence,
+          opportunityScore,
+          score,
+          eligible: result.eligible,
+          topReasons: result.topReasons,
+          filterReasons: result.filterReasons,
+        });
+      }
+    }
+
+    return {
+      price,
+      change,
+      signal,
+      className,
+      confidence,
+      opportunityScore,
+      score,
+      scoreBreakdown: result.scoreBreakdown || fallback?.scoreBreakdown,
+      hasData,
+      stale,
+      eligible: result.eligible,
+      topReasons: result.topReasons,
+      filterReasons: result.filterReasons,
+    };
+  }
+
   function renderMarketScan(formatNumber) {
     const botState = getBotState();
     const grid = document.getElementById("botSignalGrid");
@@ -1025,11 +1105,9 @@
       return trendLabel(result.className);
     };
 
-    const hasScannerData = (result) => {
-      if (result.decision) return true;
-      return Boolean(
-        appState?.intraday?.[result.assetKey] || appState?.assets?.[result.assetKey],
-      );
+    const hasScannerData = (result, appState, botState) => {
+      const row = resolveScanRow(result, appState, botState);
+      return row.hasData;
     };
 
     const formatScanPrice = (usdPrice, decimals) => {
@@ -1066,7 +1144,7 @@
     const results = Bot.scanMarketOpportunities(botState, context, Date.now());
 
     const eligibleCount = results.filter((result) => result.eligible).length;
-    const withDataCount = results.filter((result) => hasScannerData(result)).length;
+    const withDataCount = results.filter((result) => hasScannerData(result, appState, botState)).length;
     grid.replaceChildren();
     grid.className = "bot-scan-list";
     if (!results.length) {
@@ -1087,30 +1165,31 @@
 
       results.forEach((result, index) => {
         const isChosen = botState.lastScan?.chosen?.assetKey === result.assetKey;
-        const hasData = hasScannerData(result);
+        const display = resolveScanRow(result, appState, botState);
+        const hasData = display.hasData;
         const row = document.createElement("article");
-        row.className = `bot-scan-row ${result.className}${result.eligible ? " eligible" : ""}${isChosen ? " chosen" : ""}${hasData ? "" : " pending-data"}`;
+        row.className =
+          `bot-scan-row ${display.className}${result.eligible ? " eligible" : ""}${isChosen ? " chosen" : ""}` +
+          `${hasData ? "" : " pending-data"}${display.stale ? " stale-data" : ""}`;
 
-        const price = result.decision?.currentPrice
-          ?? appState?.intraday?.[result.assetKey]?.currentPrice
-          ?? appState?.assets?.[result.assetKey]?.currentPrice;
-        const change = result.decision?.momentum15 ?? result.decision?.minuteChange;
         const decimals = Catalog.getAsset(result.assetKey)?.priceDecimals ?? 2;
-        const bd = result.scoreBreakdown;
-        const signalText = hasData ? result.signal : "Betöltés…";
+        const bd = display.scoreBreakdown || result.scoreBreakdown;
+        const signalText = hasData
+          ? display.signal || result.signal || "KIVÁRÁS"
+          : "Betöltés…";
         const detailsText = hasData
-          ? `${formatNumber(result.opportunityScore, 0)} pt · ${result.confidence ?? "–"}% · jel ${result.score !== null ? formatNumber(result.score, 2) : "–"}`
+          ? `${formatNumber(display.opportunityScore ?? 0, 0)} pt · ${display.confidence ?? "–"}% · jel ${display.score !== null && display.score !== undefined ? formatNumber(display.score, 2) : "–"}${display.stale ? " · frissítés" : ""}`
           : "Várakozás adatra…";
 
         row.innerHTML = `
           <span class="bot-scan-rank">#${index + 1}</span>
           <span class="bot-scan-name">${result.assetName}</span>
-          <strong class="bot-scan-signal ${result.className}">${signalText}</strong>
-          <span class="bot-scan-price">${Number.isFinite(price) ? formatScanPrice(price, decimals) : "–"}</span>
-          <span class="bot-scan-change ${bridge.valueClass(change || 0)}">${Number.isFinite(change) ? `${change >= 0 ? "+" : ""}${formatNumber(change, 2)}%` : "–"}</span>
-          <span class="bot-scan-trend ${result.className}">${hasData ? trendLabel(result.className) : "–"}</span>
+          <strong class="bot-scan-signal ${display.className}">${signalText}</strong>
+          <span class="bot-scan-price">${Number.isFinite(display.price) ? formatScanPrice(display.price, decimals) : "–"}</span>
+          <span class="bot-scan-change ${bridge.valueClass(display.change || 0)}">${Number.isFinite(display.change) ? `${display.change >= 0 ? "+" : ""}${formatNumber(display.change, 2)}%` : "–"}</span>
+          <span class="bot-scan-trend ${display.className}">${hasData ? trendLabel(display.className) : "–"}</span>
           <span class="bot-scan-sentiment">${hasData ? sentimentFor(result.assetKey, result) : "–"}</span>
-          <span class="bot-scan-details" title="${hasData ? `Bizalom ${formatNumber(bd.confidence, 0)} + jel ${formatNumber(bd.signalStrength, 1)} + egyezés ${formatNumber(bd.alignmentBonus, 1)}` : ""}">${detailsText}</span>`;
+          <span class="bot-scan-details" title="${hasData ? `Bizalom ${formatNumber(bd?.confidence ?? 0, 0)} + jel ${formatNumber(bd?.signalStrength ?? 0, 1)} + egyezés ${formatNumber(bd?.alignmentBonus ?? 0, 1)}` : ""}">${detailsText}</span>`;
 
         if (hasData) {
           const reasons = document.createElement("div");
