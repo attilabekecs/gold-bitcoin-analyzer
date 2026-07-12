@@ -138,6 +138,7 @@ document.addEventListener("DOMContentLoaded", () => {
     "news",
     "portfolio",
     "practice",
+    "bot",
     "simulator",
     "strategy",
     "ai",
@@ -1172,7 +1173,7 @@ function setActiveView(view, updateHash = true) {
     selectTradeAsset(view);
     selectIndicatorAsset(view);
   }
-  if (view === "markets" || view === "practice") {
+  if (view === "markets" || view === "bot") {
     renderMarketsGrid();
     renderBotTrading();
   }
@@ -1184,6 +1185,7 @@ function setActiveView(view, updateHash = true) {
     Object.values(state.technicalCharts).forEach((chart) => chart?.resize());
     state.paperEquityChart?.resize();
     state.botEquityChart?.resize();
+    window.BotLab?.resize?.();
     state.backtestChart?.resize();
     window.StrategyLab?.resize?.();
   });
@@ -2575,256 +2577,42 @@ function getBotContext() {
   return {
     assets: state.assets,
     intraday: state.intraday,
+    multiTimeframe: state.multiTimeframe,
     analyzeIntraday,
+    getIntradaySeries,
+    calculateTimeframeAlignment,
+    indicators: {
+      ema: exponentialMovingAverage,
+      rsi: calculateRsi,
+      atr: calculateAtr,
+      average,
+    },
   };
 }
 
 function runVirtualBotTick() {
   if (!state.botState || !window.VirtualBot) return;
   window.VirtualBot.tick(state.botState, getBotContext());
+  renderBotTrading();
 }
 
 function initBotUi() {
-  if (!state.botState || !window.VirtualBot) return;
-  const checks = document.getElementById("botAssetChecks");
-  if (checks) {
-    checks.replaceChildren(
-      ...Catalog.ALL_KEYS.map((assetKey) => {
-        const meta = getAssetMeta(assetKey);
-        const label = document.createElement("label");
-        label.className = "check-label";
-        const input = document.createElement("input");
-        input.type = "checkbox";
-        input.value = assetKey;
-        input.checked = state.botState.config.assets.includes(assetKey);
-        label.append(input, document.createTextNode(` ${meta.name}`));
-        return label;
-      }),
-    );
-  }
-  document.getElementById("botEnabled")?.addEventListener("change", (event) => {
-    state.botState.config.enabled = event.target.checked;
-    window.VirtualBot.saveBotState(state.botState);
-    renderBotTrading();
-    if (state.botState.config.enabled) runVirtualBotTick();
+  window.BotLab?.init?.({
+    getState: () => state,
+    getBotContext,
+    runTick: runVirtualBotTick,
+    showToast,
+    formatNumber,
+    formatSignedUsd,
+    valueClass,
+    setMetricValue,
+    appendEmptyTableRow,
+    paperChartOptions,
   });
-  document.getElementById("botSaveConfig")?.addEventListener("click", saveBotConfig);
-  document.getElementById("botResetButton")?.addEventListener("click", resetBotAccount);
-  syncBotConfigForm();
-  renderBotTrading();
-}
-
-function syncBotConfigForm() {
-  if (!state.botState) return;
-  const config = state.botState.config;
-  const setValue = (id, value) => {
-    const element = document.getElementById(id);
-    if (element) element.value = value;
-  };
-  setValue("botInitialCapital", config.initialCapital);
-  setValue("botRiskPercent", config.riskPercent);
-  setValue("botMinConfidence", config.minConfidence);
-  setValue("botMaxPositions", config.maxPositions);
-  setValue("botCooldown", config.cooldownMinutes);
-  const autoClose = document.getElementById("botAutoClose");
-  if (autoClose) autoClose.checked = config.autoCloseOnReversal;
-  const enabled = document.getElementById("botEnabled");
-  if (enabled) enabled.checked = config.enabled;
-  document.querySelectorAll("#botAssetChecks input").forEach((input) => {
-    input.checked = config.assets.includes(input.value);
-  });
-}
-
-function saveBotConfig() {
-  if (!state.botState) return;
-  const selectedAssets = [...document.querySelectorAll("#botAssetChecks input:checked")].map(
-    (input) => input.value,
-  );
-  state.botState.config = {
-    ...state.botState.config,
-    enabled: document.getElementById("botEnabled")?.checked || false,
-    initialCapital: Number(document.getElementById("botInitialCapital")?.value) || 10000,
-    riskPercent: Number(document.getElementById("botRiskPercent")?.value) || 1,
-    minConfidence: Number(document.getElementById("botMinConfidence")?.value) || 55,
-    maxPositions: Number(document.getElementById("botMaxPositions")?.value) || 4,
-    cooldownMinutes: Number(document.getElementById("botCooldown")?.value) || 20,
-    autoCloseOnReversal: document.getElementById("botAutoClose")?.checked ?? true,
-    assets: selectedAssets.length ? selectedAssets : ["bitcoin"],
-  };
-  window.VirtualBot.saveBotState(state.botState);
-  renderBotTrading();
-  showToast("Bot beállítások elmentve.");
-  if (state.botState.config.enabled) runVirtualBotTick();
-}
-
-function resetBotAccount() {
-  if (!window.confirm("Biztosan törlöd a bot összes pozícióját és ügyletét?")) return;
-  const config = {
-    ...state.botState.config,
-    initialCapital: Number(document.getElementById("botInitialCapital")?.value) || 10000,
-  };
-  state.botState = window.VirtualBot.resetBot(config);
-  syncBotConfigForm();
-  renderBotTrading();
-  showToast("A virtuális bot újraindult.");
 }
 
 function renderBotTrading() {
-  if (!state.botState || !window.VirtualBot) return;
-  const metrics = window.VirtualBot.getMetrics(state.botState, getBotContext());
-  setMetricValue("botEquity", `$${formatNumber(metrics.equity, 2)}`, metrics.equity - state.botState.initialCapital);
-  setMetricValue("botRealizedPnl", formatSignedUsd(metrics.realizedPnl), metrics.realizedPnl);
-  setMetricValue("botOpenPnl", formatSignedUsd(metrics.openPnl), metrics.openPnl);
-  document.getElementById("botWinRate").textContent =
-    metrics.winRate === null ? "–" : `${formatNumber(metrics.winRate, 1)}%`;
-  document.getElementById("botProfitFactor").textContent =
-    metrics.profitFactor === null
-      ? "–"
-      : metrics.profitFactor === Infinity
-        ? "∞"
-        : formatNumber(metrics.profitFactor, 2);
-  document.getElementById("botDrawdown").textContent = `${formatNumber(metrics.maxDrawdown, 2)}%`;
-  document.getElementById("botOpenCount").textContent = `${metrics.openCount} pozíció`;
-
-  const status = document.getElementById("botStatus");
-  if (status) {
-    status.textContent = state.botState.config.enabled
-      ? `Bot aktív · ${metrics.tradeCount} lezárt ügylet · utolsó tick: ${
-          state.botState.lastTickAt
-            ? new Intl.DateTimeFormat("hu-HU", { hour: "2-digit", minute: "2-digit" }).format(
-                state.botState.lastTickAt,
-              )
-            : "most"
-        }`
-      : "Bot kikapcsolva – kapcsold be a automatikus papírkereskedéshez.";
-    status.className = `bot-status ${state.botState.config.enabled ? "live" : ""}`;
-  }
-
-  renderBotPositions();
-  renderBotTrades();
-  renderBotSuggestions();
-  renderBotActivity();
-  renderBotEquityChart();
-}
-
-function renderBotPositions() {
-  const table = document.getElementById("botPositionsTable");
-  if (!table) return;
-  table.replaceChildren();
-  if (!state.botState.positions.length) {
-    appendEmptyTableRow(table, 7, "Nincs nyitott bot-pozíció.");
-    return;
-  }
-  state.botState.positions.forEach((position) => {
-    const price = window.VirtualBot.getCurrentPrice(position.asset, getBotContext());
-    const multiplier = position.direction === "long" ? 1 : -1;
-    const pnl = Number.isFinite(price)
-      ? (price - position.entry) * position.quantity * multiplier
-      : null;
-    const row = document.createElement("tr");
-    [
-      getAssetName(position.asset),
-      position.direction.toUpperCase(),
-      `$${formatNumber(position.entry, getAssetDecimals(position.asset))}`,
-      `$${formatNumber(position.stop, getAssetDecimals(position.asset))}`,
-      `$${formatNumber(position.target, getAssetDecimals(position.asset))}`,
-      pnl === null ? "–" : formatSignedUsd(pnl),
-      position.signal || "–",
-    ].forEach((text, index) => {
-      const cell = document.createElement("td");
-      cell.textContent = text;
-      if (index === 5 && pnl !== null) cell.className = valueClass(pnl);
-      row.append(cell);
-    });
-    table.append(row);
-  });
-}
-
-function renderBotTrades() {
-  const table = document.getElementById("botTradesTable");
-  if (!table) return;
-  table.replaceChildren();
-  if (!state.botState.trades.length) {
-    appendEmptyTableRow(table, 8, "Még nincs bot-ügylet.");
-    return;
-  }
-  state.botState.trades.slice(0, 40).forEach((trade) => {
-    const row = document.createElement("tr");
-    const why = (trade.analysis || []).join(" ");
-    [
-      new Intl.DateTimeFormat("hu-HU", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(trade.closedAt),
-      getAssetName(trade.asset),
-      trade.direction.toUpperCase(),
-      `$${formatNumber(trade.entry, getAssetDecimals(trade.asset))}`,
-      `$${formatNumber(trade.exit, getAssetDecimals(trade.asset))}`,
-      trade.reason,
-      why || "–",
-      formatSignedUsd(trade.pnl),
-    ].forEach((text, index) => {
-      const cell = document.createElement("td");
-      cell.textContent = text;
-      if (index === 7) cell.className = valueClass(trade.pnl);
-      row.append(cell);
-    });
-    table.append(row);
-  });
-}
-
-function renderBotSuggestions() {
-  const list = document.getElementById("botSuggestions");
-  if (!list || !window.VirtualBot) return;
-  const suggestions = window.VirtualBot.buildSuggestions(state.botState, getBotContext());
-  list.replaceChildren(
-    ...suggestions.map((item) => {
-      const li = document.createElement("li");
-      li.className = `bot-suggestion ${item.severity}`;
-      li.innerHTML = `<strong>${item.title}</strong><span>${item.detail}</span>`;
-      return li;
-    }),
-  );
-}
-
-function renderBotActivity() {
-  const log = document.getElementById("botActivityLog");
-  if (!log) return;
-  log.replaceChildren();
-  if (!state.botState.activityLog.length) {
-    log.append(Object.assign(document.createElement("span"), { textContent: "Még nincs esemény." }));
-    return;
-  }
-  state.botState.activityLog.slice(0, 20).forEach((entry) => {
-    const item = document.createElement("div");
-    item.className = "bot-activity-item";
-    item.innerHTML =
-      `<time>${new Intl.DateTimeFormat("hu-HU", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(entry.time)}</time>` +
-      `<span>${entry.message}</span>`;
-    log.append(item);
-  });
-}
-
-function renderBotEquityChart() {
-  state.botEquityChart?.destroy();
-  if (typeof Chart === "undefined") return;
-  const canvas = document.getElementById("botEquityChart");
-  if (!canvas) return;
-  const points = state.botState.equityHistory;
-  state.botEquityChart = new Chart(canvas, {
-    type: "line",
-    data: {
-      labels: points.map((point) =>
-        new Intl.DateTimeFormat("hu-HU", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(point.time),
-      ),
-      datasets: [{
-        data: points.map((point) => point.equity),
-        borderColor: "#2f5d50",
-        backgroundColor: "rgba(47, 93, 80, 0.12)",
-        fill: true,
-        tension: 0.3,
-        pointRadius: 0,
-      }],
-    },
-    options: paperChartOptions(),
-  });
+  window.BotLab?.render?.();
 }
 
 function resetPaperAccount() {

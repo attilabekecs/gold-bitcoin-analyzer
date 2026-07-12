@@ -15,14 +15,15 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=20260712-10" />
+    <link rel="stylesheet" href="styles.css?v=20260712-11" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
-    <script src="assets-catalog.js?v=20260712-10" defer></script>
-    <script src="virtual-bot.js?v=20260712-10" defer></script>
-    <script src="practice-lab.js?v=20260712-10" defer></script>
-    <script src="app.js?v=20260712-10" defer></script>
-    <script src="strategy-engine.js?v=20260712-10" defer></script>
-    <script src="strategy-lab.js?v=20260712-10" defer></script>
+    <script src="assets-catalog.js?v=20260712-11" defer></script>
+    <script src="virtual-bot.js?v=20260712-11" defer></script>
+    <script src="bot-lab.js?v=20260712-11" defer></script>
+    <script src="practice-lab.js?v=20260712-11" defer></script>
+    <script src="app.js?v=20260712-11" defer></script>
+    <script src="strategy-engine.js?v=20260712-11" defer></script>
+    <script src="strategy-lab.js?v=20260712-11" defer></script>
   </head>
   <body data-view="overview">
     <header class="site-header">
@@ -38,6 +39,7 @@
         <button class="nav-link" data-view-target="news" type="button">Hírek</button>
         <button class="nav-link" data-view-target="portfolio" type="button">Portfólió</button>
         <button class="nav-link" data-view-target="practice" type="button">Gyakorló</button>
+        <button class="nav-link" data-view-target="bot" type="button">Virtuális bot</button>
         <button class="nav-link" data-view-target="simulator" type="button">Szimulátor</button>
         <button class="nav-link" data-view-target="strategy" type="button">Stratégialabor</button>
         <button class="nav-link" data-view-target="ai" type="button">AI</button>
@@ -365,11 +367,11 @@
       <section class="practice-section" data-pages="practice" aria-labelledby="practiceTitle">
         <div class="practice-hero">
           <div>
-            <p class="eyebrow">OKTATÁS · TESZT · BOT</p>
-            <h1 id="practiceTitle">Gyakorló és virtuális üzletelés</h1>
+            <p class="eyebrow">OKTATÁS · TESZT</p>
+            <h1 id="practiceTitle">Gyakorló – jelzés-értelmezés</h1>
             <p>
-              Jelzés-értelmezési forgatókönyvek, majd szabályalapú papírbot, amely automatikusan
-              nyit és zár pozíciókat a technikai jelek alapján – élő pénz nélkül.
+              Forgatókönyvek a VÉTEL / KIVÁRÁS / ELADÁS döntések gyakorlásához. A szabályalapú
+              papírbot a külön Virtuális bot fülön érhető el.
             </p>
           </div>
           <div class="practice-score-card">
@@ -416,23 +418,33 @@
               <li>Oldalazó piacon a kivárás is döntés.</li>
               <li>A bot csak papírkereskedés – nem élő megbízás.</li>
             </ul>
-            <button class="secondary-button" data-view-target="simulator" type="button">Kézi papírkereskedés →</button>
+            <button class="secondary-button" data-view-target="bot" type="button">Virtuális bot →</button>
+            <button class="text-button" data-view-target="simulator" type="button">Kézi papírkereskedés</button>
           </article>
         </div>
+      </section>
 
+      <section class="bot-section" data-pages="bot" aria-labelledby="botTitle">
         <div class="bot-hero">
           <div>
-            <p class="eyebrow">REALTIME VIRTUÁLIS BOT</p>
-            <h2>Szabályalapú papírüzletelés</h2>
+            <p class="eyebrow">BOT VEZÉRLŐKÖZPONT</p>
+            <h1 id="botTitle">Virtuális bot labor</h1>
             <p>
-              A bot a jelenlegi VÉTEL/ELADÁS jelek alapján automatikusan kezeli a papír pozíciókat.
-              Stop, célár és jelzésfordulás zárja a kereskedéseket.
+              Professzionális papírkereskedő bot részletes kézi beállításokkal és opcionális
+              auto-tanulással. A bot a technikai jelek alapján nyit és zár – élő megbízás nélkül.
             </p>
           </div>
-          <label class="bot-toggle">
-            <input id="botEnabled" type="checkbox" />
-            <span>Bot bekapcsolva</span>
-          </label>
+          <div class="bot-hero-controls">
+            <span id="botModeBadge" class="local-badge">Kézi mód</span>
+            <label class="bot-toggle">
+              <input id="botEnabled" type="checkbox" />
+              <span>Bot bekapcsolva</span>
+            </label>
+            <label class="bot-toggle learn-toggle">
+              <input id="botAutoLearn" type="checkbox" />
+              <span>Auto-tanulás</span>
+            </label>
+          </div>
         </div>
 
         <div class="bot-summary">
@@ -442,54 +454,193 @@
           <div><span>Találati arány</span><strong id="botWinRate">–</strong></div>
           <div><span>Profit factor</span><strong id="botProfitFactor">–</strong></div>
           <div><span>Max. drawdown</span><strong id="botDrawdown">–</strong></div>
+          <div><span>Lezárt ügyletek</span><strong id="botTradeCount">0</strong></div>
         </div>
 
-        <div class="bot-layout">
+        <p id="botStatus" class="bot-status">Bot kikapcsolva.</p>
+
+        <div class="bot-dashboard-grid">
+          <article class="panel">
+            <div class="section-heading compact-heading">
+              <div><p class="eyebrow">ÉLŐ JELZÉSEK</p><h3>Követett eszközök</h3></div>
+            </div>
+            <div id="botSignalGrid" class="bot-signal-grid">
+              <span class="helper-text">Válassz eszközöket a beállításoknál.</span>
+            </div>
+          </article>
+          <article class="panel">
+            <div class="section-heading compact-heading">
+              <div><p class="eyebrow">TELJESÍTMÉNY</p><h3>Egyenleggörbe</h3></div>
+            </div>
+            <div class="bot-chart-wrap"><canvas id="botEquityChart"></canvas></div>
+          </article>
+        </div>
+
+        <div class="bot-main-grid">
           <article class="panel bot-config-panel">
             <div class="section-heading compact-heading">
               <div>
-                <p class="eyebrow">BOT BEÁLLÍTÁS</p>
-                <h3>Kereskedési szabályok</h3>
+                <p class="eyebrow">KONFIGURÁCIÓ</p>
+                <h3>Bot paraméterek</h3>
               </div>
             </div>
-            <form id="botConfigForm" class="form-grid">
-              <label>Kezdőtőke (USD)
-                <input id="botInitialCapital" type="number" min="100" step="100" value="10000" />
-              </label>
-              <label>Kockázat / ügylet (%)
-                <input id="botRiskPercent" type="number" min="0.1" max="5" step="0.1" value="1" />
-              </label>
-              <label>Min. megbízhatóság (%)
-                <input id="botMinConfidence" type="number" min="40" max="90" step="1" value="55" />
-              </label>
-              <label>Max. nyitott pozíció
-                <input id="botMaxPositions" type="number" min="1" max="10" step="1" value="4" />
-              </label>
-              <label>Cooldown (perc)
-                <input id="botCooldown" type="number" min="5" max="120" step="5" value="20" />
-              </label>
-              <label class="check-label wide-check"><input id="botAutoClose" type="checkbox" checked /> Zárás ellentétes jelzésnél</label>
-              <fieldset class="bot-asset-fieldset">
-                <legend>Követett eszközök</legend>
-                <div id="botAssetChecks" class="bot-asset-checks"></div>
-              </fieldset>
+            <div class="bot-config-tabs" role="tablist" aria-label="Bot beállítás csoportok">
+              <button class="active" data-bot-config-tab="general" type="button">Általános</button>
+              <button data-bot-config-tab="signals" type="button">Jelzések</button>
+              <button data-bot-config-tab="risk" type="button">Kockázat</button>
+              <button data-bot-config-tab="execution" type="button">Végrehajtás</button>
+            </div>
+            <form id="botConfigForm" class="form-grid bot-config-form">
+              <div class="bot-config-panel-group" data-bot-config-panel="general">
+                <label>Kezdőtőke (USD)
+                  <input id="botInitialCapital" type="number" min="100" step="100" value="10000" />
+                </label>
+                <label>Max. nyitott pozíció
+                  <input id="botMaxPositions" type="number" min="1" max="10" step="1" value="4" />
+                </label>
+                <label>Cooldown (perc)
+                  <input id="botCooldown" type="number" min="5" max="120" step="5" value="20" />
+                </label>
+                <label>Primér idősík
+                  <select id="botPrimaryInterval">
+                    <option value="1">1 perc</option>
+                    <option value="5">5 perc</option>
+                    <option value="15">15 perc</option>
+                    <option value="60">1 óra</option>
+                  </select>
+                </label>
+                <label>Kereskedési irány
+                  <select id="botDirection">
+                    <option value="both">LONG és SHORT</option>
+                    <option value="long">Csak LONG</option>
+                    <option value="short">Csak SHORT</option>
+                  </select>
+                </label>
+                <label class="check-label wide-check"><input id="botAutoClose" type="checkbox" checked /> Zárás ellentétes jelzésnél</label>
+                <fieldset class="bot-asset-fieldset">
+                  <legend>Követett eszközök</legend>
+                  <div id="botAssetChecks" class="bot-asset-checks"></div>
+                </fieldset>
+              </div>
+
+              <div class="bot-config-panel-group" data-bot-config-panel="signals" hidden>
+                <label>Gyors EMA
+                  <input id="botFastEma" type="number" min="3" max="50" step="1" value="9" />
+                </label>
+                <label>Lassú EMA
+                  <input id="botSlowEma" type="number" min="5" max="120" step="1" value="21" />
+                </label>
+                <label>RSI periódus
+                  <input id="botRsiPeriod" type="number" min="5" max="30" step="1" value="14" />
+                </label>
+                <label>LONG RSI min
+                  <input id="botRsiLongMin" type="number" min="20" max="70" step="1" value="52" />
+                </label>
+                <label>LONG RSI max
+                  <input id="botRsiLongMax" type="number" min="30" max="90" step="1" value="68" />
+                </label>
+                <label>SHORT RSI min
+                  <input id="botRsiShortMin" type="number" min="20" max="60" step="1" value="32" />
+                </label>
+                <label>SHORT RSI max
+                  <input id="botRsiShortMax" type="number" min="30" max="70" step="1" value="48" />
+                </label>
+                <label>RSI túlvett
+                  <input id="botRsiOverbought" type="number" min="60" max="95" step="1" value="72" />
+                </label>
+                <label>RSI túladott
+                  <input id="botRsiOversold" type="number" min="5" max="40" step="1" value="28" />
+                </label>
+                <label>Momentum ablak (perc)
+                  <input id="botMomentumLookback" type="number" min="3" max="60" step="1" value="15" />
+                </label>
+                <label>Momentum küszöb (%)
+                  <input id="botMomentumThreshold" type="number" min="0.03" max="0.5" step="0.01" value="0.12" />
+                </label>
+                <label>Jelzésküszöb (pont)
+                  <input id="botSignalScore" type="number" min="1.5" max="4" step="0.25" value="2.5" />
+                </label>
+                <label>Min. megbízhatóság (%)
+                  <input id="botMinConfidence" type="number" min="40" max="90" step="1" value="55" />
+                </label>
+                <label class="check-label"><input id="botUseMacd" type="checkbox" checked /> MACD megerősítés</label>
+                <label class="check-label"><input id="botUseVolume" type="checkbox" checked /> Volumen megerősítés</label>
+                <label class="check-label wide-check"><input id="botRequireAlignment" type="checkbox" /> Idősík-egyezés kötelező</label>
+                <label>Min. egyező idősíkok
+                  <input id="botMinAlignedTimeframes" type="number" min="2" max="4" step="1" value="2" />
+                </label>
+                <label>Min. egyezési arány
+                  <input id="botMinAlignmentRatio" type="number" min="0.5" max="1" step="0.05" value="0.75" />
+                </label>
+              </div>
+
+              <div class="bot-config-panel-group" data-bot-config-panel="risk" hidden>
+                <label>Kockázat / ügylet (%)
+                  <input id="botRiskPercent" type="number" min="0.1" max="5" step="0.1" value="1" />
+                </label>
+                <label>ATR periódus
+                  <input id="botAtrPeriod" type="number" min="5" max="50" step="1" value="14" />
+                </label>
+                <label>ATR stop szorzó
+                  <input id="botAtrStopMultiplier" type="number" min="0.5" max="5" step="0.25" value="1.5" />
+                </label>
+                <label>Célár (R)
+                  <input id="botRewardRatio" type="number" min="1" max="5" step="0.25" value="2" />
+                </label>
+              </div>
+
+              <div class="bot-config-panel-group" data-bot-config-panel="execution" hidden>
+                <label>Díj oldalanként (%)
+                  <input id="botFeePercent" type="number" min="0" max="2" step="0.01" value="0.10" />
+                </label>
+                <label>Spread (%)
+                  <input id="botSpreadPercent" type="number" min="0" max="2" step="0.01" value="0.02" />
+                </label>
+                <label>Slippage (%)
+                  <input id="botSlippagePercent" type="number" min="0" max="2" step="0.01" value="0.01" />
+                </label>
+                <label class="check-label wide-check"><input id="botUseTradingHours" type="checkbox" /> Kereskedési óra szűrő</label>
+                <label>Kezdő óra (helyi)
+                  <input id="botTradingHoursStart" type="number" min="0" max="23" step="1" value="8" />
+                </label>
+                <label>Záró óra (helyi)
+                  <input id="botTradingHoursEnd" type="number" min="0" max="23" step="1" value="20" />
+                </label>
+              </div>
+
               <div class="bot-form-actions">
                 <button id="botSaveConfig" class="primary-button" type="button">Beállítás mentése</button>
                 <button id="botResetButton" class="text-button" type="button">Bot újraindítása</button>
               </div>
             </form>
-            <p id="botStatus" class="bot-status">Bot kikapcsolva.</p>
           </article>
 
-          <article class="panel">
-            <div class="section-heading compact-heading">
-              <div>
-                <p class="eyebrow">TELJESÍTMÉNY</p>
-                <h3>Bot egyenleggörbe</h3>
+          <aside class="bot-side">
+            <article class="panel bot-learn-panel">
+              <div class="section-heading compact-heading">
+                <div><p class="eyebrow">AUTO-TANULÁS</p><h3>Tapasztalatból finomhangolás</h3></div>
               </div>
-            </div>
-            <div class="bot-chart-wrap"><canvas id="botEquityChart"></canvas></div>
-          </article>
+              <p class="helper-text">
+                A bot a lezárt ügyletek alapján javasol paraméter-módosításokat. Alkalmazás csak
+                bekapcsolt Auto-tanulás mellett történik automatikusan; előnézet mindig elérhető.
+              </p>
+              <div class="bot-learn-actions">
+                <button id="botRunLearnButton" class="secondary-button" type="button">Elemzés futtatása</button>
+                <button id="botApplyLearnButton" class="text-button" type="button">Javaslat alkalmazása</button>
+              </div>
+              <div id="botLearnDiff" class="bot-learn-diff"></div>
+              <div id="botLearnHistory" class="bot-learn-history"></div>
+            </article>
+
+            <article class="panel">
+              <div class="section-heading compact-heading">
+                <div><p class="eyebrow">JAVASLATOK</p><h3>Tanulási tippek</h3></div>
+              </div>
+              <ul id="botSuggestions" class="bot-suggestions">
+                <li class="bot-suggestion info"><strong>Indítás</strong><span>Kapcsold be a botot az első javaslatokért.</span></li>
+              </ul>
+            </article>
+          </aside>
         </div>
 
         <div class="bot-panels-grid">
@@ -500,19 +651,10 @@
             </div>
             <div class="table-wrap">
               <table>
-                <thead><tr><th>Eszköz</th><th>Irány</th><th>Belépés</th><th>Stop</th><th>Cél</th><th>Eredmény</th><th>Jelzés</th></tr></thead>
+                <thead><tr><th>Eszköz</th><th>Irány</th><th>Belépés</th><th>Stop</th><th>Cél</th><th>Eredmény</th><th>Jelzés</th><th>Indok</th></tr></thead>
                 <tbody id="botPositionsTable"></tbody>
               </table>
             </div>
-          </article>
-
-          <article class="panel">
-            <div class="section-heading compact-heading">
-              <div><p class="eyebrow">FEJLESZTÉSI JAVASLATOK</p><h3>Bot tapasztalatok</h3></div>
-            </div>
-            <ul id="botSuggestions" class="bot-suggestions">
-              <li>Kapcsold be a botot az első javaslatokért.</li>
-            </ul>
           </article>
         </div>
 
@@ -1123,7 +1265,7 @@
         <div id="aiResult" class="ai-result" hidden></div>
       </section>
 
-      <section class="disclaimer" data-pages="overview bitcoin gold markets news portfolio practice simulator strategy ai">
+      <section class="disclaimer" data-pages="overview bitcoin gold markets news portfolio practice bot simulator strategy ai">
         <strong>Fontos kockázati figyelmeztetés</strong>
         <p>
           Az oldal kizárólag oktatási és tájékoztatási célú. Nem minősül befektetési

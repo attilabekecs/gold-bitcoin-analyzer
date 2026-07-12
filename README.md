@@ -12,11 +12,12 @@ Stratégialabor backtesttel.
 - 1 perces intraday diagramok (Kraken kriptó, Yahoo Finance forex/olaj/részvény)
 - 1, 5 és 15 perces, valamint 1 órás idősíkok és trendegyezési pontszám
 - Opcionális 1 perces XAU/USD diagram Twelve Data API-kulccsal
-- Külön Áttekintés, Bitcoin, Arany, Piacok, Hírek, Portfólió, Gyakorló, Szimulátor, Stratégialabor és AI nézet
+- Külön Áttekintés, Bitcoin, Arany, Piacok, Hírek, Portfólió, Gyakorló, **Virtuális bot**, Szimulátor, Stratégialabor és AI nézet
 - **Gyakorló rész:** jelzés-értelmezési forgatókönyvek pontszámmal (localStorage)
-- **Virtuális bot:** szabályalapú automatikus papírkereskedés jelzések alapján
-- Bot metrikák: PnL, win rate, drawdown, ügyletnapló, miért nyert/vesztett
-- **Fejlesztési javaslatok** a bot tapasztalatai alapján (gyenge idősík, túl sok ügylet, R/R)
+- **Virtuális bot labor:** külön fülön, teljes kézi konfigurációval és opcionális auto-tanulással
+- Bot beállítható: eszközök, irány, idősíkok, EMA/RSI/MACD küszöbök, kockázat, stop/cél, cooldown, max pozíció, díj/spread/slippage, kereskedési óra
+- **Auto-tanulás:** a lezárt ügyletek alapján biztonságos határokon belül finomhangol (csak bekapcsolt módban alkalmaz)
+- Bot dashboard: élő státusz, jelzéskártyák, PnL, win rate, drawdown, ügyletnapló okokkal, tanulási diff és előzmény
 - Helyi papírkereskedési számla LONG/SHORT pozíciókkal minden támogatott eszközön
 - Kereskedési napló, találati arány, profit factor, visszaesés és egyenleggörbe
 - EMA/RSI/ATR backtest választható idősíkkal és állítható kereskedési díjjal
@@ -93,7 +94,8 @@ Unix ezredmásodperc. Az importált fájl kizárólag a böngésző memóriájá
 
 A számítási logika a böngészőben futó, tiszta `strategy-engine.js` modulban található.
 A `strategy-lab.js` kizárólag a nézetet, mentést, import/export folyamatot és az
-AI-javaslat jóváhagyását kezeli. A `favicon.svg` a repository gyökerében található,
+AI-javaslat jóváhagyását kezeli. A `virtual-bot.js` a papírbot motorja és auto-tanulása;
+a `bot-lab.js` a bot vezérlőközpont UI-ját kezeli. A `favicon.svg` a repository gyökerében található,
 és az `index.html` közvetlenül hivatkozik rá.
 
 ## Beállítások és adatvédelem
