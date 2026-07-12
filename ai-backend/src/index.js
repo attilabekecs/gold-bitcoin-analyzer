@@ -5,6 +5,9 @@ const JSON_HEADERS = {
   "Referrer-Policy": "no-referrer",
 };
 
+let cachedDiscoveredModel = "";
+let cachedModelExpiresAt = 0;
+
 const SYSTEM_INSTRUCTION = `Te az Aurum & Satoshi oktatási célú piaci elemzője vagy.
 Magyarul válaszolj, tömören és jól tagoltan.
 
@@ -81,35 +84,30 @@ export default {
     }
 
     try {
-      const model = env.GEMINI_MODEL || "gemini-2.5-flash";
-      const geminiResponse = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-goog-api-key": env.GEMINI_API_KEY,
-          },
-          body: JSON.stringify({
-            systemInstruction: {
-              parts: [{ text: SYSTEM_INSTRUCTION }],
-            },
-            contents: [
-              {
-                role: "user",
-                parts: [{ text: prompt }],
-              },
-            ],
-            generationConfig: {
-              temperature: 0.25,
-              topP: 0.9,
-              maxOutputTokens: 2200,
-            },
-          }),
-        },
+      let model =
+        cachedDiscoveredModel && Date.now() < cachedModelExpiresAt
+          ? cachedDiscoveredModel
+          : env.GEMINI_MODEL || "gemini-2.5-flash";
+      let { response: geminiResponse, data: geminiData } = await callGemini(
+        env.GEMINI_API_KEY,
+        model,
+        prompt,
       );
 
-      const geminiData = await geminiResponse.json();
+      if (!geminiResponse.ok && geminiData.error?.status === "NOT_FOUND") {
+        const discoveredModel = await discoverAvailableFlashModel(env.GEMINI_API_KEY);
+        if (discoveredModel && discoveredModel !== model) {
+          model = discoveredModel;
+          cachedDiscoveredModel = discoveredModel;
+          cachedModelExpiresAt = Date.now() + 6 * 60 * 60 * 1000;
+          ({ response: geminiResponse, data: geminiData } = await callGemini(
+            env.GEMINI_API_KEY,
+            model,
+            prompt,
+          ));
+        }
+      }
+
       if (!geminiResponse.ok) {
         const providerCode = geminiData.error?.status || `HTTP_${geminiResponse.status}`;
         const providerMessage = sanitizeProviderMessage(geminiData.error?.message);
@@ -200,6 +198,7 @@ function explainProviderError(code) {
     INVALID_ARGUMENT: "A Gemini elutasította a kérés formátumát.",
     RESOURCE_EXHAUSTED: "Az ingyenes Gemini-kvóta elfogyott.",
     UNAUTHENTICATED: "A Gemini API-kulcs hitelesítése sikertelen.",
+    NO_COMPATIBLE_MODEL: "A projekthez nem található használható Gemini Flash modell.",
   };
   return messages[code] || "A Gemini szolgáltató hibát jelzett.";
 }
@@ -211,4 +210,82 @@ function sanitizeProviderMessage(value) {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 240);
+}
+
+async function callGemini(apiKey, model, prompt) {
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey,
+      },
+      body: JSON.stringify({
+        systemInstruction: {
+          parts: [{ text: SYSTEM_INSTRUCTION }],
+        },
+        contents: [
+          {
+            role: "user",
+            parts: [{ text: prompt }],
+          },
+        ],
+        generationConfig: {
+          temperature: 0.25,
+          topP: 0.9,
+          maxOutputTokens: 2200,
+        },
+      }),
+    },
+  );
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    data = {
+      error: {
+        status: `HTTP_${response.status}`,
+        message: "A Gemini nem JSON-formátumú választ adott.",
+      },
+    };
+  }
+  return { response, data };
+}
+
+async function discoverAvailableFlashModel(apiKey) {
+  const response = await fetch(
+    "https://generativelanguage.googleapis.com/v1beta/models?pageSize=100",
+    {
+      headers: {
+        Accept: "application/json",
+        "x-goog-api-key": apiKey,
+      },
+    },
+  );
+  if (!response.ok) return "";
+  const data = await response.json();
+  const available = (data.models || [])
+    .filter((model) => model.supportedGenerationMethods?.includes("generateContent"))
+    .map((model) => String(model.name || "").replace(/^models\//, ""))
+    .filter((name) => /gemini.*flash/i.test(name))
+    .filter((name) => !/(image|tts|live|audio|embedding)/i.test(name));
+
+  const preferred = [
+    "gemini-3-flash",
+    "gemini-3-flash-preview",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-2.0-flash",
+  ];
+  available.sort((left, right) => modelPreference(left, preferred) - modelPreference(right, preferred));
+  return available[0] || "";
+}
+
+function modelPreference(name, preferred) {
+  const exactIndex = preferred.indexOf(name);
+  if (exactIndex >= 0) return exactIndex;
+  const stableBonus = /(preview|exp|\d{2}-\d{2})/i.test(name) ? 20 : 0;
+  const litePenalty = /lite/i.test(name) ? 5 : 0;
+  return 100 + stableBonus + litePenalty;
 }

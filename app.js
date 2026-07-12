@@ -259,7 +259,11 @@ function buildAsset(name, points, currentPrice) {
 }
 
 async function fetchNews() {
-  const queries = ["bitcoin cryptocurrency", "gold bullion"];
+  const cutoffTime = Date.now() - 7 * 86400000;
+  const queries = [
+    "bitcoin cryptocurrency sourcelang:english",
+    "gold bullion sourcelang:english",
+  ];
   const results = await Promise.allSettled(
     queries.map((query) => {
       const params = new URLSearchParams({
@@ -276,14 +280,52 @@ async function fetchNews() {
   const articles = results
     .filter((result) => result.status === "fulfilled")
     .flatMap((result) => result.value.articles || []);
-  if (!articles.length) {
+  const freshEnglishArticles = articles.filter((article) => {
+    const language = String(article.language || "English").toLowerCase();
+    const seenAt = parseGdeltDate(article.seendate).getTime();
+    return language === "english" && seenAt >= cutoffTime;
+  });
+  if (!freshEnglishArticles.length) {
     try {
+      const googleNewsRss =
+        'https://news.google.com/rss/search?q=bitcoin%20OR%20%22gold%20price%22%20OR%20bullion&hl=en-US&gl=US&ceid=US:en';
+      const rssData = await fetchJson(
+        `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(googleNewsRss)}`,
+        8000,
+      );
+      const rssArticles = (rssData.items || [])
+        .filter(
+          (article) =>
+            article.title &&
+            isSafeHttpUrl(article.link) &&
+            isMarketNewsTitle(article.title) &&
+            new Date(`${article.pubDate}Z`).getTime() >= cutoffTime,
+        )
+        .map((article) => ({
+          title: article.title.trim(),
+          url: article.link,
+          domain: extractNewsSource(article.title),
+          date: new Date(`${article.pubDate}Z`),
+        }))
+        .slice(0, 12);
+      if (rssArticles.length) return rssArticles;
+    } catch {
+      // Continue with the final keyless fallback.
+    }
+
+    try {
+      const cutoffSeconds = Math.floor(cutoffTime / 1000);
       const fallback = await fetchJson(
-        "https://hn.algolia.com/api/v1/search_by_date?query=bitcoin%20gold&tags=story&hitsPerPage=12",
+        `https://hn.algolia.com/api/v1/search_by_date?query=bitcoin%20gold&tags=story&numericFilters=created_at_i%3E${cutoffSeconds}&hitsPerPage=12`,
         8000,
       );
       const fallbackArticles = (fallback.hits || [])
-        .filter((article) => article.title && isSafeHttpUrl(article.url))
+        .filter(
+          (article) =>
+            article.title &&
+            isSafeHttpUrl(article.url) &&
+            new Date(article.created_at).getTime() >= cutoffTime,
+        )
         .map((article) => ({
           title: article.title.trim(),
           url: article.url,
@@ -297,7 +339,7 @@ async function fetchNews() {
     throw new Error("A hírforrás nem válaszol");
   }
   const seen = new Set();
-  return articles
+  return freshEnglishArticles
     .filter((article) => article.title && isSafeHttpUrl(article.url))
     .filter((article) => {
       const key = article.url || article.title;
@@ -313,6 +355,20 @@ async function fetchNews() {
       domain: article.domain || new URL(article.url).hostname.replace("www.", ""),
       date: parseGdeltDate(article.seendate),
     }));
+}
+
+function isMarketNewsTitle(title) {
+  const value = title.toLowerCase();
+  if (/\b(bitcoin|btc|cryptocurrency|crypto market)\b/.test(value)) return true;
+  return (
+    /\b(gold|bullion|xau)\b/.test(value) &&
+    /\b(price|market|invest|inflation|rate|dollar|bank|trading|ounce|forecast|rally|fall|rise)\b/.test(value)
+  );
+}
+
+function extractNewsSource(title) {
+  const parts = title.split(" - ");
+  return parts.length > 1 ? parts.at(-1).trim() : "Google News";
 }
 
 async function fetchExchangeRates() {
