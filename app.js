@@ -426,7 +426,8 @@ async function loadDashboard() {
   renderBotTrading();
 
   const statusSummary = buildDataStatusSummary();
-  if (statusSummary) showError(statusSummary);
+  const messages = [...(statusSummary ? [statusSummary] : []), ...errors];
+  if (messages.length) showError(messages.join(" "));
   document.getElementById("lastUpdated").textContent = new Intl.DateTimeFormat("hu-HU", {
     hour: "2-digit",
     minute: "2-digit",
