@@ -17,12 +17,16 @@
   const DEFAULT_CONFIG = {
     enabled: false,
     autoLearnEnabled: false,
+    professionalMode: true,
     marketWideMode: false,
     assets: ["bitcoin", "ethereum", "spy"],
     initialCapital: 10000,
     riskPercent: 1,
     maxPositions: 4,
     cooldownMinutes: 20,
+    proMinConfidenceFloor: 45,
+    proHighScoreThreshold: 75,
+    proWinCooldownMinutes: 2,
     primaryInterval: 1,
     direction: "both",
     fastEma: 9,
@@ -89,10 +93,16 @@
       trades: [],
       equityHistory: [{ time: now, equity: merged.initialCapital }],
       lastActionAt: {},
+      lastActionOutcome: {},
       lastTickAt: null,
       lastScan: null,
       activityLog: [],
       learningHistory: [],
+      performanceStats: {
+        eligibleTicks: 0,
+        capturedCount: 0,
+        missedLog: [],
+      },
     };
   }
 
@@ -113,6 +123,12 @@
       saved.activityLog = Array.isArray(saved.activityLog) ? saved.activityLog : [];
       saved.learningHistory = Array.isArray(saved.learningHistory) ? saved.learningHistory : [];
       saved.lastActionAt = saved.lastActionAt || {};
+      saved.lastActionOutcome = saved.lastActionOutcome || {};
+      saved.performanceStats = saved.performanceStats || {
+        eligibleTicks: 0,
+        capturedCount: 0,
+        missedLog: [],
+      };
       return saved;
     } catch {
       return createBotState();
@@ -354,6 +370,7 @@
     const equityValues = [...botState.equityHistory.map((point) => point.equity), equity];
     const avgWin = wins.length ? grossProfit / wins.length : 0;
     const avgLoss = losses.length ? grossLoss / losses.length : 0;
+    const performance = getPerformanceMetrics(botState);
     return {
       equity,
       openPnl,
@@ -367,6 +384,9 @@
       avgLoss,
       wins: wins.length,
       losses: losses.length,
+      tradesPerHour: performance.tradesPerHour,
+      opportunityCaptureRate: performance.opportunityCaptureRate,
+      missedOpportunities: performance.missedOpportunities,
     };
   }
 
@@ -387,13 +407,128 @@
     botState.activityLog = botState.activityLog.slice(0, 80);
   }
 
-  function canOpen(assetKey, botState, now) {
-    const cooldownMs = botState.config.cooldownMinutes * 60000;
+  function getEffectiveThresholds(config) {
+    if (!config.professionalMode) {
+      return {
+        minConfidence: config.minConfidence,
+        signalScoreThreshold: config.signalScoreThreshold,
+      };
+    }
+    return {
+      minConfidence: Math.max(config.proMinConfidenceFloor || 45, config.minConfidence - 5),
+      signalScoreThreshold: Math.max(1.5, config.signalScoreThreshold - 0.25),
+    };
+  }
+
+  function getBotTickIntervalMs(config) {
+    if (!config.enabled) return 60000;
+    if (!config.professionalMode) return 60000;
+    if (config.marketWideMode) return 15000;
+    return 30000;
+  }
+
+  function getCooldownStatus(config, botState, assetKey, now, opportunityScore = 0) {
     const lastAction = botState.lastActionAt[assetKey] || 0;
-    if (now - lastAction < cooldownMs) return false;
+    const lastOutcome = botState.lastActionOutcome?.[assetKey];
+
+    if (!config.professionalMode) {
+      const cooldownMs = config.cooldownMinutes * 60000;
+      const remaining = cooldownMs - (now - lastAction);
+      if (remaining > 0) {
+        return {
+          blocked: true,
+          remainingMs: remaining,
+          reason: "cooldown",
+          detail: `Cooldown: ${Math.ceil(remaining / 60000)} perc hátra`,
+        };
+      }
+      return { blocked: false, reason: "ready" };
+    }
+
+    if (lastOutcome?.outcome === "loss") {
+      const cooldownMs = config.cooldownMinutes * 60000;
+      const remaining = cooldownMs - (now - lastOutcome.time);
+      if (remaining > 0) {
+        return {
+          blocked: true,
+          remainingMs: remaining,
+          reason: "loss-cooldown",
+          detail: `Vesztes ügylet után pihenő: ${Math.ceil(remaining / 60000)} perc hátra`,
+        };
+      }
+    }
+
+    if (lastOutcome?.outcome === "win") {
+      if (opportunityScore >= (config.proHighScoreThreshold || 75)) {
+        return {
+          blocked: false,
+          reason: "pro-immediate",
+          detail: "Magas pontszámú lehetőség – azonnali belépés nyertes után",
+        };
+      }
+      const winCooldownMs = (config.proWinCooldownMinutes || 2) * 60000;
+      const remaining = winCooldownMs - (now - lastOutcome.time);
+      if (remaining > 0) {
+        return {
+          blocked: true,
+          remainingMs: remaining,
+          reason: "win-short-cooldown",
+          detail: `Rövid pihenő nyertes után: ${Math.ceil(remaining / 1000)} mp hátra`,
+        };
+      }
+      return { blocked: false, reason: "pro-win-cleared", detail: "Nyertes után – kész új belépésre" };
+    }
+
+    if (now - lastAction < 30000 && lastAction > 0) {
+      const remaining = 30000 - (now - lastAction);
+      return {
+        blocked: true,
+        remainingMs: remaining,
+        reason: "min-gap",
+        detail: "Minimális várakozás az utolsó művelet után",
+      };
+    }
+
+    return { blocked: false, reason: "pro-ready", detail: "Pro mód – kész kereskedésre" };
+  }
+
+  function recordMissedOpportunity(botState, opportunity, reason, detail) {
+    if (!botState.performanceStats) {
+      botState.performanceStats = { eligibleTicks: 0, capturedCount: 0, missedLog: [] };
+    }
+    const entry = {
+      time: Date.now(),
+      assetKey: opportunity.assetKey,
+      assetName: opportunity.assetName,
+      opportunityScore: opportunity.opportunityScore,
+      signal: opportunity.signal,
+      confidence: opportunity.confidence,
+      reason,
+      detail,
+    };
+    botState.performanceStats.missedLog = [entry, ...(botState.performanceStats.missedLog || [])].slice(0, 25);
+  }
+
+  function getPerformanceMetrics(botState) {
+    const hourAgo = Date.now() - 3600000;
+    const tradesLastHour = botState.trades.filter((trade) => trade.closedAt > hourAgo).length;
+    const stats = botState.performanceStats || { eligibleTicks: 0, capturedCount: 0, missedLog: [] };
+    const captureRate =
+      stats.eligibleTicks > 0 ? (stats.capturedCount / stats.eligibleTicks) * 100 : null;
+    return {
+      tradesPerHour: tradesLastHour,
+      opportunityCaptureRate: captureRate,
+      missedOpportunities: stats.missedLog || [],
+      eligibleTicks: stats.eligibleTicks,
+      capturedCount: stats.capturedCount,
+    };
+  }
+
+  function canOpen(assetKey, botState, now, opportunityScore = 0) {
     if (botState.positions.length >= botState.config.maxPositions) return false;
     if (botState.positions.some((position) => position.asset === assetKey)) return false;
-    return true;
+    const status = getCooldownStatus(botState.config, botState, assetKey, now, opportunityScore);
+    return !status.blocked;
   }
 
   function calculatePositionSize(botState, entry, stop, config) {
@@ -484,15 +619,23 @@
   function evaluateOpportunity(assetKey, decision, config, botState, now) {
     const assetName = window.AssetCatalog?.getName(assetKey) || assetKey;
     const scoreBreakdown = computeOpportunityScore(decision, config);
+    const thresholds = getEffectiveThresholds(config);
     const filterReasons = [];
 
     if (!decision) {
       filterReasons.push("Nincs elérhető piaci adat");
     } else if (decision.className === "neutral") {
       filterReasons.push("Semleges jelzés – küszöb alatt");
-    } else if (decision.confidence < config.minConfidence) {
+    } else if (decision.confidence < thresholds.minConfidence) {
       filterReasons.push(
-        `Alacsony bizalom (${decision.confidence}% < ${config.minConfidence}%)`,
+        `Alacsony bizalom (${decision.confidence}% < ${thresholds.minConfidence}%)`,
+      );
+    } else if (
+      Math.abs(decision.score || 0) < thresholds.signalScoreThreshold &&
+      decision.className !== "neutral"
+    ) {
+      filterReasons.push(
+        `Jelzéserősség alacsony (${Math.abs(decision.score || 0).toFixed(2)} < ${thresholds.signalScoreThreshold})`,
       );
     }
 
@@ -511,13 +654,20 @@
 
     if (!config.enabled) filterReasons.push("Bot kikapcsolva");
     if (!isWithinTradingHours(config)) filterReasons.push("Kereskedési ablakon kívül");
-    if (!canOpen(assetKey, botState, now)) {
+    const cooldownStatus = getCooldownStatus(
+      config,
+      botState,
+      assetKey,
+      now,
+      scoreBreakdown.total,
+    );
+    if (!canOpen(assetKey, botState, now, scoreBreakdown.total)) {
       if (botState.positions.some((position) => position.asset === assetKey)) {
         filterReasons.push("Már van nyitott pozíció");
       } else if (botState.positions.length >= config.maxPositions) {
         filterReasons.push("Max. pozíció elérve");
       } else {
-        filterReasons.push("Cooldown aktív");
+        filterReasons.push(cooldownStatus.detail || "Cooldown aktív");
       }
     }
 
@@ -578,6 +728,11 @@
     botState.trades.unshift(trade);
     botState.trades = botState.trades.slice(0, 300);
     botState.lastActionAt[position.asset] = closedAt;
+    botState.lastActionOutcome = botState.lastActionOutcome || {};
+    botState.lastActionOutcome[position.asset] = {
+      time: closedAt,
+      outcome: trade.outcome,
+    };
     recordEquity(botState, context, closedAt);
     const assetName = window.AssetCatalog?.getName(position.asset) || position.asset;
     logActivity(
@@ -668,12 +823,15 @@
 
   function maybeOpenPosition(botState, assetKey, decision, context, now, options = {}) {
     const config = botState.config;
+    const thresholds = getEffectiveThresholds(config);
+    const opportunityScore = options.opportunityScore ?? computeOpportunityScore(decision, config).total;
     if (!config.enabled) return null;
     if (!options.skipAssetCheck && !getTradeableAssetKeys(config).includes(assetKey)) return null;
     if (!isWithinTradingHours(config)) return null;
     if (!decision || decision.className === "neutral") return null;
-    if (decision.confidence < config.minConfidence) return null;
-    if (!canOpen(assetKey, botState, now)) return null;
+    if (decision.confidence < thresholds.minConfidence) return null;
+    if (Math.abs(decision.score || 0) < thresholds.signalScoreThreshold) return null;
+    if (!canOpen(assetKey, botState, now, opportunityScore)) return null;
     if (!(decision.stop > 0) || !(decision.target > 0) || !(decision.currentPrice > 0)) return null;
 
     const direction = decision.className === "positive" ? "long" : "short";
@@ -685,6 +843,7 @@
     const quantity = calculatePositionSize(botState, entry, decision.stop, config);
     if (!(quantity > 0)) return null;
 
+    const cooldownStatus = getCooldownStatus(config, botState, assetKey, now, opportunityScore);
     const position = {
       id: `${now}-${Math.random().toString(16).slice(2)}`,
       asset: assetKey,
@@ -701,13 +860,20 @@
       reasons: decision.reasons.slice(0, 4),
       openedAt: now,
       lastCheckedAt: now,
+      opportunityScore,
     };
     botState.positions.push(position);
     botState.lastActionAt[assetKey] = now;
     const assetName = window.AssetCatalog?.getName(assetKey) || assetKey;
+    const proNote =
+      config.professionalMode && cooldownStatus.reason === "pro-immediate"
+        ? " · Pro: azonnali belépés magas pontszám miatt"
+        : config.professionalMode
+          ? " · Pro mód"
+          : "";
     logActivity(
       botState,
-      `${assetName} ${direction.toUpperCase()} nyitva @ $${entry.toFixed(2)} · ${decision.signal} (${decision.confidence}%)`,
+      `${assetName} ${direction.toUpperCase()} nyitva @ $${entry.toFixed(2)} · ${decision.signal} (${decision.confidence}%, ${opportunityScore.toFixed(0)} pont)${proNote}`,
     );
     return position;
   }
@@ -754,6 +920,15 @@
     const eligible = scanResults.filter((result) => result.eligible);
     let chosen = null;
 
+    if (eligible.length) {
+      botState.performanceStats = botState.performanceStats || {
+        eligibleTicks: 0,
+        capturedCount: 0,
+        missedLog: [],
+      };
+      botState.performanceStats.eligibleTicks += 1;
+    }
+
     if (config.marketWideMode) {
       if (eligible.length) {
         chosen = eligible[0];
@@ -763,22 +938,67 @@
           chosen.decision,
           context,
           now,
-          { skipAssetCheck: true },
+          {
+            skipAssetCheck: true,
+            opportunityScore: chosen.opportunityScore,
+          },
         );
         if (position) {
           opened += 1;
+          botState.performanceStats.capturedCount += 1;
           logActivity(
             botState,
             `Piaci mód: ${chosen.assetName} választva (${chosen.opportunityScore.toFixed(0)} pont) – ${chosen.signal} (${chosen.confidence}%)`,
+          );
+        } else {
+          const cooldownStatus = getCooldownStatus(
+            config,
+            botState,
+            chosen.assetKey,
+            now,
+            chosen.opportunityScore,
+          );
+          recordMissedOpportunity(
+            botState,
+            chosen,
+            cooldownStatus.reason,
+            cooldownStatus.detail,
+          );
+          logActivity(
+            botState,
+            `Kihagyott lehetőség: ${chosen.assetName} (${chosen.opportunityScore.toFixed(0)} pont) – ${cooldownStatus.detail}`,
           );
         }
       }
     } else {
       config.assets.forEach((assetKey) => {
         const result = scanResults.find((entry) => entry.assetKey === assetKey);
-        if (!result) return;
-        const position = maybeOpenPosition(botState, assetKey, result.decision, context, now);
-        if (position) opened += 1;
+        if (!result || !result.eligible) return;
+        const position = maybeOpenPosition(botState, assetKey, result.decision, context, now, {
+          opportunityScore: result.opportunityScore,
+        });
+        if (position) {
+          opened += 1;
+          botState.performanceStats.capturedCount += 1;
+        } else {
+          const cooldownStatus = getCooldownStatus(
+            config,
+            botState,
+            assetKey,
+            now,
+            result.opportunityScore,
+          );
+          recordMissedOpportunity(
+            botState,
+            result,
+            cooldownStatus.reason,
+            cooldownStatus.detail,
+          );
+          logActivity(
+            botState,
+            `Kihagyott lehetőség: ${result.assetName} (${result.opportunityScore.toFixed(0)} pont) – ${cooldownStatus.detail}`,
+          );
+        }
       });
     }
 
@@ -896,7 +1116,7 @@
     }
 
     const tradesPerDay = botState.trades.filter((trade) => trade.closedAt > Date.now() - 86400000).length;
-    if (tradesPerDay > 8) {
+    if (tradesPerDay > 8 && !next.professionalMode) {
       propose(
         "cooldownMinutes",
         next.cooldownMinutes + 10,
@@ -1010,12 +1230,23 @@
     const tradesPerDay = botState.trades.filter(
       (trade) => trade.closedAt > Date.now() - 86400000,
     ).length;
-    if (tradesPerDay > 8) {
+    if (tradesPerDay > 8 && !botState.config.professionalMode) {
       suggestions.push({
         severity: "warning",
         title: "Túl sok ügylet",
-        detail: `${tradesPerDay} ügylet az elmúlt 24 órában. Növeld a cooldown időt.`,
+        detail: `${tradesPerDay} ügylet az elmúlt 24 órában. Növeld a cooldown időt vagy kapcsold ki a profi módot.`,
       });
+    }
+
+    if (botState.config.professionalMode) {
+      const perf = getPerformanceMetrics(botState);
+      if (perf.opportunityCaptureRate !== null && perf.opportunityCaptureRate < 40 && perf.eligibleTicks >= 5) {
+        suggestions.push({
+          severity: "info",
+          title: "Alacsony lehetőség-kihasználás",
+          detail: `Capture rate: ${perf.opportunityCaptureRate.toFixed(0)}%. Ellenőrizd a max. pozíciót vagy a cooldown beállításokat.`,
+        });
+      }
     }
 
     const intervalStats = {};
@@ -1089,6 +1320,9 @@
     saveBotState,
     createBotState,
     getMetrics,
+    getPerformanceMetrics,
+    getEffectiveThresholds,
+    getBotTickIntervalMs,
     tick,
     analyzeSignal,
     scanMarketOpportunities,

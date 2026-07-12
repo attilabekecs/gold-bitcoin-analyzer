@@ -14,12 +14,13 @@ Stratégialabor backtesttel.
 - Opcionális 1 perces XAU/USD diagram Twelve Data API-kulccsal
 - Külön Áttekintés, Bitcoin, Arany, Piacok, Hírek, Portfólió, Gyakorló, **Virtuális bot**, Szimulátor, Stratégialabor és AI nézet
 - **Gyakorló rész:** jelzés-értelmezési forgatókönyvek pontszámmal (localStorage)
-- **Virtuális bot labor:** külön fülön, teljes kézi konfigurációval és opcionális auto-tanulással
-- Bot beállítható: eszközök, irány, idősíkok, EMA/RSI/MACD küszöbök, kockázat, stop/cél, cooldown, max pozíció, díj/spread/slippage, kereskedési óra
+- **Virtuális bot labor:** külön fülön, almenükkel (Összegzés, Beállítások, Ügyletek, Tapasztalatok), teljes kézi konfigurációval és opcionális auto-tanulással
+- **Professzionális mód (alapértelmezett):** intelligens cooldown – nyertes ügylet után magas pontszámú lehetőségnél azonnal belép, vesztes után pihen; gyorsabb szkennelés (15–30 mp); kockázati limitek változatlanok
+- Bot beállítható: eszközök, irány, idősíkok, EMA/RSI/MACD küszöbök, kockázat, stop/cél, cooldown, max pozíció, díj/spread/slippage, kereskedési óra, pro küszöbök
 - **Összes eszköz (piaci mód):** minden ciklusban az összes katalógus-eszközt szkenneli, pontozza (bizalom, jel, idősík-egyezés, momentum, RSI) és a legjobb lehetőséget választja
 - Kézi módban továbbra is rögzíthetők konkrét eszközök; piaci mód felülírja és az egész piacot figyeli
 - **Auto-tanulás:** a lezárt ügyletek alapján biztonságos határokon belül finomhangol (csak bekapcsolt módban alkalmaz)
-- Bot dashboard: élő státusz, rangsorolt piaci szkenner, választott lehetőség indoklással, PnL, win rate, drawdown, ügyletnapló okokkal, tanulási diff és előzmény
+- Bot dashboard: élő státusz, rangsorolt piaci szkenner, választott lehetőség indoklással, PnL, win rate, drawdown, ügylet/óra, lehetőség-kihasználás, kihagyott lehetőségek napló, ügyletnapló okokkal, tanulási diff és előzmény
 - Helyi papírkereskedési számla LONG/SHORT pozíciókkal minden támogatott eszközön
 - Kereskedési napló, találati arány, profit factor, visszaesés és egyenleggörbe
 - EMA/RSI/ATR backtest választható idősíkkal és állítható kereskedési díjjal

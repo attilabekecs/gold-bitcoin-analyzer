@@ -8,6 +8,9 @@
   let bridge = null;
   let equityChart = null;
   let lastLearnPreview = null;
+  let activeSection = "summary";
+
+  const BOT_SECTIONS = ["summary", "settings", "trades", "experiences"];
 
   const CONFIG_FIELDS = [
     { id: "botInitialCapital", key: "initialCapital", type: "number" },
@@ -15,6 +18,9 @@
     { id: "botMinConfidence", key: "minConfidence", type: "range", decimals: 0 },
     { id: "botMaxPositions", key: "maxPositions", type: "range", decimals: 0 },
     { id: "botCooldown", key: "cooldownMinutes", type: "range", decimals: 0 },
+    { id: "botProHighScore", key: "proHighScoreThreshold", type: "range", decimals: 0 },
+    { id: "botProWinCooldown", key: "proWinCooldownMinutes", type: "range", decimals: 0 },
+    { id: "botProConfidenceFloor", key: "proMinConfidenceFloor", type: "range", decimals: 0 },
     { id: "botPrimaryInterval", key: "primaryInterval", type: "select" },
     { id: "botDirection", key: "direction", type: "select" },
     { id: "botFastEma", key: "fastEma", type: "number" },
@@ -43,6 +49,7 @@
 
   const CHECKBOX_FIELDS = [
     { id: "botEnabled", key: "enabled" },
+    { id: "botProfessionalMode", key: "professionalMode" },
     { id: "botAutoLearn", key: "autoLearnEnabled" },
     { id: "botMarketWideMode", key: "marketWideMode" },
     { id: "botAutoClose", key: "autoCloseOnReversal" },
@@ -126,7 +133,22 @@
       botState.config.enabled = event.target.checked;
       Bot.saveBotState(botState);
       render();
+      bridge?.scheduleBotTick?.();
       if (botState.config.enabled) bridge?.runTick?.();
+    });
+
+    document.getElementById("botProfessionalMode")?.addEventListener("change", (event) => {
+      const botState = getBotState();
+      if (!botState) return;
+      botState.config.professionalMode = event.target.checked;
+      Bot.saveBotState(botState);
+      render();
+      bridge?.scheduleBotTick?.();
+      bridge?.showToast?.(
+        event.target.checked
+          ? "Professzionális mód be – gyorsabb szkennelés, intelligens cooldown."
+          : "Professzionális mód ki – klasszikus cooldown minden ügylet után.",
+      );
     });
 
     document.getElementById("botAutoLearn")?.addEventListener("change", (event) => {
@@ -149,6 +171,7 @@
       Bot.saveBotState(botState);
       syncConfigForm();
       render();
+      bridge?.scheduleBotTick?.();
       bridge?.showToast?.(
         event.target.checked
           ? "Összes eszköz mód – a bot minden ciklusnál a legjobb lehetőséget keresi."
@@ -165,6 +188,39 @@
     document.querySelectorAll("[data-bot-config-tab]").forEach((button) => {
       button.addEventListener("click", () => switchConfigTab(button.dataset.botConfigTab));
     });
+
+    document.querySelectorAll("[data-bot-section]").forEach((button) => {
+      button.addEventListener("click", () => switchSection(button.dataset.botSection));
+    });
+  }
+
+  function switchSection(section, updateHash = true) {
+    if (!BOT_SECTIONS.includes(section)) section = "summary";
+    activeSection = section;
+
+    document.querySelectorAll("[data-bot-section]").forEach((button) => {
+      const isActive = button.dataset.botSection === section;
+      button.classList.toggle("active", isActive);
+      button.setAttribute("aria-selected", String(isActive));
+    });
+    document.querySelectorAll("[data-bot-section-panel]").forEach((panel) => {
+      panel.hidden = panel.dataset.botSectionPanel !== section;
+    });
+
+    if (updateHash && bridge?.updateBotHash) {
+      bridge.updateBotHash(section);
+    }
+
+    if (section === "summary") {
+      requestAnimationFrame(() => {
+        equityChart?.resize();
+        bridge?.resizeBotCharts?.();
+      });
+    }
+  }
+
+  function getActiveSection() {
+    return activeSection;
   }
 
   function switchConfigTab(tab) {
@@ -239,6 +295,7 @@
     botState.config = readConfigFromForm();
     Bot.saveBotState(botState);
     render();
+    bridge?.scheduleBotTick?.();
     bridge?.showToast?.("Bot beállítások elmentve.");
     if (botState.config.enabled) bridge?.runTick?.();
   }
@@ -377,6 +434,18 @@
     document.getElementById("botTradeCount").textContent = String(metrics.tradeCount);
     document.getElementById("botOpenCount").textContent = `${metrics.openCount} pozíció`;
 
+    const tradesPerHour = document.getElementById("botTradesPerHour");
+    if (tradesPerHour) {
+      tradesPerHour.textContent = String(metrics.tradesPerHour ?? 0);
+    }
+    const captureRate = document.getElementById("botCaptureRate");
+    if (captureRate) {
+      captureRate.textContent =
+        metrics.opportunityCaptureRate === null
+          ? "–"
+          : `${formatNumber(metrics.opportunityCaptureRate, 0)}%`;
+    }
+
     const status = document.getElementById("botStatus");
     if (status) {
       const hoursOk = Bot.isWithinTradingHours(botState.config);
@@ -385,6 +454,7 @@
           ? " · kereskedési ablak aktív"
           : " · kereskedési ablakon kívül"
         : "";
+      const proNote = botState.config.professionalMode ? " · Pro mód aktív" : "";
       status.textContent = botState.config.enabled
         ? `Bot aktív · ${metrics.tradeCount} lezárt ügylet · utolsó tick: ${
             botState.lastTickAt
@@ -392,7 +462,7 @@
                   botState.lastTickAt,
                 )
               : "most"
-          }${hoursNote}`
+          }${hoursNote}${proNote}`
         : "Bot kikapcsolva – kapcsold be az automatikus papírkereskedéshez.";
       status.className = `bot-status ${botState.config.enabled ? "live" : ""}`;
     }
@@ -400,14 +470,16 @@
     const modeBadge = document.getElementById("botModeBadge");
     if (modeBadge) {
       const parts = [];
+      if (botState.config.professionalMode) parts.push("Pro mód");
       if (botState.config.marketWideMode) parts.push("Összes eszköz");
       if (botState.config.autoLearnEnabled) parts.push("Auto-tanulás");
       modeBadge.textContent = parts.length ? parts.join(" · ") : "Kézi mód";
-      modeBadge.className = `local-badge ${botState.config.autoLearnEnabled ? "learn-active" : ""} ${botState.config.marketWideMode ? "market-wide-active" : ""}`;
+      modeBadge.className = `local-badge ${botState.config.professionalMode ? "pro-active" : ""} ${botState.config.autoLearnEnabled ? "learn-active" : ""} ${botState.config.marketWideMode ? "market-wide-active" : ""}`;
     }
 
     renderPositions(appendEmptyTableRow, formatNumber, formatSignedUsd, valueClass);
     renderTrades(appendEmptyTableRow, formatNumber, formatSignedUsd, valueClass);
+    renderMissedOpportunities(formatNumber);
     renderSuggestions();
     renderActivity();
     renderEquityChart();
@@ -447,6 +519,37 @@
         row.append(cell);
       });
       table.append(row);
+    });
+  }
+
+  function renderMissedOpportunities(formatNumber) {
+    const botState = getBotState();
+    const list = document.getElementById("botMissedLog");
+    if (!list || !botState) return;
+    const missed = botState.performanceStats?.missedLog || [];
+    list.replaceChildren();
+    if (!missed.length) {
+      list.append(
+        Object.assign(document.createElement("span"), {
+          className: "helper-text",
+          textContent: "Nincs kihagyott lehetőség – a bot minden érvényes jelet kihasznált.",
+        }),
+      );
+      return;
+    }
+    missed.slice(0, 12).forEach((entry) => {
+      const item = document.createElement("div");
+      item.className = "bot-missed-item";
+      const time = new Intl.DateTimeFormat("hu-HU", {
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(entry.time);
+      item.innerHTML =
+        `<time>${time}</time>` +
+        `<strong>${entry.assetName}</strong>` +
+        `<span>${entry.signal} · ${formatNumber(entry.opportunityScore, 0)} pont · ${entry.confidence ?? "–"}%</span>` +
+        `<small>${entry.detail || entry.reason}</small>`;
+      list.append(item);
     });
   }
 
@@ -679,6 +782,7 @@
     bindEvents();
     syncConfigForm();
     switchConfigTab("general");
+    switchSection(appBridge?.initialBotSection || "summary", false);
     render();
   }
 
@@ -687,5 +791,7 @@
     render,
     syncConfigForm,
     resize,
+    switchSection,
+    getActiveSection,
   };
 })();

@@ -34,8 +34,42 @@ const state = {
   },
   refreshTimer: null,
   intradayTimer: null,
+  botTickTimer: null,
+  botTickInterval: null,
   loadSequence: 0,
 };
+
+const VALID_VIEWS = [
+  "overview",
+  "bitcoin",
+  "gold",
+  "markets",
+  "news",
+  "portfolio",
+  "practice",
+  "bot",
+  "simulator",
+  "strategy",
+  "ai",
+];
+
+const BOT_SECTIONS = ["summary", "settings", "trades", "experiences"];
+
+function parseLocationHash() {
+  const raw = window.location.hash.slice(1);
+  const [viewPart, subPart] = raw.split("/");
+  const view = VALID_VIEWS.includes(viewPart) ? viewPart : "overview";
+  const botSection =
+    view === "bot" && BOT_SECTIONS.includes(subPart) ? subPart : "summary";
+  return { view, botSection };
+}
+
+function buildViewHash(view, botSection = "summary") {
+  if (view === "bot" && botSection && botSection !== "summary") {
+    return `bot/${botSection}`;
+  }
+  return view;
+}
 
 function getAssetMeta(assetKey) {
   return Catalog.getAsset(assetKey);
@@ -130,24 +164,20 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   initBotUi();
   window.PracticeLab?.init?.();
-  const initialView = [
-    "overview",
-    "bitcoin",
-    "gold",
-    "markets",
-    "news",
-    "portfolio",
-    "practice",
-    "bot",
-    "simulator",
-    "strategy",
-    "ai",
-  ].includes(
-    window.location.hash.slice(1),
-  )
-    ? window.location.hash.slice(1)
-    : "overview";
+  const { view: initialView, botSection: initialBotSection } = parseLocationHash();
   setActiveView(initialView, false);
+  if (initialView === "bot") {
+    window.BotLab?.switchSection?.(initialBotSection, false);
+  }
+  window.addEventListener("hashchange", () => {
+    const { view, botSection } = parseLocationHash();
+    if (view !== state.activeView) {
+      setActiveView(view, false);
+    }
+    if (view === "bot") {
+      window.BotLab?.switchSection?.(botSection, false);
+    }
+  });
   applySettings();
   renderPortfolio();
   renderAlerts();
@@ -1177,7 +1207,10 @@ function setActiveView(view, updateHash = true) {
     renderMarketsGrid();
     renderBotTrading();
   }
-  if (updateHash) window.history.replaceState(null, "", `#${view}`);
+  if (updateHash) {
+    const botSection = view === "bot" ? window.BotLab?.getActiveSection?.() || "summary" : null;
+    window.history.replaceState(null, "", `#${buildViewHash(view, botSection)}`);
+  }
   window.scrollTo({ top: 0, behavior: "smooth" });
   requestAnimationFrame(() => {
     state.intradayChart?.resize();
@@ -2033,6 +2066,24 @@ function applySettings() {
     state.refreshTimer = setInterval(loadDashboard, state.settings.refreshMinutes * 60000);
   }
   state.intradayTimer = setInterval(refreshLiveIntraday, 60000);
+  scheduleBotTick();
+}
+
+function scheduleBotTick() {
+  if (!state.botState?.config?.enabled) {
+    clearInterval(state.botTickTimer);
+    state.botTickTimer = null;
+    state.botTickInterval = null;
+    return;
+  }
+  const interval = window.VirtualBot?.getBotTickIntervalMs?.(state.botState.config) ?? 60000;
+  if (state.botTickInterval === interval && state.botTickTimer) return;
+  clearInterval(state.botTickTimer);
+  state.botTickInterval = interval;
+  state.botTickTimer = setInterval(() => {
+    runVirtualBotTick();
+    window.BotLab?.render?.();
+  }, interval);
 }
 
 function openSettings() {
@@ -2603,10 +2654,12 @@ function runVirtualBotTick() {
 }
 
 function initBotUi() {
+  const { botSection: initialBotSection } = parseLocationHash();
   window.BotLab?.init?.({
     getState: () => state,
     getBotContext,
     runTick: runVirtualBotTick,
+    scheduleBotTick,
     showToast,
     formatNumber,
     formatSignedUsd,
@@ -2614,7 +2667,16 @@ function initBotUi() {
     setMetricValue,
     appendEmptyTableRow,
     paperChartOptions,
+    initialBotSection,
+    updateBotHash: (section) => {
+      if (state.activeView !== "bot") return;
+      window.history.replaceState(null, "", `#${buildViewHash("bot", section)}`);
+    },
+    resizeBotCharts: () => {
+      state.botEquityChart?.resize();
+    },
   });
+  scheduleBotTick();
 }
 
 function renderBotTrading() {

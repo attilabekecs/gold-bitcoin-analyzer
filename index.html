@@ -15,7 +15,7 @@
           base = "/" + parts[0] + "/";
         }
         window.__APP_BASE__ = base;
-        var icon = base + "favicon.svg?v=20260712-13";
+        var icon = base + "favicon.svg?v=20260712-15";
         [
           ["icon", "image/svg+xml"],
           ["shortcut icon", null],
@@ -36,15 +36,15 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=20260712-13" />
+    <link rel="stylesheet" href="styles.css?v=20260712-15" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
-    <script src="assets-catalog.js?v=20260712-13" defer></script>
-    <script src="virtual-bot.js?v=20260712-13" defer></script>
-    <script src="bot-lab.js?v=20260712-13" defer></script>
-    <script src="practice-lab.js?v=20260712-13" defer></script>
-    <script src="app.js?v=20260712-13" defer></script>
-    <script src="strategy-engine.js?v=20260712-13" defer></script>
-    <script src="strategy-lab.js?v=20260712-13" defer></script>
+    <script src="assets-catalog.js?v=20260712-15" defer></script>
+    <script src="virtual-bot.js?v=20260712-15" defer></script>
+    <script src="bot-lab.js?v=20260712-15" defer></script>
+    <script src="practice-lab.js?v=20260712-15" defer></script>
+    <script src="app.js?v=20260712-15" defer></script>
+    <script src="strategy-engine.js?v=20260712-15" defer></script>
+    <script src="strategy-lab.js?v=20260712-15" defer></script>
   </head>
   <body data-view="overview">
     <header class="site-header">
@@ -462,6 +462,11 @@
               <input id="botEnabled" type="checkbox" />
               <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
             </label>
+            <label class="toggle-switch hero-toggle pro-toggle">
+              <span class="toggle-label">Professzionális mód</span>
+              <input id="botProfessionalMode" type="checkbox" checked />
+              <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+            </label>
             <label class="toggle-switch hero-toggle learn-toggle">
               <span class="toggle-label">Auto-tanulás</span>
               <input id="botAutoLearn" type="checkbox" />
@@ -470,37 +475,48 @@
           </div>
         </div>
 
-        <div class="bot-summary">
-          <div><span>Virtuális egyenleg</span><strong id="botEquity">–</strong></div>
-          <div><span>Realizált PnL</span><strong id="botRealizedPnl">–</strong></div>
-          <div><span>Nyitott PnL</span><strong id="botOpenPnl">–</strong></div>
-          <div><span>Találati arány</span><strong id="botWinRate">–</strong></div>
-          <div><span>Profit factor</span><strong id="botProfitFactor">–</strong></div>
-          <div><span>Max. drawdown</span><strong id="botDrawdown">–</strong></div>
-          <div><span>Lezárt ügyletek</span><strong id="botTradeCount">0</strong></div>
+        <nav class="bot-sub-nav" role="tablist" aria-label="Bot almenü">
+          <button class="active" data-bot-section="summary" type="button" role="tab" aria-selected="true">Összegzés</button>
+          <button data-bot-section="settings" type="button" role="tab" aria-selected="false">Beállítások</button>
+          <button data-bot-section="trades" type="button" role="tab" aria-selected="false">Ügyletek</button>
+          <button data-bot-section="experiences" type="button" role="tab" aria-selected="false">Tapasztalatok</button>
+        </nav>
+
+        <div class="bot-section-panel" data-bot-section-panel="summary" role="tabpanel">
+          <div class="bot-summary">
+            <div><span>Virtuális egyenleg</span><strong id="botEquity">–</strong></div>
+            <div><span>Realizált PnL</span><strong id="botRealizedPnl">–</strong></div>
+            <div><span>Nyitott PnL</span><strong id="botOpenPnl">–</strong></div>
+            <div><span>Találati arány</span><strong id="botWinRate">–</strong></div>
+            <div><span>Profit factor</span><strong id="botProfitFactor">–</strong></div>
+            <div><span>Max. drawdown</span><strong id="botDrawdown">–</strong></div>
+            <div><span>Lezárt ügyletek</span><strong id="botTradeCount">0</strong></div>
+            <div><span>Ügylet / óra</span><strong id="botTradesPerHour">0</strong></div>
+            <div><span>Lehetőség kihasználás</span><strong id="botCaptureRate">–</strong></div>
+          </div>
+
+          <p id="botStatus" class="bot-status">Bot kikapcsolva.</p>
+
+          <div class="bot-dashboard-grid">
+            <article class="panel">
+              <div class="section-heading compact-heading">
+                <div><p class="eyebrow">ÉLŐ JELZÉSEK</p><h3 id="botScanHeading">Követett eszközök</h3></div>
+              </div>
+              <div id="botScanSummary" class="bot-scan-summary"></div>
+              <div id="botSignalGrid" class="bot-signal-grid">
+                <span class="helper-text">Válassz eszközöket a beállításoknál.</span>
+              </div>
+            </article>
+            <article class="panel">
+              <div class="section-heading compact-heading">
+                <div><p class="eyebrow">TELJESÍTMÉNY</p><h3>Egyenleggörbe</h3></div>
+              </div>
+              <div class="bot-chart-wrap"><canvas id="botEquityChart"></canvas></div>
+            </article>
+          </div>
         </div>
 
-        <p id="botStatus" class="bot-status">Bot kikapcsolva.</p>
-
-        <div class="bot-dashboard-grid">
-          <article class="panel">
-            <div class="section-heading compact-heading">
-              <div><p class="eyebrow">ÉLŐ JELZÉSEK</p><h3 id="botScanHeading">Követett eszközök</h3></div>
-            </div>
-            <div id="botScanSummary" class="bot-scan-summary"></div>
-            <div id="botSignalGrid" class="bot-signal-grid">
-              <span class="helper-text">Válassz eszközöket a beállításoknál.</span>
-            </div>
-          </article>
-          <article class="panel">
-            <div class="section-heading compact-heading">
-              <div><p class="eyebrow">TELJESÍTMÉNY</p><h3>Egyenleggörbe</h3></div>
-            </div>
-            <div class="bot-chart-wrap"><canvas id="botEquityChart"></canvas></div>
-          </article>
-        </div>
-
-        <div class="bot-main-grid">
+        <div class="bot-section-panel" data-bot-section-panel="settings" role="tabpanel" hidden>
           <article class="panel bot-config-panel">
             <div class="section-heading compact-heading">
               <div>
@@ -557,6 +573,36 @@
                   <span class="toggle-label">Összes eszköz – piaci mód (a legjobb lehetőséget választja)</span>
                   <input id="botMarketWideMode" type="checkbox" />
                   <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                </label>
+                <div class="bot-pro-info panel-inset">
+                  <p class="eyebrow">PROFESSZIONÁLIS MÓD</p>
+                  <p class="helper-text">
+                    Bekapcsolva a bot nem pihen feleslegesen: nyertes ügylet után magas pontszámú
+                    lehetőségnél azonnal belép, vesztes ügylet után tartja a cooldown-t. Gyorsabb
+                    szkennelés piaci módban (15 mp). A kockázati limitek (max. pozíció, stop-loss,
+                    pozícióméret) változatlanok maradnak.
+                  </p>
+                </div>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Pro: magas pontszám küszöb (azonnali belépés)</span>
+                    <output for="botProHighScore" id="botProHighScoreOut">75</output>
+                  </span>
+                  <input id="botProHighScore" type="range" min="60" max="95" step="5" value="75" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Pro: rövid pihenő nyertes után (perc)</span>
+                    <output for="botProWinCooldown" id="botProWinCooldownOut">2</output>
+                  </span>
+                  <input id="botProWinCooldown" type="range" min="0" max="10" step="1" value="2" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Pro: min. bizalom padló (%)</span>
+                    <output for="botProConfidenceFloor" id="botProConfidenceFloorOut">45</output>
+                  </span>
+                  <input id="botProConfidenceFloor" type="range" min="40" max="60" step="5" value="45" />
                 </label>
                 <fieldset class="bot-asset-fieldset">
                   <legend>Követett eszközök <span class="helper-text inline-helper">(piaci módban inaktív)</span></legend>
@@ -699,8 +745,57 @@
               </div>
             </form>
           </article>
+        </div>
 
-          <aside class="bot-side">
+        <div class="bot-section-panel" data-bot-section-panel="trades" role="tabpanel" hidden>
+          <div class="bot-panels-grid">
+            <article class="panel">
+              <div class="section-heading compact-heading">
+                <div><p class="eyebrow">NYITOTT POZÍCIÓK</p><h3>Bot papírállomány</h3></div>
+                <span id="botOpenCount" class="local-badge">0 pozíció</span>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>Eszköz</th><th>Irány</th><th>Belépés</th><th>Stop</th><th>Cél</th><th>Eredmény</th><th>Jelzés</th><th>Indok</th></tr></thead>
+                  <tbody id="botPositionsTable"></tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+
+          <article class="panel">
+            <div class="section-heading compact-heading">
+              <div><p class="eyebrow">BOT NAPLÓ</p><h3>Lezárt ügyletek és okok</h3></div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Idő</th><th>Eszköz</th><th>Irány</th><th>Belépés</th><th>Kilépés</th><th>Ok</th><th>Miért?</th><th>Eredmény</th></tr></thead>
+                <tbody id="botTradesTable"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="section-heading compact-heading">
+              <div><p class="eyebrow">KIHAGYOTT LEHETŐSÉGEK</p><h3>Miért nem lépett be?</h3></div>
+            </div>
+            <div id="botMissedLog" class="bot-missed-log">
+              <span class="helper-text">Nincs kihagyott lehetőség.</span>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="section-heading compact-heading">
+              <div><p class="eyebrow">AKTIVITÁS</p><h3>Bot események</h3></div>
+            </div>
+            <div id="botActivityLog" class="bot-activity-log">
+              <span>Még nincs esemény.</span>
+            </div>
+          </article>
+        </div>
+
+        <div class="bot-section-panel" data-bot-section-panel="experiences" role="tabpanel" hidden>
+          <div class="bot-experiences-grid">
             <article class="panel bot-learn-panel">
               <div class="section-heading compact-heading">
                 <div><p class="eyebrow">AUTO-TANULÁS</p><h3>Tapasztalatból finomhangolás</h3></div>
@@ -719,50 +814,14 @@
 
             <article class="panel">
               <div class="section-heading compact-heading">
-                <div><p class="eyebrow">JAVASLATOK</p><h3>Tanulási tippek</h3></div>
+                <div><p class="eyebrow">JAVASLATOK</p><h3>Tanulási tippek és fejlesztések</h3></div>
               </div>
               <ul id="botSuggestions" class="bot-suggestions">
                 <li class="bot-suggestion info"><strong>Indítás</strong><span>Kapcsold be a botot az első javaslatokért.</span></li>
               </ul>
             </article>
-          </aside>
+          </div>
         </div>
-
-        <div class="bot-panels-grid">
-          <article class="panel">
-            <div class="section-heading compact-heading">
-              <div><p class="eyebrow">NYITOTT POZÍCIÓK</p><h3>Bot papírállomány</h3></div>
-              <span id="botOpenCount" class="local-badge">0 pozíció</span>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead><tr><th>Eszköz</th><th>Irány</th><th>Belépés</th><th>Stop</th><th>Cél</th><th>Eredmény</th><th>Jelzés</th><th>Indok</th></tr></thead>
-                <tbody id="botPositionsTable"></tbody>
-              </table>
-            </div>
-          </article>
-        </div>
-
-        <article class="panel">
-          <div class="section-heading compact-heading">
-            <div><p class="eyebrow">BOT NAPLÓ</p><h3>Lezárt ügyletek és okok</h3></div>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>Idő</th><th>Eszköz</th><th>Irány</th><th>Belépés</th><th>Kilépés</th><th>Ok</th><th>Miért?</th><th>Eredmény</th></tr></thead>
-              <tbody id="botTradesTable"></tbody>
-            </table>
-          </div>
-        </article>
-
-        <article class="panel">
-          <div class="section-heading compact-heading">
-            <div><p class="eyebrow">AKTIVITÁS</p><h3>Bot események</h3></div>
-          </div>
-          <div id="botActivityLog" class="bot-activity-log">
-            <span>Még nincs esemény.</span>
-          </div>
-        </article>
       </section>
 
       <section class="simulator-section" data-pages="simulator">

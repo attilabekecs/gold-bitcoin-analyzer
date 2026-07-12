@@ -1221,6 +1221,122 @@ h2 {
   color: #1f5a3d;
 }
 
+.bot-hero-controls .pro-toggle:has(input:checked) {
+  border-color: rgba(47, 93, 80, 0.45);
+  box-shadow: 0 0 0 1px rgba(47, 93, 80, 0.15);
+}
+
+.local-badge.pro-active {
+  background: rgba(47, 93, 80, 0.14);
+  border-color: rgba(47, 93, 80, 0.35);
+  color: #2f5d50;
+}
+
+.bot-sub-nav {
+  background: rgba(255, 253, 249, 0.92);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 20px 0;
+  padding: 6px;
+}
+
+.bot-sub-nav button {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  cursor: pointer;
+  flex: 1 1 auto;
+  font-size: 12px;
+  font-weight: 600;
+  min-width: 120px;
+  padding: 10px 16px;
+  transition: var(--transition);
+}
+
+.bot-sub-nav button:hover {
+  border-color: rgba(42, 107, 79, 0.2);
+  color: var(--green);
+}
+
+.bot-sub-nav button.active {
+  background: linear-gradient(145deg, var(--ink-soft), var(--ink));
+  border-color: transparent;
+  box-shadow: 0 4px 14px rgba(18, 26, 22, 0.16);
+  color: var(--paper);
+}
+
+.bot-section-panel {
+  display: grid;
+  gap: 20px;
+}
+
+.bot-section-panel[hidden] {
+  display: none !important;
+}
+
+.bot-experiences-grid {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.bot-pro-info {
+  background: rgba(47, 93, 80, 0.06);
+  border: 1px solid rgba(47, 93, 80, 0.18);
+  border-radius: 10px;
+  grid-column: 1 / -1;
+  padding: 12px 14px;
+}
+
+.bot-pro-info .eyebrow {
+  margin-bottom: 6px;
+}
+
+.bot-missed-log {
+  display: grid;
+  gap: 8px;
+  max-height: 280px;
+  overflow: auto;
+}
+
+.bot-missed-item {
+  background: rgba(255, 253, 249, 0.85);
+  border: 1px solid var(--line);
+  border-left: 3px solid #e2863b;
+  border-radius: 8px;
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+}
+
+.bot-missed-item time {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.bot-missed-item strong {
+  font-size: 12px;
+}
+
+.bot-missed-item span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.bot-missed-item small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.panel-inset {
+  margin: 0;
+}
+
 .markets-hero h1,
 .practice-hero h1 {
   font-size: clamp(30px, 3.6vw, 48px);
@@ -3359,8 +3475,13 @@ footer {
   .bot-layout,
   .bot-panels-grid,
   .bot-dashboard-grid,
-  .bot-main-grid {
+  .bot-main-grid,
+  .bot-experiences-grid {
     grid-template-columns: 1fr;
+  }
+
+  .bot-sub-nav button {
+    min-width: calc(50% - 6px);
   }
 
   .bot-signal-grid {
