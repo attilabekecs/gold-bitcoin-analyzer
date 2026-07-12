@@ -2021,7 +2021,14 @@ h2 {
 }
 
 .bot-config-panel-group {
-  display: contents;
+  display: grid;
+  gap: 12px;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.bot-config-panel-group[hidden] {
+  display: none !important;
 }
 
 .bot-config-form {
@@ -3716,6 +3723,7 @@ footer {
   .portfolio-summary,
   .macro-grid,
   .form-grid,
+  .bot-config-panel-group,
   .calculator-results,
   .inline-form {
     grid-template-columns: 1fr;
