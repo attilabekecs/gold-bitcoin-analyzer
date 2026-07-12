@@ -54,6 +54,7 @@ const VALID_VIEWS = [
 ];
 
 const BOT_SECTIONS = ["summary", "settings", "trades", "experiences"];
+const SUPPORTED_CURRENCIES = ["USD", "EUR", "HUF"];
 
 function parseLocationHash() {
   const raw = window.location.hash.slice(1);
@@ -2114,6 +2115,7 @@ function saveSettings(event) {
   applySettings();
   closeSettings();
   showToast("Beállítások elmentve.");
+  renderBotTrading();
   loadDashboard();
 }
 
@@ -2631,6 +2633,7 @@ function paperChartOptions(prefix = "") {
 }
 
 function getBotContext() {
+  const botCurrency = resolveBotCurrency(state.botState?.config);
   return {
     assets: state.assets,
     intraday: state.intraday,
@@ -2638,6 +2641,8 @@ function getBotContext() {
     analyzeIntraday,
     getIntradaySeries,
     calculateTimeframeAlignment,
+    botCurrency,
+    formatBotPrice: (usdValue) => formatBotMoney(usdValue, botCurrency),
     indicators: {
       ema: exponentialMovingAverage,
       rsi: calculateRsi,
@@ -2668,6 +2673,12 @@ function initBotUi() {
     appendEmptyTableRow,
     paperChartOptions,
     initialBotSection,
+    getBotCurrency: (config) => resolveBotCurrency(config || state.botState?.config),
+    convertToCurrency,
+    convertFromCurrency,
+    formatBotMoney,
+    formatBotSignedMoney,
+    formatBotAssetPrice,
     updateBotHash: (section) => {
       if (state.activeView !== "bot") return;
       window.history.replaceState(null, "", `#${buildViewHash("bot", section)}`);
@@ -3469,10 +3480,52 @@ function formatCurrency(value) {
   }).format(value);
 }
 
+function resolveBotCurrency(botConfig) {
+  const choice = botConfig?.currency || "sync";
+  if (choice === "sync") return state.settings?.currency || "USD";
+  return SUPPORTED_CURRENCIES.includes(choice) ? choice : "USD";
+}
+
+function convertToCurrency(value, currency) {
+  if (!Number.isFinite(value)) return value;
+  const rate = state.exchangeRates[currency] ?? 1;
+  return value * rate;
+}
+
+function convertFromCurrency(value, currency) {
+  if (!Number.isFinite(value)) return value;
+  const rate = state.exchangeRates[currency] ?? 1;
+  if (!(rate > 0)) return value;
+  return value / rate;
+}
+
+function formatBotMoney(usdValue, currency) {
+  if (!Number.isFinite(usdValue)) return "–";
+  const converted = convertToCurrency(usdValue, currency);
+  return new Intl.NumberFormat("hu-HU", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: currency === "HUF" ? 0 : 2,
+  }).format(converted);
+}
+
+function formatBotSignedMoney(usdValue, currency) {
+  if (!Number.isFinite(usdValue)) return "–";
+  if (usdValue >= 0) return `+${formatBotMoney(usdValue, currency)}`;
+  return formatBotMoney(usdValue, currency);
+}
+
 function convertCurrency(value) {
   if (!Number.isFinite(value)) return value;
   const rate = state.exchangeRates[state.settings.currency] ?? 1;
   return value * rate;
+}
+
+function formatBotAssetPrice(usdValue, currency, decimals = 2) {
+  if (!Number.isFinite(usdValue)) return "–";
+  const converted = convertToCurrency(usdValue, currency);
+  const fractionDigits = currency === "HUF" ? 0 : decimals;
+  return `${formatNumber(converted, fractionDigits)} ${currency}`;
 }
 
 function formatMoney(value) {

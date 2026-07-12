@@ -14,9 +14,9 @@ Stratégialabor backtesttel.
 - Opcionális 1 perces XAU/USD diagram Twelve Data API-kulccsal
 - Külön Áttekintés, Bitcoin, Arany, Piacok, Hírek, Portfólió, Gyakorló, **Virtuális bot**, Szimulátor, Stratégialabor és AI nézet
 - **Gyakorló rész:** jelzés-értelmezési forgatókönyvek pontszámmal (localStorage)
-- **Virtuális bot labor:** külön fülön, almenükkel (Összegzés, Beállítások, Ügyletek, Tapasztalatok), teljes kézi konfigurációval és opcionális auto-tanulással
+- **Virtuális bot labor:** külön fülön, almenükkel (Összegzés, Beállítások, Ügyletek, Tapasztalatok), teljes kézi konfigurációval, **USD/EUR/HUF pénznemválasztással** (szinkron vagy bot-specifikus) és opcionális auto-tanulással
 - **Professzionális mód (alapértelmezett):** intelligens cooldown – nyertes ügylet után magas pontszámú lehetőségnél azonnal belép, vesztes után pihen; gyorsabb szkennelés (15–30 mp); kockázati limitek változatlanok
-- Bot beállítható: eszközök, irány, idősíkok, EMA/RSI/MACD küszöbök, kockázat, stop/cél, cooldown, max pozíció, díj/spread/slippage, kereskedési óra, pro küszöbök
+- Bot beállítható: eszközök, irány, idősíkok, EMA/RSI/MACD küszöbök, kockázat, stop/cél, cooldown, max pozíció, díj/spread/slippage, kereskedési óra, pro küszöbök, **pénznem (USD/EUR/HUF)**
 - **Összes eszköz (piaci mód):** minden ciklusban az összes katalógus-eszközt szkenneli, pontozza (bizalom, jel, idősík-egyezés, momentum, RSI) és a legjobb lehetőséget választja
 - Kézi módban továbbra is rögzíthetők konkrét eszközök; piaci mód felülírja és az egész piacot figyeli
 - **Auto-tanulás:** a lezárt ügyletek alapján biztonságos határokon belül finomhangol (csak bekapcsolt módban alkalmaz)

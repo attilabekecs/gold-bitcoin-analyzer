@@ -1337,6 +1337,11 @@ h2 {
   margin: 0;
 }
 
+.bot-currency-note {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
 .markets-hero h1,
 .practice-hero h1 {
   font-size: clamp(30px, 3.6vw, 48px);
@@ -1739,7 +1744,7 @@ h2 {
 .paper-summary {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   margin-bottom: 18px;
 }
 
@@ -1758,6 +1763,15 @@ h2 {
 .paper-summary > div:hover {
   border-color: rgba(42, 107, 79, 0.2);
   box-shadow: 0 6px 18px rgba(42, 107, 79, 0.06);
+}
+
+.bot-summary span small {
+  color: var(--muted);
+  display: block;
+  font-size: 9px;
+  font-weight: 500;
+  margin-top: 2px;
+  text-transform: uppercase;
 }
 
 .bot-summary span,

@@ -20,6 +20,7 @@
     professionalMode: true,
     marketWideMode: false,
     assets: ["bitcoin", "ethereum", "spy"],
+    currency: "sync",
     initialCapital: 10000,
     riskPercent: 1,
     maxPositions: 4,
@@ -315,6 +316,11 @@
       score,
       hasIntraday: true,
     };
+  }
+
+  function formatPrice(value, context) {
+    if (context?.formatBotPrice) return context.formatBotPrice(value);
+    return `$${value.toFixed(2)}`;
   }
 
   function isWithinTradingHours(config) {
@@ -737,7 +743,7 @@
     const assetName = window.AssetCatalog?.getName(position.asset) || position.asset;
     logActivity(
       botState,
-      `${assetName} ${position.direction.toUpperCase()} lezárva (${reason}): ${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}`,
+      `${assetName} ${position.direction.toUpperCase()} lezárva (${reason}): ${formatPrice(pnl, context)}`,
     );
     if (config.autoLearnEnabled) {
       runAutoLearn(botState, context, { trigger: "trade-close", trade });
@@ -873,7 +879,7 @@
           : "";
     logActivity(
       botState,
-      `${assetName} ${direction.toUpperCase()} nyitva @ $${entry.toFixed(2)} · ${decision.signal} (${decision.confidence}%, ${opportunityScore.toFixed(0)} pont)${proNote}`,
+      `${assetName} ${direction.toUpperCase()} nyitva @ ${formatPrice(entry, context)} · ${decision.signal} (${decision.confidence}%, ${opportunityScore.toFixed(0)} pont)${proNote}`,
     );
     return position;
   }
@@ -1263,7 +1269,7 @@
         suggestions.push({
           severity: "warning",
           title: `Gyenge idősík: ${interval}`,
-          detail: `${total} ügyletből ${stats.pnl.toFixed(2)} USD nettó.`,
+          detail: `${total} ügyletből ${context.formatBotPrice ? context.formatBotPrice(stats.pnl) : `${stats.pnl.toFixed(2)} USD`} nettó.`,
         });
       }
     });
@@ -1280,7 +1286,7 @@
         suggestions.push({
           severity: "warning",
           title: `Gyenge eszköz: ${name}`,
-          detail: `${stats.count} ügylet, ${stats.pnl.toFixed(2)} USD.`,
+          detail: `${stats.count} ügylet, ${context.formatBotPrice ? context.formatBotPrice(stats.pnl) : `${stats.pnl.toFixed(2)} USD`}.`,
         });
       }
     });

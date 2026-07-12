@@ -192,6 +192,31 @@
     document.querySelectorAll("[data-bot-section]").forEach((button) => {
       button.addEventListener("click", () => switchSection(button.dataset.botSection));
     });
+
+    document.getElementById("botCurrency")?.addEventListener("change", () => {
+      const botState = getBotState();
+      if (!botState) return;
+      const previousCurrency = getBotCurrency(botState.config);
+      const capitalInput = document.getElementById("botInitialCapital");
+      const displayValue = Number(capitalInput?.value);
+      if (Number.isFinite(displayValue) && displayValue > 0) {
+        const usdValue = bridge.convertFromCurrency(displayValue, previousCurrency);
+        botState.config.currency = document.getElementById("botCurrency").value;
+        const nextCurrency = getBotCurrency(botState.config);
+        if (capitalInput) {
+          const converted = bridge.convertToCurrency(usdValue, nextCurrency);
+          capitalInput.value =
+            nextCurrency === "HUF"
+              ? String(Math.round(converted))
+              : String(Math.round(converted * 100) / 100);
+        }
+      } else {
+        botState.config.currency = document.getElementById("botCurrency").value;
+      }
+      Bot.saveBotState(botState);
+      syncCapitalField(botState.config);
+      render();
+    });
   }
 
   function switchSection(section, updateHash = true) {
@@ -223,6 +248,41 @@
     return activeSection;
   }
 
+  function getBotCurrency(config) {
+    return bridge?.getBotCurrency?.(config || getBotState()?.config) || "USD";
+  }
+
+  function updateCurrencyUi(currency, syncLabel = true) {
+    const label = document.getElementById("botInitialCapitalLabel");
+    const input = document.getElementById("botInitialCapital");
+    const summaryCurrency = document.getElementById("botSummaryCurrency");
+    const displayCurrency =
+      document.getElementById("botCurrency")?.value === "sync"
+        ? `${currency} (szinkron)`
+        : currency;
+    if (label && syncLabel) {
+      const labelText = document.getElementById("botCapitalLabelText");
+      if (labelText) labelText.textContent = `Kezdőtőke (${currency})`;
+    }
+    if (summaryCurrency) summaryCurrency.textContent = displayCurrency;
+    if (input) {
+      const minUsd = 100;
+      const minDisplay = Math.max(1, Math.round(bridge.convertToCurrency(minUsd, currency)));
+      input.min = String(minDisplay);
+      input.step = currency === "HUF" ? "10000" : currency === "EUR" ? "100" : "100";
+    }
+  }
+
+  function syncCapitalField(config) {
+    const currency = getBotCurrency(config);
+    const element = document.getElementById("botInitialCapital");
+    if (!element) return;
+    const converted = bridge.convertToCurrency(config.initialCapital, currency);
+    element.value =
+      currency === "HUF" ? String(Math.round(converted)) : String(Math.round(converted * 100) / 100);
+    updateCurrencyUi(currency);
+  }
+
   function switchConfigTab(tab) {
     document.querySelectorAll("[data-bot-config-tab]").forEach((button) => {
       button.classList.toggle("active", button.dataset.botConfigTab === tab);
@@ -239,7 +299,7 @@
 
     CONFIG_FIELDS.forEach(({ id, key, type }) => {
       const element = document.getElementById(id);
-      if (!element) return;
+      if (!element || key === "initialCapital") return;
       if (type === "number" || type === "range") element.value = config[key];
       else element.value = config[key];
     });
@@ -250,6 +310,10 @@
       const element = document.getElementById(id);
       if (element) element.checked = Boolean(config[key]);
     });
+
+    const currencySelect = document.getElementById("botCurrency");
+    if (currencySelect) currencySelect.value = config.currency || "sync";
+    syncCapitalField(config);
 
     document.querySelectorAll("#botAssetChecks input").forEach((input) => {
       input.checked = config.assets.includes(input.value);
@@ -269,7 +333,7 @@
 
     CONFIG_FIELDS.forEach(({ id, key, type }) => {
       const element = document.getElementById(id);
-      if (!element) return;
+      if (!element || key === "initialCapital") return;
       if (type === "number" || type === "range" || key === "primaryInterval") {
         next[key] = Number(element.value);
       } else {
@@ -282,6 +346,15 @@
       if (element) next[key] = element.checked;
     });
 
+    const currencySelect = document.getElementById("botCurrency");
+    next.currency = currencySelect?.value || "sync";
+    const capitalInput = document.getElementById("botInitialCapital");
+    const displayCapital = Number(capitalInput?.value);
+    const currency = getBotCurrency(next);
+    if (Number.isFinite(displayCapital) && displayCapital > 0) {
+      next.initialCapital = bridge.convertFromCurrency(displayCapital, currency);
+    }
+
     const selectedAssets = [...document.querySelectorAll("#botAssetChecks input:checked")].map(
       (input) => input.value,
     );
@@ -292,7 +365,15 @@
   function saveConfig() {
     const botState = getBotState();
     if (!botState) return;
-    botState.config = readConfigFromForm();
+    const next = readConfigFromForm();
+    const currency = getBotCurrency(next);
+    if (!(next.initialCapital >= 100)) {
+      bridge?.showToast?.(
+        `A kezdőtőke legalább ${bridge.formatBotMoney(100, currency)} legyen.`,
+      );
+      return;
+    }
+    botState.config = next;
     Bot.saveBotState(botState);
     render();
     bridge?.scheduleBotTick?.();
@@ -413,15 +494,25 @@
     const botState = getBotState();
     if (!botState) return;
     const metrics = Bot.getMetrics(botState, getContext());
-    const { formatNumber, formatSignedUsd, setMetricValue, valueClass, appendEmptyTableRow } = bridge;
+    const { formatNumber, setMetricValue, valueClass, appendEmptyTableRow } = bridge;
+    const currency = getBotCurrency(botState.config);
+    updateCurrencyUi(currency);
 
     setMetricValue(
       "botEquity",
-      `$${formatNumber(metrics.equity, 2)}`,
+      bridge.formatBotMoney(metrics.equity, currency),
       metrics.equity - botState.initialCapital,
     );
-    setMetricValue("botRealizedPnl", formatSignedUsd(metrics.realizedPnl), metrics.realizedPnl);
-    setMetricValue("botOpenPnl", formatSignedUsd(metrics.openPnl), metrics.openPnl);
+    setMetricValue(
+      "botRealizedPnl",
+      bridge.formatBotSignedMoney(metrics.realizedPnl, currency),
+      metrics.realizedPnl,
+    );
+    setMetricValue(
+      "botOpenPnl",
+      bridge.formatBotSignedMoney(metrics.openPnl, currency),
+      metrics.openPnl,
+    );
     document.getElementById("botWinRate").textContent =
       metrics.winRate === null ? "–" : `${formatNumber(metrics.winRate, 1)}%`;
     document.getElementById("botProfitFactor").textContent =
@@ -455,6 +546,7 @@
           : " · kereskedési ablakon kívül"
         : "";
       const proNote = botState.config.professionalMode ? " · Pro mód aktív" : "";
+      const currencyNote = ` · ${currency}`;
       status.textContent = botState.config.enabled
         ? `Bot aktív · ${metrics.tradeCount} lezárt ügylet · utolsó tick: ${
             botState.lastTickAt
@@ -462,7 +554,7 @@
                   botState.lastTickAt,
                 )
               : "most"
-          }${hoursNote}${proNote}`
+          }${hoursNote}${proNote}${currencyNote}`
         : "Bot kikapcsolva – kapcsold be az automatikus papírkereskedéshez.";
       status.className = `bot-status ${botState.config.enabled ? "live" : ""}`;
     }
@@ -473,12 +565,17 @@
       if (botState.config.professionalMode) parts.push("Pro mód");
       if (botState.config.marketWideMode) parts.push("Összes eszköz");
       if (botState.config.autoLearnEnabled) parts.push("Auto-tanulás");
+      if (botState.config.currency && botState.config.currency !== "sync") {
+        parts.push(botState.config.currency);
+      } else if (botState.config.currency === "sync") {
+        parts.push(`${currency} szinkron`);
+      }
       modeBadge.textContent = parts.length ? parts.join(" · ") : "Kézi mód";
       modeBadge.className = `local-badge ${botState.config.professionalMode ? "pro-active" : ""} ${botState.config.autoLearnEnabled ? "learn-active" : ""} ${botState.config.marketWideMode ? "market-wide-active" : ""}`;
     }
 
-    renderPositions(appendEmptyTableRow, formatNumber, formatSignedUsd, valueClass);
-    renderTrades(appendEmptyTableRow, formatNumber, formatSignedUsd, valueClass);
+    renderPositions(appendEmptyTableRow, formatNumber, valueClass, currency);
+    renderTrades(appendEmptyTableRow, formatNumber, valueClass, currency);
     renderMissedOpportunities(formatNumber);
     renderSuggestions();
     renderActivity();
@@ -487,7 +584,7 @@
     renderLearnPanel();
   }
 
-  function renderPositions(appendEmptyTableRow, formatNumber, formatSignedUsd, valueClass) {
+  function renderPositions(appendEmptyTableRow, formatNumber, valueClass, currency) {
     const botState = getBotState();
     const table = document.getElementById("botPositionsTable");
     if (!table || !botState) return;
@@ -502,14 +599,15 @@
       const pnl = Number.isFinite(price)
         ? (price - position.entry) * position.quantity * multiplier
         : null;
+      const decimals = Catalog.getAsset(position.asset)?.priceDecimals ?? 2;
       const row = document.createElement("tr");
       [
         Catalog.getName(position.asset),
         position.direction.toUpperCase(),
-        `$${formatNumber(position.entry, Catalog.getAsset(position.asset)?.priceDecimals ?? 2)}`,
-        `$${formatNumber(position.stop, Catalog.getAsset(position.asset)?.priceDecimals ?? 2)}`,
-        `$${formatNumber(position.target, Catalog.getAsset(position.asset)?.priceDecimals ?? 2)}`,
-        pnl === null ? "–" : formatSignedUsd(pnl),
+        bridge.formatBotAssetPrice(position.entry, currency, decimals),
+        bridge.formatBotAssetPrice(position.stop, currency, decimals),
+        bridge.formatBotAssetPrice(position.target, currency, decimals),
+        pnl === null ? "–" : bridge.formatBotSignedMoney(pnl, currency),
         position.signal || "–",
         (position.reasons || []).join(" · ") || "–",
       ].forEach((text, index) => {
@@ -553,7 +651,7 @@
     });
   }
 
-  function renderTrades(appendEmptyTableRow, formatNumber, formatSignedUsd, valueClass) {
+  function renderTrades(appendEmptyTableRow, formatNumber, valueClass, currency) {
     const botState = getBotState();
     const table = document.getElementById("botTradesTable");
     if (!table || !botState) return;
@@ -575,11 +673,11 @@
         }).format(trade.closedAt),
         Catalog.getName(trade.asset),
         trade.direction.toUpperCase(),
-        `$${formatNumber(trade.entry, decimals)}`,
-        `$${formatNumber(trade.exit, decimals)}`,
+        bridge.formatBotAssetPrice(trade.entry, currency, decimals),
+        bridge.formatBotAssetPrice(trade.exit, currency, decimals),
         trade.reason,
         why || "–",
-        formatSignedUsd(trade.pnl),
+        bridge.formatBotSignedMoney(trade.pnl, currency),
       ].forEach((text, index) => {
         const cell = document.createElement("td");
         cell.textContent = text;
@@ -630,7 +728,13 @@
     if (typeof Chart === "undefined" || !botState) return;
     const canvas = document.getElementById("botEquityChart");
     if (!canvas) return;
+    const currency = getBotCurrency(botState.config);
     const points = botState.equityHistory;
+    const chartOptions = bridge?.paperChartOptions?.() || { responsive: true, maintainAspectRatio: false };
+    if (chartOptions.scales?.y?.ticks) {
+      chartOptions.scales.y.ticks.callback = (value) =>
+        bridge.formatNumber(value, currency === "HUF" ? 0 : 0);
+    }
     equityChart = new Chart(canvas, {
       type: "line",
       data: {
@@ -643,7 +747,7 @@
           }).format(point.time),
         ),
         datasets: [{
-          data: points.map((point) => point.equity),
+          data: points.map((point) => bridge.convertToCurrency(point.equity, currency)),
           borderColor: "#2f5d50",
           backgroundColor: "rgba(47, 93, 80, 0.12)",
           fill: true,
@@ -651,7 +755,7 @@
           pointRadius: 0,
         }],
       },
-      options: bridge?.paperChartOptions?.() || { responsive: true, maintainAspectRatio: false },
+      options: chartOptions,
     });
     const state = getState();
     if (state) state.botEquityChart = equityChart;
