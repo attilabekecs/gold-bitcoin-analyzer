@@ -994,15 +994,7 @@
         : "Követett eszközök";
     }
 
-    let results = botState.lastScan?.results;
-    if (!results?.length) {
-      const scanKeys = Bot.getScanAssetKeys(botState.config, botState);
-      results = scanKeys.map((assetKey) => {
-        const decision = Bot.analyzeSignal(assetKey, botState.config, context);
-        return Bot.evaluateOpportunity(assetKey, decision, botState.config, botState, Date.now());
-      });
-      results.sort((a, b) => b.opportunityScore - a.opportunityScore);
-    }
+    const results = Bot.scanMarketOpportunities(botState, context, Date.now());
 
     const eligibleCount = results.filter((result) => result.eligible).length;
     const withDataCount = results.filter((result) => result.decision).length;

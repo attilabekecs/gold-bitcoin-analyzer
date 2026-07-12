@@ -699,6 +699,18 @@
     return config.assets;
   }
 
+  function compareOpportunityResults(a, b) {
+    if (b.opportunityScore !== a.opportunityScore) {
+      return b.opportunityScore - a.opportunityScore;
+    }
+    if (a.eligible !== b.eligible) {
+      return a.eligible ? -1 : 1;
+    }
+    const confidenceDiff = (b.confidence ?? 0) - (a.confidence ?? 0);
+    if (confidenceDiff !== 0) return confidenceDiff;
+    return Math.abs(b.score ?? 0) - Math.abs(a.score ?? 0);
+  }
+
   function computeOpportunityScore(decision, config) {
     if (!decision || decision.className === "neutral") {
       return {
@@ -828,7 +840,7 @@
       const decision = analyzeSignal(assetKey, config, context);
       return evaluateOpportunity(assetKey, decision, config, botState, now);
     });
-    results.sort((a, b) => b.opportunityScore - a.opportunityScore);
+    results.sort(compareOpportunityResults);
     return results;
   }
 
@@ -1044,7 +1056,7 @@
       maybeCloseOnReversal(botState, assetKey, decision, context, now);
       return evaluateOpportunity(assetKey, decision, config, botState, now);
     });
-    scanResults.sort((a, b) => b.opportunityScore - a.opportunityScore);
+    scanResults.sort(compareOpportunityResults);
 
     const eligible = scanResults.filter((result) => result.eligible);
     let chosen = null;
@@ -1549,6 +1561,7 @@
     getScanAssetKeys,
     getTradeableAssetKeys,
     computeOpportunityScore,
+    compareOpportunityResults,
     buildSuggestions,
     runAutoLearn,
     resetBot,
