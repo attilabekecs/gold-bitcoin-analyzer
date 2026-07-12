@@ -17,6 +17,7 @@
   const DEFAULT_CONFIG = {
     enabled: false,
     autoLearnEnabled: false,
+    marketWideMode: false,
     assets: ["bitcoin", "ethereum", "spy"],
     initialCapital: 10000,
     riskPercent: 1,
@@ -89,6 +90,7 @@
       equityHistory: [{ time: now, equity: merged.initialCapital }],
       lastActionAt: {},
       lastTickAt: null,
+      lastScan: null,
       activityLog: [],
       learningHistory: [],
     };
@@ -417,6 +419,140 @@
     return config.direction === direction;
   }
 
+  function getScanAssetKeys(config, botState) {
+    const positionAssets = botState.positions.map((position) => position.asset);
+    if (config.marketWideMode) {
+      const allKeys = window.AssetCatalog?.ALL_KEYS || config.assets;
+      return [...new Set([...allKeys, ...positionAssets])];
+    }
+    return [...new Set([...config.assets, ...positionAssets])];
+  }
+
+  function getTradeableAssetKeys(config) {
+    if (config.marketWideMode) {
+      return window.AssetCatalog?.ALL_KEYS || config.assets;
+    }
+    return config.assets;
+  }
+
+  function computeOpportunityScore(decision, config) {
+    if (!decision || decision.className === "neutral") {
+      return {
+        total: 0,
+        confidence: 0,
+        signalStrength: 0,
+        alignmentBonus: 0,
+        momentumBonus: 0,
+        rsiBonus: 0,
+      };
+    }
+
+    const confidence = decision.confidence || 0;
+    const signalStrength = Math.abs(decision.score || 0) * 5;
+    let alignmentBonus = 0;
+    if (decision.alignment?.available >= config.minAlignedTimeframes) {
+      const ratio =
+        decision.className === "positive"
+          ? decision.alignment.bullishRatio
+          : decision.alignment.bearishRatio;
+      alignmentBonus = ratio * 15;
+    }
+    let momentumBonus = 0;
+    if (decision.momentum15 !== null) {
+      momentumBonus = Math.min(10, Math.abs(decision.momentum15) * 2);
+    }
+    let rsiBonus = 0;
+    if (decision.rsi !== null) {
+      if (
+        decision.className === "positive" &&
+        decision.rsi >= config.rsiLongMin &&
+        decision.rsi <= config.rsiLongMax
+      ) {
+        rsiBonus = 5;
+      } else if (
+        decision.className === "negative" &&
+        decision.rsi >= config.rsiShortMin &&
+        decision.rsi <= config.rsiShortMax
+      ) {
+        rsiBonus = 5;
+      }
+    }
+    const total = confidence + signalStrength + alignmentBonus + momentumBonus + rsiBonus;
+    return { total, confidence, signalStrength, alignmentBonus, momentumBonus, rsiBonus };
+  }
+
+  function evaluateOpportunity(assetKey, decision, config, botState, now) {
+    const assetName = window.AssetCatalog?.getName(assetKey) || assetKey;
+    const scoreBreakdown = computeOpportunityScore(decision, config);
+    const filterReasons = [];
+
+    if (!decision) {
+      filterReasons.push("Nincs elérhető piaci adat");
+    } else if (decision.className === "neutral") {
+      filterReasons.push("Semleges jelzés – küszöb alatt");
+    } else if (decision.confidence < config.minConfidence) {
+      filterReasons.push(
+        `Alacsony bizalom (${decision.confidence}% < ${config.minConfidence}%)`,
+      );
+    }
+
+    if (decision && decision.className !== "neutral") {
+      const direction = decision.className === "positive" ? "long" : "short";
+      if (!passesDirection(direction, config)) {
+        filterReasons.push(`Irány szűrő (${config.direction}) kizárja a ${direction.toUpperCase()} setupot`);
+      }
+      if (!passesAlignment(direction, decision, config)) {
+        filterReasons.push("Idősík-egyezés nem teljesül");
+      }
+      if (!(decision.stop > 0) || !(decision.target > 0) || !(decision.currentPrice > 0)) {
+        filterReasons.push("Hiányzó stop/cél/ár adat");
+      }
+    }
+
+    if (!config.enabled) filterReasons.push("Bot kikapcsolva");
+    if (!isWithinTradingHours(config)) filterReasons.push("Kereskedési ablakon kívül");
+    if (!canOpen(assetKey, botState, now)) {
+      if (botState.positions.some((position) => position.asset === assetKey)) {
+        filterReasons.push("Már van nyitott pozíció");
+      } else if (botState.positions.length >= config.maxPositions) {
+        filterReasons.push("Max. pozíció elérve");
+      } else {
+        filterReasons.push("Cooldown aktív");
+      }
+    }
+
+    const eligible = filterReasons.length === 0 && decision && decision.className !== "neutral";
+    const direction = decision?.className === "positive" ? "long" : decision?.className === "negative" ? "short" : null;
+
+    return {
+      assetKey,
+      assetName,
+      decision,
+      direction,
+      signal: decision?.signal || "Nincs adat",
+      className: decision?.className || "neutral",
+      confidence: decision?.confidence ?? null,
+      score: decision?.score ?? null,
+      opportunityScore: scoreBreakdown.total,
+      scoreBreakdown,
+      eligible,
+      filterReasons,
+      topReasons: (decision?.reasons || []).slice(0, 3),
+    };
+  }
+
+  function scanMarketOpportunities(botState, context, now) {
+    const config = botState.config;
+    context.botConfig = config;
+    const scanKeys = getScanAssetKeys(config, botState);
+    const results = scanKeys.map((assetKey) => {
+      const decision = analyzeSignal(assetKey, config, context);
+      return evaluateOpportunity(assetKey, decision, config, botState, now);
+    });
+    results.sort((a, b) => b.opportunityScore - a.opportunityScore);
+    return results;
+  }
+
   function closePosition(botState, id, exitPrice, reason, closedAt, context) {
     context.botConfig = botState.config;
     const index = botState.positions.findIndex((position) => position.id === id);
@@ -530,10 +666,10 @@
     });
   }
 
-  function maybeOpenPosition(botState, assetKey, decision, context, now) {
+  function maybeOpenPosition(botState, assetKey, decision, context, now, options = {}) {
     const config = botState.config;
     if (!config.enabled) return null;
-    if (!config.assets.includes(assetKey)) return null;
+    if (!options.skipAssetCheck && !getTradeableAssetKeys(config).includes(assetKey)) return null;
     if (!isWithinTradingHours(config)) return null;
     if (!decision || decision.className === "neutral") return null;
     if (decision.confidence < config.minConfidence) return null;
@@ -598,15 +734,80 @@
     const now = Date.now();
     let opened = 0;
     const beforeTrades = botState.trades.length;
-    context.botConfig = botState.config;
+    const config = botState.config;
+    context.botConfig = config;
 
-    botState.config.assets.forEach((assetKey) => {
+    const scanKeys = getScanAssetKeys(config, botState);
+    const positionAssets = [...new Set(botState.positions.map((position) => position.asset))];
+
+    positionAssets.forEach((assetKey) => {
       updateOpenPositions(botState, assetKey, context);
-      const decision = analyzeSignal(assetKey, botState.config, context);
-      maybeCloseOnReversal(botState, assetKey, decision, context, now);
-      const position = maybeOpenPosition(botState, assetKey, decision, context, now);
-      if (position) opened += 1;
     });
+
+    const scanResults = scanKeys.map((assetKey) => {
+      const decision = analyzeSignal(assetKey, config, context);
+      maybeCloseOnReversal(botState, assetKey, decision, context, now);
+      return evaluateOpportunity(assetKey, decision, config, botState, now);
+    });
+    scanResults.sort((a, b) => b.opportunityScore - a.opportunityScore);
+
+    const eligible = scanResults.filter((result) => result.eligible);
+    let chosen = null;
+
+    if (config.marketWideMode) {
+      if (eligible.length) {
+        chosen = eligible[0];
+        const position = maybeOpenPosition(
+          botState,
+          chosen.assetKey,
+          chosen.decision,
+          context,
+          now,
+          { skipAssetCheck: true },
+        );
+        if (position) {
+          opened += 1;
+          logActivity(
+            botState,
+            `Piaci mód: ${chosen.assetName} választva (${chosen.opportunityScore.toFixed(0)} pont) – ${chosen.signal} (${chosen.confidence}%)`,
+          );
+        }
+      }
+    } else {
+      config.assets.forEach((assetKey) => {
+        const result = scanResults.find((entry) => entry.assetKey === assetKey);
+        if (!result) return;
+        const position = maybeOpenPosition(botState, assetKey, result.decision, context, now);
+        if (position) opened += 1;
+      });
+    }
+
+    botState.lastScan = {
+      time: now,
+      marketWideMode: config.marketWideMode,
+      results: scanResults,
+      chosen: chosen
+        ? {
+            assetKey: chosen.assetKey,
+            assetName: chosen.assetName,
+            opportunityScore: chosen.opportunityScore,
+            signal: chosen.signal,
+            confidence: chosen.confidence,
+            direction: chosen.direction,
+            scoreBreakdown: chosen.scoreBreakdown,
+            topReasons: chosen.topReasons,
+            filterReasons: [],
+          }
+        : eligible.length
+          ? null
+          : {
+              assetKey: null,
+              reason:
+                scanResults.length === 0
+                  ? "Nincs szkennelhető eszköz."
+                  : "Egyetlen eszköz sem teljesíti a szűrőket.",
+            },
+    };
 
     const closed = botState.trades.length - beforeTrades;
     recordEquity(botState, context, now);
@@ -890,6 +1091,11 @@
     getMetrics,
     tick,
     analyzeSignal,
+    scanMarketOpportunities,
+    evaluateOpportunity,
+    getScanAssetKeys,
+    getTradeableAssetKeys,
+    computeOpportunityScore,
     buildSuggestions,
     runAutoLearn,
     resetBot,

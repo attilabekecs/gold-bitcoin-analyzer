@@ -18,8 +18,8 @@
     <link rel="stylesheet" href="styles.css?v=20260712-11" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
     <script src="assets-catalog.js?v=20260712-11" defer></script>
-    <script src="virtual-bot.js?v=20260712-11" defer></script>
-    <script src="bot-lab.js?v=20260712-11" defer></script>
+    <script src="virtual-bot.js?v=20260712-12" defer></script>
+    <script src="bot-lab.js?v=20260712-12" defer></script>
     <script src="practice-lab.js?v=20260712-11" defer></script>
     <script src="app.js?v=20260712-11" defer></script>
     <script src="strategy-engine.js?v=20260712-11" defer></script>
@@ -462,8 +462,9 @@
         <div class="bot-dashboard-grid">
           <article class="panel">
             <div class="section-heading compact-heading">
-              <div><p class="eyebrow">ÉLŐ JELZÉSEK</p><h3>Követett eszközök</h3></div>
+              <div><p class="eyebrow">ÉLŐ JELZÉSEK</p><h3 id="botScanHeading">Követett eszközök</h3></div>
             </div>
+            <div id="botScanSummary" class="bot-scan-summary"></div>
             <div id="botSignalGrid" class="bot-signal-grid">
               <span class="helper-text">Válassz eszközöket a beállításoknál.</span>
             </div>
@@ -517,8 +518,9 @@
                   </select>
                 </label>
                 <label class="check-label wide-check"><input id="botAutoClose" type="checkbox" checked /> Zárás ellentétes jelzésnél</label>
+                <label class="check-label wide-check market-wide-toggle"><input id="botMarketWideMode" type="checkbox" /> Összes eszköz – piaci mód (a legjobb lehetőséget választja)</label>
                 <fieldset class="bot-asset-fieldset">
-                  <legend>Követett eszközök</legend>
+                  <legend>Követett eszközök <span class="helper-text inline-helper">(piaci módban inaktív)</span></legend>
                   <div id="botAssetChecks" class="bot-asset-checks"></div>
                 </fieldset>
               </div>

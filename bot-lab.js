@@ -44,6 +44,7 @@
   const CHECKBOX_FIELDS = [
     { id: "botEnabled", key: "enabled" },
     { id: "botAutoLearn", key: "autoLearnEnabled" },
+    { id: "botMarketWideMode", key: "marketWideMode" },
     { id: "botAutoClose", key: "autoCloseOnReversal" },
     { id: "botUseMacd", key: "useMacd" },
     { id: "botUseVolume", key: "useVolume" },
@@ -114,6 +115,21 @@
       );
     });
 
+    document.getElementById("botMarketWideMode")?.addEventListener("change", (event) => {
+      const botState = getBotState();
+      if (!botState) return;
+      botState.config.marketWideMode = event.target.checked;
+      Bot.saveBotState(botState);
+      syncConfigForm();
+      render();
+      bridge?.showToast?.(
+        event.target.checked
+          ? "Összes eszköz mód – a bot minden ciklusnál a legjobb lehetőséget keresi."
+          : "Kézi eszközválasztás – csak a kijelölt eszközökön kereskedik.",
+      );
+      if (botState.config.enabled) bridge?.runTick?.();
+    });
+
     document.getElementById("botSaveConfig")?.addEventListener("click", saveConfig);
     document.getElementById("botResetButton")?.addEventListener("click", resetAccount);
     document.getElementById("botRunLearnButton")?.addEventListener("click", runLearnPreview);
@@ -152,7 +168,13 @@
 
     document.querySelectorAll("#botAssetChecks input").forEach((input) => {
       input.checked = config.assets.includes(input.value);
+      input.disabled = Boolean(config.marketWideMode);
     });
+
+    const assetFieldset = document.querySelector(".bot-asset-fieldset");
+    if (assetFieldset) {
+      assetFieldset.classList.toggle("market-wide-active", Boolean(config.marketWideMode));
+    }
   }
 
   function readConfigFromForm() {
@@ -344,8 +366,11 @@
 
     const modeBadge = document.getElementById("botModeBadge");
     if (modeBadge) {
-      modeBadge.textContent = botState.config.autoLearnEnabled ? "Auto-tanulás BE" : "Kézi mód";
-      modeBadge.className = `local-badge ${botState.config.autoLearnEnabled ? "learn-active" : ""}`;
+      const parts = [];
+      if (botState.config.marketWideMode) parts.push("Összes eszköz");
+      if (botState.config.autoLearnEnabled) parts.push("Auto-tanulás");
+      modeBadge.textContent = parts.length ? parts.join(" · ") : "Kézi mód";
+      modeBadge.className = `local-badge ${botState.config.autoLearnEnabled ? "learn-active" : ""} ${botState.config.marketWideMode ? "market-wide-active" : ""}`;
     }
 
     renderPositions(appendEmptyTableRow, formatNumber, formatSignedUsd, valueClass);
@@ -353,7 +378,7 @@
     renderSuggestions();
     renderActivity();
     renderEquityChart();
-    renderLiveSignals(formatNumber);
+    renderMarketScan(formatNumber);
     renderLearnPanel();
   }
 
@@ -496,34 +521,120 @@
     if (state) state.botEquityChart = equityChart;
   }
 
-  function renderLiveSignals(formatNumber) {
+  function renderMarketScan(formatNumber) {
     const botState = getBotState();
     const grid = document.getElementById("botSignalGrid");
+    const summary = document.getElementById("botScanSummary");
+    const heading = document.getElementById("botScanHeading");
     if (!grid || !botState) return;
-    grid.replaceChildren();
+
     const context = getContext();
     context.botConfig = botState.config;
+    const marketWide = botState.config.marketWideMode;
 
-    botState.config.assets.forEach((assetKey) => {
-      const decision = Bot.analyzeSignal(assetKey, botState.config, context);
-      const meta = Catalog.getAsset(assetKey);
-      const card = document.createElement("article");
-      card.className = `bot-signal-card ${decision?.className || "neutral"}`;
-      const signal = decision?.signal || "Nincs adat";
-      const conf = decision?.confidence ?? "–";
-      const rsi = decision?.rsi !== null && decision?.rsi !== undefined ? formatNumber(decision.rsi, 1) : "–";
-      card.innerHTML = `
-        <div class="bot-signal-heading">
-          <span>${meta?.name || assetKey}</span>
-          <strong class="${decision?.className || "neutral"}">${signal}</strong>
-        </div>
-        <div class="bot-signal-metrics">
-          <div><span>Bizalom</span><strong>${conf}%</strong></div>
-          <div><span>RSI</span><strong>${rsi}</strong></div>
-          <div><span>Idősík</span><strong>${decision?.interval || botState.config.primaryInterval}p</strong></div>
-        </div>`;
-      grid.append(card);
-    });
+    if (heading) {
+      heading.textContent = marketWide ? "Piaci szkenner – összes eszköz" : "Követett eszközök";
+    }
+
+    let results = botState.lastScan?.results;
+    if (!results?.length) {
+      const scanKeys = Bot.getScanAssetKeys(botState.config, botState);
+      results = scanKeys.map((assetKey) => {
+        const decision = Bot.analyzeSignal(assetKey, botState.config, context);
+        return Bot.evaluateOpportunity(assetKey, decision, botState.config, botState, Date.now());
+      });
+      results.sort((a, b) => b.opportunityScore - a.opportunityScore);
+    }
+
+    grid.replaceChildren();
+    if (!results.length) {
+      grid.append(
+        Object.assign(document.createElement("span"), {
+          className: "helper-text",
+          textContent: marketWide
+            ? "Várakozás az első piaci szkennelésre…"
+            : "Válassz eszközöket a beállításoknál.",
+        }),
+      );
+    } else {
+      results.forEach((result, index) => {
+        const isChosen = botState.lastScan?.chosen?.assetKey === result.assetKey;
+        const card = document.createElement("article");
+        card.className = `bot-scan-card ${result.className}${result.eligible ? " eligible" : ""}${isChosen ? " chosen" : ""}`;
+        const rank = document.createElement("span");
+        rank.className = "bot-scan-rank";
+        rank.textContent = `#${index + 1}`;
+        const headingRow = document.createElement("div");
+        headingRow.className = "bot-scan-heading";
+        headingRow.innerHTML = `
+          <span>${result.assetName}</span>
+          <strong class="${result.className}">${result.signal}</strong>`;
+        headingRow.prepend(rank);
+
+        const metrics = document.createElement("div");
+        metrics.className = "bot-scan-metrics";
+        metrics.innerHTML = `
+          <div><span>Pontszám</span><strong>${formatNumber(result.opportunityScore, 0)}</strong></div>
+          <div><span>Bizalom</span><strong>${result.confidence ?? "–"}%</strong></div>
+          <div><span>Jel</span><strong>${result.score !== null ? formatNumber(result.score, 2) : "–"}</strong></div>`;
+
+        const breakdown = document.createElement("div");
+        breakdown.className = "bot-scan-breakdown";
+        const bd = result.scoreBreakdown;
+        breakdown.textContent = `Bizalom ${formatNumber(bd.confidence, 0)} + jel ${formatNumber(bd.signalStrength, 1)} + egyezés ${formatNumber(bd.alignmentBonus, 1)} + momentum ${formatNumber(bd.momentumBonus, 1)} + RSI ${formatNumber(bd.rsiBonus, 0)}`;
+
+        const reasons = document.createElement("div");
+        reasons.className = "bot-scan-reasons";
+        if (result.eligible) {
+          reasons.textContent = (result.topReasons || []).join(" · ") || "Minden szűrő teljesül.";
+        } else {
+          reasons.textContent = result.filterReasons.join(" · ") || "Nem kereskedhető.";
+        }
+
+        card.append(headingRow, metrics, breakdown, reasons);
+        grid.append(card);
+      });
+    }
+
+    if (summary) {
+      summary.replaceChildren();
+      const chosen = botState.lastScan?.chosen;
+      if (chosen?.assetKey) {
+        const box = document.createElement("div");
+        box.className = "bot-scan-chosen";
+        const bd = chosen.scoreBreakdown || {};
+        box.innerHTML = `
+          <strong>Választott: ${chosen.assetName}</strong>
+          <span>${chosen.signal} · ${chosen.confidence}% bizalom · ${chosen.opportunityScore.toFixed(0)} pont · ${chosen.direction?.toUpperCase() || "–"}</span>
+          <small>${(chosen.topReasons || []).join(" · ")}</small>
+          <small class="bot-scan-breakdown">Pontszám: bizalom ${Math.round(bd.confidence || 0)} + jel ${(bd.signalStrength || 0).toFixed(1)} + egyezés ${(bd.alignmentBonus || 0).toFixed(1)} + momentum ${(bd.momentumBonus || 0).toFixed(1)} + RSI ${Math.round(bd.rsiBonus || 0)}</small>`;
+        summary.append(box);
+      } else if (chosen?.reason) {
+        summary.append(
+          Object.assign(document.createElement("p"), {
+            className: "helper-text",
+            textContent: chosen.reason,
+          }),
+        );
+      } else if (marketWide && results.length) {
+        const eligibleCount = results.filter((result) => result.eligible).length;
+        summary.append(
+          Object.assign(document.createElement("p"), {
+            className: "helper-text",
+            textContent: eligibleCount
+              ? `${eligibleCount} kereskedhető lehetőség – a legmagasabb pontszámú nyitható pozíciót választja a bot.`
+              : "Egyetlen eszköz sem teljesíti a szűrőket ebben a ciklusban.",
+          }),
+        );
+      } else if (!marketWide) {
+        summary.append(
+          Object.assign(document.createElement("p"), {
+            className: "helper-text",
+            textContent: "Kézi mód – minden kijelölt eszközön külön értékel és nyithat.",
+          }),
+        );
+      }
+    }
   }
 
   function resize() {

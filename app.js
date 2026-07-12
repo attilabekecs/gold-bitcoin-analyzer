@@ -1748,7 +1748,13 @@ function renderTechnicalCharts(assetKey, intraday) {
 }
 
 async function refreshLiveIntraday() {
-  const refreshKeys = new Set(["bitcoin", ...(state.botState?.config?.assets || [])]);
+  const botConfig = state.botState?.config;
+  const refreshKeys = new Set([
+    "bitcoin",
+    ...(botConfig?.marketWideMode
+      ? window.AssetCatalog?.ALL_KEYS || []
+      : botConfig?.assets || []),
+  ]);
   await Promise.allSettled(
     [...refreshKeys].map(async (assetKey) => {
       try {

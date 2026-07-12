@@ -1557,6 +1557,112 @@ h2 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.bot-scan-summary {
+  margin-bottom: 10px;
+}
+
+.bot-scan-chosen {
+  background: rgba(47, 93, 80, 0.08);
+  border: 1px solid rgba(47, 93, 80, 0.25);
+  border-left: 3px solid #2f5d50;
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+}
+
+.bot-scan-chosen strong {
+  font-size: 13px;
+}
+
+.bot-scan-chosen span,
+.bot-scan-chosen small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.bot-scan-card {
+  background: #f8f5ee;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+}
+
+.bot-scan-card.positive { border-left-color: #5fd39a; }
+.bot-scan-card.negative { border-left-color: #c45c4a; }
+.bot-scan-card.neutral { border-left-color: #b9b0a0; }
+.bot-scan-card.eligible { box-shadow: inset 0 0 0 1px rgba(47, 93, 80, 0.15); }
+.bot-scan-card.chosen {
+  background: rgba(47, 93, 80, 0.06);
+  border-color: rgba(47, 93, 80, 0.35);
+  box-shadow: inset 0 0 0 1px rgba(47, 93, 80, 0.25);
+}
+
+.bot-scan-rank {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  margin-right: 6px;
+}
+
+.bot-scan-heading {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.bot-scan-heading span {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.bot-scan-metrics {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.bot-scan-metrics span {
+  color: var(--muted);
+  display: block;
+  font-size: 9px;
+}
+
+.bot-scan-breakdown,
+.bot-scan-reasons {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.market-wide-toggle {
+  background: rgba(47, 93, 80, 0.06);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.bot-asset-fieldset.market-wide-active {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.bot-asset-fieldset .inline-helper {
+  font-size: 10px;
+  font-weight: 400;
+  text-transform: none;
+}
+
+.local-badge.market-wide-active {
+  background: rgba(47, 93, 80, 0.12);
+  color: #2f5d50;
+}
+
 .bot-signal-card {
   background: #f8f5ee;
   border: 1px solid var(--line);
