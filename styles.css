@@ -2065,6 +2065,112 @@ h2 {
   font-weight: 600;
 }
 
+.bot-scan-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  max-height: 640px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.bot-scan-list-header,
+.bot-scan-row {
+  align-items: center;
+  display: grid;
+  gap: 8px 12px;
+  grid-template-columns: 36px minmax(88px, 1.2fr) minmax(72px, 1fr) minmax(96px, 1fr) 72px 72px minmax(88px, 1.1fr) minmax(120px, 1.3fr);
+  padding: 10px 12px;
+}
+
+.bot-scan-list-header {
+  background: rgba(47, 93, 80, 0.06);
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  position: sticky;
+  text-transform: uppercase;
+  top: 0;
+  z-index: 1;
+}
+
+.bot-scan-row {
+  background: rgba(255, 253, 249, 0.85);
+  border-bottom: 1px solid rgba(111, 119, 113, 0.12);
+  font-size: 12px;
+  transition: var(--transition);
+}
+
+.bot-scan-row:hover {
+  background: rgba(255, 253, 249, 1);
+  box-shadow: inset 3px 0 0 rgba(47, 93, 80, 0.35);
+}
+
+.bot-scan-row.positive { box-shadow: inset 3px 0 0 #5fd39a; }
+.bot-scan-row.negative { box-shadow: inset 3px 0 0 #c45c4a; }
+.bot-scan-row.neutral { box-shadow: inset 3px 0 0 #b9b0a0; }
+.bot-scan-row.eligible {
+  background: rgba(47, 93, 80, 0.04);
+}
+.bot-scan-row.chosen {
+  background: rgba(47, 93, 80, 0.08);
+  box-shadow: inset 3px 0 0 #2f5d50;
+}
+.bot-scan-row.pending-data {
+  opacity: 0.72;
+}
+
+.bot-scan-row-reasons {
+  color: var(--muted);
+  font-size: 10px;
+  grid-column: 2 / -1;
+  line-height: 1.4;
+  padding: 0 0 4px;
+}
+
+.bot-scan-name {
+  font-weight: 600;
+}
+
+.bot-scan-signal {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.bot-scan-signal.positive { color: #2f5d50; }
+.bot-scan-signal.negative { color: #c45c4a; }
+.bot-scan-signal.neutral { color: var(--muted); }
+
+.bot-scan-price,
+.bot-scan-change,
+.bot-scan-trend,
+.bot-scan-sentiment,
+.bot-scan-details {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bot-scan-trend.positive { color: #2f5d50; }
+.bot-scan-trend.negative { color: #c45c4a; }
+.bot-scan-trend.neutral { color: var(--muted); }
+
+.bot-scan-sentiment {
+  color: var(--muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bot-scan-details {
+  color: var(--muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .bot-signal-grid {
   display: grid;
   gap: 10px;
@@ -3641,6 +3747,33 @@ footer {
 
   .bot-sub-nav button {
     min-width: calc(50% - 6px);
+  }
+
+  .bot-scan-list-header,
+  .bot-scan-row {
+    gap: 6px 8px;
+    grid-template-columns: 28px minmax(72px, 1fr) minmax(64px, 0.9fr);
+    grid-template-areas:
+      "rank name signal"
+      "price price change"
+      "trend sentiment details";
+  }
+
+  .bot-scan-list-header {
+    display: none;
+  }
+
+  .bot-scan-row .bot-scan-rank { grid-area: rank; }
+  .bot-scan-row .bot-scan-name { grid-area: name; }
+  .bot-scan-row .bot-scan-signal { grid-area: signal; justify-self: end; }
+  .bot-scan-row .bot-scan-price { grid-area: price; }
+  .bot-scan-row .bot-scan-change { grid-area: change; justify-self: end; }
+  .bot-scan-row .bot-scan-trend { grid-area: trend; }
+  .bot-scan-row .bot-scan-sentiment { grid-area: sentiment; }
+  .bot-scan-row .bot-scan-details { grid-area: details; justify-self: end; }
+
+  .bot-scan-row-reasons {
+    grid-column: 1 / -1;
   }
 
   .bot-signal-grid {

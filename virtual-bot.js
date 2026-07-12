@@ -367,7 +367,10 @@
 
   function analyzeSignal(assetKey, config, context) {
     const interval = config.primaryInterval || 1;
-    const intraday = getSeries(context, assetKey, interval);
+    let intraday = getSeries(context, assetKey, interval);
+    if (!intraday?.candles?.length && interval !== 1) {
+      intraday = getSeries(context, assetKey, 1);
+    }
     if (!intraday?.candles?.length) {
       return context.analyzeIntraday?.(assetKey) || null;
     }

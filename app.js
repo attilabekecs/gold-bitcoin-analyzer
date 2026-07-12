@@ -130,6 +130,7 @@ function buildDataStatusSummary() {
   if (!loadedDaily && !loadedIntraday) {
     return "Egyetlen piaci adatforrás sem válaszol. A frissítés a háttérben folytatódik.";
   }
+  if (loadedIntraday >= Catalog.ALL_KEYS.length * 0.4) return null;
 
   const notes = [];
   Catalog.FEATURED_KEYS.forEach((assetKey) => {
@@ -364,7 +365,28 @@ async function loadDashboard() {
     }
   };
 
-  const assetTasks = [loadPriorityAssets()];
+  const bootstrapRemainingAssets = async () => {
+    const marketWide = state.botState?.config?.marketWideMode;
+    const keys = marketWide
+      ? Catalog.ALL_KEYS.filter((assetKey) => !Catalog.PRIORITY_KEYS.includes(assetKey))
+      : Catalog.SCAN_ONLY_KEYS;
+    if (!keys.length || !isCurrent()) return;
+
+    await Catalog.runInBatches(
+      keys,
+      async (assetKey) => {
+        if (!isCurrent()) return;
+        if (isDailyStale(assetKey)) await loadAssetDaily(assetKey);
+        if (isIntradayStale(assetKey)) await loadAssetIntraday(assetKey);
+        updateScanLoadProgress();
+        renderBotTrading();
+      },
+      marketWide ? 8 : Catalog.SCAN_BATCH_SIZE,
+      Catalog.SCAN_BATCH_DELAY_MS,
+    );
+  };
+
+  const assetTasks = [loadPriorityAssets().then(() => bootstrapRemainingAssets())];
 
   const ratesTask = fetchExchangeRates()
     .then((rates) => {
@@ -426,8 +448,12 @@ async function loadDashboard() {
   renderBotTrading();
 
   const statusSummary = buildDataStatusSummary();
-  const messages = [...(statusSummary ? [statusSummary] : []), ...errors];
-  if (messages.length) showError(messages.join(" "));
+  const loadedMarketCount = Math.max(getLoadedAssetKeys().length, getIntradayAssetKeys().length);
+  const bannerMessages = [...errors];
+  if (statusSummary && loadedMarketCount < 5) bannerMessages.unshift(statusSummary);
+  if (bannerMessages.length && (errors.length || loadedMarketCount < 5)) {
+    showError(bannerMessages.join(" "));
+  }
   document.getElementById("lastUpdated").textContent = new Intl.DateTimeFormat("hu-HU", {
     hour: "2-digit",
     minute: "2-digit",
@@ -920,8 +946,11 @@ function analyzeAsset(asset, sentimentScore) {
   };
 }
 
-function analyzeIntraday(assetKey) {
-  const intraday = getIntradaySeries(assetKey);
+function analyzeIntraday(assetKey, interval = state.selectedIntradayInterval) {
+  let intraday = getIntradaySeries(assetKey, interval);
+  if (!intraday?.candles?.length && interval !== 1) {
+    intraday = getIntradaySeries(assetKey, 1);
+  }
   if (!intraday) return buildDailyTradeFallback(assetKey);
 
   const candles = intraday.candles.slice(-180);
@@ -1981,11 +2010,18 @@ function isTimeframesStale(assetKey) {
 
 function getAssetRefreshNeeds(assetKey, options = {}) {
   const includeTimeframes = options.includeTimeframes ?? shouldRefreshTimeframes(assetKey);
+  const intradayStale = isIntradayStale(assetKey);
+  const dailyStale = isDailyStale(assetKey);
   return {
-    intraday: isIntradayStale(assetKey),
-    daily: isDailyStale(assetKey),
-    timeframes: includeTimeframes && isTimeframesStale(assetKey),
+    intraday: intradayStale,
+    daily: dailyStale,
+    timeframes:
+      includeTimeframes && isTimeframesStale(assetKey) && !intradayStale && !dailyStale,
   };
+}
+
+function getAssetRefreshBatchSize() {
+  return state.botState?.config?.marketWideMode ? 10 : ASSET_REFRESH_BATCH_SIZE;
 }
 
 function shouldRefreshTimeframes(assetKey) {
@@ -2010,16 +2046,26 @@ function getStaleAssetKeys() {
   });
 }
 
+function isAssetScanReady(assetKey) {
+  return Boolean(state.intraday[assetKey] || state.assets[assetKey]);
+}
+
+function getPendingScanKeys() {
+  return Catalog.ALL_KEYS.filter((assetKey) => !isAssetScanReady(assetKey));
+}
+
 function updateScanLoadProgress(staleKeys = getStaleAssetKeys()) {
   const total = Catalog.ALL_KEYS.length;
-  const loaded = total - staleKeys.length;
+  const pendingScan = getPendingScanKeys().length;
+  const loaded = total - pendingScan;
   state.scanLoadProgress = {
     loaded,
     total,
-    complete: staleKeys.length === 0,
+    complete: pendingScan === 0,
     continuous: Boolean(state.assetRefreshTimer),
     active: Boolean(state.assetRefreshTimer),
-    pending: staleKeys.length,
+    pending: pendingScan,
+    refreshing: staleKeys.length,
     updatedAt: Date.now(),
   };
 }
@@ -2055,21 +2101,19 @@ async function runAssetRefreshCycle() {
       return;
     }
 
-    const batch = staleKeys.slice(0, ASSET_REFRESH_BATCH_SIZE);
-    for (let index = 0; index < batch.length; index += 1) {
-      const assetKey = batch[index];
-      const needs = getAssetRefreshNeeds(assetKey);
-      await refreshAssetBundle(assetKey, {
-        daily: needs.daily,
-        intraday: needs.intraday,
-        timeframes: needs.timeframes,
-      });
-      updateScanLoadProgress(getStaleAssetKeys());
-      renderBotTrading();
-      if (index < batch.length - 1 && ASSET_REFRESH_BATCH_DELAY_MS > 0) {
-        await new Promise((resolve) => setTimeout(resolve, ASSET_REFRESH_BATCH_DELAY_MS));
-      }
-    }
+    const batch = staleKeys.slice(0, getAssetRefreshBatchSize());
+    await Promise.all(
+      batch.map(async (assetKey) => {
+        const needs = getAssetRefreshNeeds(assetKey);
+        await refreshAssetBundle(assetKey, {
+          daily: needs.daily,
+          intraday: needs.intraday,
+          timeframes: needs.timeframes,
+        });
+      }),
+    );
+    updateScanLoadProgress(getStaleAssetKeys());
+    renderBotTrading();
 
     renderTradingCenter();
     runVirtualBotTick();
@@ -2956,11 +3000,12 @@ function paperChartOptions(prefix = "") {
 
 function getBotContext() {
   const botCurrency = resolveBotCurrency(state.botState?.config);
+  const botInterval = state.botState?.config?.primaryInterval || 1;
   return {
     assets: state.assets,
     intraday: state.intraday,
     multiTimeframe: state.multiTimeframe,
-    analyzeIntraday,
+    analyzeIntraday: (assetKey) => analyzeIntraday(assetKey, botInterval),
     getIntradaySeries,
     calculateTimeframeAlignment,
     botCurrency,
@@ -3002,6 +3047,7 @@ function initBotUi() {
     formatBotMoney,
     formatBotSignedMoney,
     formatBotAssetPrice,
+    formatMarketAssetPrice,
     updateBotHash: (section) => {
       if (state.activeView !== "bot") return;
       window.history.replaceState(null, "", `#${buildViewHash("bot", section)}`);
@@ -3866,9 +3912,17 @@ function convertCurrency(value) {
 
 function formatBotAssetPrice(usdValue, currency, decimals = 2) {
   if (!Number.isFinite(usdValue)) return "–";
+  if (currency !== "USD" && !areExchangeRatesReady()) {
+    return `${formatNumber(usdValue, decimals)} USD`;
+  }
   const converted = convertToCurrency(usdValue, currency);
   const fractionDigits = currency === "HUF" ? 0 : decimals;
   return `${formatNumber(converted, fractionDigits)} ${currency}`;
+}
+
+function formatMarketAssetPrice(usdValue, decimals = 2) {
+  if (!Number.isFinite(usdValue)) return "–";
+  return `${formatNumber(usdValue, decimals)} USD`;
 }
 
 function formatMoney(value) {

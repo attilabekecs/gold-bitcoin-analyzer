@@ -1011,7 +1011,32 @@
     const marketWide = botState.config.marketWideMode;
     const appState = getState();
     const scanProgress = appState?.scanLoadProgress;
-    const currency = getBotCurrency(botState.config);
+
+    const trendLabel = (className) => {
+      if (className === "positive") return "Emelkedő";
+      if (className === "negative") return "Csökkenő";
+      return "Semleges";
+    };
+
+    const sentimentFor = (assetKey, result) => {
+      const analysis = appState?.assets?.[assetKey]?.analysis;
+      if (analysis?.signal && analysis.signal !== "Nincs elég adat") return analysis.signal;
+      if (result.decision?.reasons?.length) return result.decision.reasons[0];
+      return trendLabel(result.className);
+    };
+
+    const hasScannerData = (result) => {
+      if (result.decision) return true;
+      return Boolean(
+        appState?.intraday?.[result.assetKey] || appState?.assets?.[result.assetKey],
+      );
+    };
+
+    const formatScanPrice = (usdPrice, decimals) => {
+      if (bridge.formatMarketAssetPrice) return bridge.formatMarketAssetPrice(usdPrice, decimals);
+      if (!Number.isFinite(usdPrice)) return "–";
+      return `${formatNumber(usdPrice, decimals)} USD`;
+    };
 
     if (dataStatus) {
       const statusClass = scanProgress?.active ? "live" : appState?.initialLoadComplete ? "warning" : "pending";
@@ -1041,8 +1066,9 @@
     const results = Bot.scanMarketOpportunities(botState, context, Date.now());
 
     const eligibleCount = results.filter((result) => result.eligible).length;
-    const withDataCount = results.filter((result) => result.decision).length;
+    const withDataCount = results.filter((result) => hasScannerData(result)).length;
     grid.replaceChildren();
+    grid.className = "bot-scan-list";
     if (!results.length) {
       grid.append(
         Object.assign(document.createElement("span"), {
@@ -1053,47 +1079,51 @@
         }),
       );
     } else {
+      const header = document.createElement("div");
+      header.className = "bot-scan-list-header";
+      header.innerHTML =
+        "<span>#</span><span>Eszköz</span><span>Jel</span><span>Ár</span><span>Változás</span><span>Trend</span><span>Hangulat</span><span>Részletek</span>";
+      grid.append(header);
+
       results.forEach((result, index) => {
         const isChosen = botState.lastScan?.chosen?.assetKey === result.assetKey;
-        const card = document.createElement("article");
-        card.className = `bot-scan-card ${result.className}${result.eligible ? " eligible" : ""}${isChosen ? " chosen" : ""}`;
-        const rank = document.createElement("span");
-        rank.className = "bot-scan-rank";
-        rank.textContent = `#${index + 1}`;
-        const headingRow = document.createElement("div");
-        headingRow.className = "bot-scan-heading";
-        headingRow.innerHTML = `
-          <span>${result.assetName}</span>
-          <strong class="${result.className}">${result.signal}</strong>`;
-        headingRow.prepend(rank);
+        const hasData = hasScannerData(result);
+        const row = document.createElement("article");
+        row.className = `bot-scan-row ${result.className}${result.eligible ? " eligible" : ""}${isChosen ? " chosen" : ""}${hasData ? "" : " pending-data"}`;
 
-        const price = result.decision?.currentPrice;
+        const price = result.decision?.currentPrice
+          ?? appState?.intraday?.[result.assetKey]?.currentPrice
+          ?? appState?.assets?.[result.assetKey]?.currentPrice;
         const change = result.decision?.momentum15 ?? result.decision?.minuteChange;
         const decimals = Catalog.getAsset(result.assetKey)?.priceDecimals ?? 2;
-        const metrics = document.createElement("div");
-        metrics.className = "bot-scan-metrics";
-        metrics.innerHTML = `
-          <div><span>Ár</span><strong>${Number.isFinite(price) ? bridge.formatBotAssetPrice(price, currency, decimals) : "0"}</strong></div>
-          <div><span>Változás</span><strong class="${bridge.valueClass(change || 0)}">${Number.isFinite(change) ? `${change >= 0 ? "+" : ""}${formatNumber(change, 2)}%` : "–%"}</strong></div>
-          <div><span>Pontszám</span><strong>${formatNumber(result.opportunityScore, 0)}</strong></div>
-          <div><span>Bizalom</span><strong>${result.confidence ?? "–"}%</strong></div>
-          <div><span>Jel</span><strong>${result.score !== null ? formatNumber(result.score, 2) : "–"}</strong></div>`;
-
-        const breakdown = document.createElement("div");
-        breakdown.className = "bot-scan-breakdown";
         const bd = result.scoreBreakdown;
-        breakdown.textContent = `Bizalom ${formatNumber(bd.confidence, 0)} + jel ${formatNumber(bd.signalStrength, 1)} + egyezés ${formatNumber(bd.alignmentBonus, 1)} + momentum ${formatNumber(bd.momentumBonus, 1)} + RSI ${formatNumber(bd.rsiBonus, 0)}`;
+        const signalText = hasData ? result.signal : "Betöltés…";
+        const detailsText = hasData
+          ? `${formatNumber(result.opportunityScore, 0)} pt · ${result.confidence ?? "–"}% · jel ${result.score !== null ? formatNumber(result.score, 2) : "–"}`
+          : "Várakozás adatra…";
 
-        const reasons = document.createElement("div");
-        reasons.className = "bot-scan-reasons";
-        if (result.eligible) {
-          reasons.textContent = (result.topReasons || []).join(" · ") || "Minden szűrő teljesül.";
-        } else {
-          reasons.textContent = result.filterReasons.join(" · ") || "Nem kereskedhető.";
+        row.innerHTML = `
+          <span class="bot-scan-rank">#${index + 1}</span>
+          <span class="bot-scan-name">${result.assetName}</span>
+          <strong class="bot-scan-signal ${result.className}">${signalText}</strong>
+          <span class="bot-scan-price">${Number.isFinite(price) ? formatScanPrice(price, decimals) : "–"}</span>
+          <span class="bot-scan-change ${bridge.valueClass(change || 0)}">${Number.isFinite(change) ? `${change >= 0 ? "+" : ""}${formatNumber(change, 2)}%` : "–"}</span>
+          <span class="bot-scan-trend ${result.className}">${hasData ? trendLabel(result.className) : "–"}</span>
+          <span class="bot-scan-sentiment">${hasData ? sentimentFor(result.assetKey, result) : "–"}</span>
+          <span class="bot-scan-details" title="${hasData ? `Bizalom ${formatNumber(bd.confidence, 0)} + jel ${formatNumber(bd.signalStrength, 1)} + egyezés ${formatNumber(bd.alignmentBonus, 1)}` : ""}">${detailsText}</span>`;
+
+        if (hasData) {
+          const reasons = document.createElement("div");
+          reasons.className = "bot-scan-row-reasons";
+          if (result.eligible) {
+            reasons.textContent = (result.topReasons || []).join(" · ") || "Minden szűrő teljesül.";
+          } else {
+            reasons.textContent = result.filterReasons.join(" · ") || "Nem kereskedhető.";
+          }
+          row.append(reasons);
         }
 
-        card.append(headingRow, metrics, breakdown, reasons);
-        grid.append(card);
+        grid.append(row);
       });
     }
 
