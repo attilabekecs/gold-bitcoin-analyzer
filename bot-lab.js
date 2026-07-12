@@ -987,8 +987,6 @@
     const marketWide = botState.config.marketWideMode;
     const appState = getState();
     const scanProgress = appState?.scanLoadProgress;
-    const displayLimit = 20;
-
     if (heading) {
       const totalAssets = Catalog.ALL_KEYS.length;
       heading.textContent = marketWide
@@ -1008,8 +1006,6 @@
 
     const eligibleCount = results.filter((result) => result.eligible).length;
     const withDataCount = results.filter((result) => result.decision).length;
-    const displayResults = results.slice(0, displayLimit);
-
     grid.replaceChildren();
     if (!results.length) {
       grid.append(
@@ -1021,7 +1017,7 @@
         }),
       );
     } else {
-      displayResults.forEach((result, index) => {
+      results.forEach((result, index) => {
         const isChosen = botState.lastScan?.chosen?.assetKey === result.assetKey;
         const card = document.createElement("article");
         card.className = `bot-scan-card ${result.className}${result.eligible ? " eligible" : ""}${isChosen ? " chosen" : ""}`;
@@ -1058,14 +1054,6 @@
         card.append(headingRow, metrics, breakdown, reasons);
         grid.append(card);
       });
-      if (results.length > displayLimit) {
-        grid.append(
-          Object.assign(document.createElement("p"), {
-            className: "helper-text bot-scan-more",
-            textContent: `+${results.length - displayLimit} további eszköz a teljes listában (top ${displayLimit} látható).`,
-          }),
-        );
-      }
     }
 
     if (summary) {

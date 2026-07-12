@@ -498,7 +498,13 @@
           <p id="botStatus" class="bot-status">Bot kikapcsolva.</p>
 
           <div class="bot-dashboard-grid">
-            <article class="panel">
+            <article class="panel bot-dashboard-performance">
+              <div class="section-heading compact-heading">
+                <div><p class="eyebrow">TELJESÍTMÉNY</p><h3>Egyenleggörbe</h3></div>
+              </div>
+              <div class="bot-chart-wrap"><canvas id="botEquityChart"></canvas></div>
+            </article>
+            <article class="panel bot-dashboard-signals">
               <div class="section-heading compact-heading">
                 <div><p class="eyebrow">ÉLŐ JELZÉSEK</p><h3 id="botScanHeading">Követett eszközök</h3></div>
               </div>
@@ -506,12 +512,6 @@
               <div id="botSignalGrid" class="bot-signal-grid">
                 <span class="helper-text">Válassz eszközöket a beállításoknál.</span>
               </div>
-            </article>
-            <article class="panel">
-              <div class="section-heading compact-heading">
-                <div><p class="eyebrow">TELJESÍTMÉNY</p><h3>Egyenleggörbe</h3></div>
-              </div>
-              <div class="bot-chart-wrap"><canvas id="botEquityChart"></canvas></div>
             </article>
           </div>
         </div>

@@ -2000,7 +2000,11 @@ h2 {
 }
 
 .bot-dashboard-grid {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: 1fr;
+}
+
+.bot-dashboard-performance .bot-chart-wrap {
+  height: 280px;
 }
 
 .bot-main-grid {
@@ -2064,8 +2068,8 @@ h2 {
 .bot-signal-grid {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  max-height: 520px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  max-height: 640px;
   overflow: auto;
   padding-right: 4px;
 }
