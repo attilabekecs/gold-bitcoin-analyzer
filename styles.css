@@ -1180,8 +1180,7 @@ h2 {
 }
 
 .markets-hero,
-.practice-hero,
-.bot-hero {
+.practice-hero {
   align-items: end;
   background:
     radial-gradient(circle at 88% 18%, rgba(224, 184, 90, 0.18), transparent 28%),
@@ -1198,19 +1197,56 @@ h2 {
   padding: 34px;
 }
 
-.bot-hero h1 {
-  font-size: clamp(30px, 3.6vw, 48px);
-  max-width: 700px;
-}
-
-.bot-hero-controls {
-  align-items: end;
+.bot-toolbar {
+  align-items: center;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 12px;
   display: flex;
-  flex-direction: column;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding: 12px 14px;
 }
 
-.bot-hero-controls .learn-toggle:has(input:checked) {
+.bot-toolbar-heading {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.bot-toolbar-heading h1 {
+  font-family: "Playfair Display", serif;
+  font-size: 20px;
+  line-height: 1.2;
+  margin: 2px 0 0;
+}
+
+.bot-toolbar-desc {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+  margin: 4px 0 0;
+  max-width: 420px;
+}
+
+.bot-toolbar-controls {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  flex: 1 1 320px;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.bot-toolbar-controls .toggle-switch {
+  font-size: 10px;
+  min-height: 36px;
+  min-width: 148px;
+  padding: 6px 12px;
+}
+
+.bot-toolbar-controls .learn-toggle:has(input:checked) {
   border-color: rgba(61, 155, 114, 0.45);
   box-shadow: 0 0 0 1px rgba(61, 155, 114, 0.15);
 }
@@ -1221,7 +1257,7 @@ h2 {
   color: #1f5a3d;
 }
 
-.bot-hero-controls .pro-toggle:has(input:checked) {
+.bot-toolbar-controls .pro-toggle:has(input:checked) {
   border-color: rgba(47, 93, 80, 0.45);
   box-shadow: 0 0 0 1px rgba(47, 93, 80, 0.15);
 }
@@ -1239,7 +1275,7 @@ h2 {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin: 20px 0;
+  margin: 12px 0;
   padding: 6px;
 }
 
@@ -1447,8 +1483,7 @@ h2 {
 }
 
 .markets-hero p,
-.practice-hero p,
-.bot-hero p {
+.practice-hero p {
   color: rgba(255, 255, 255, 0.65);
   font-size: 12px;
   line-height: 1.65;
@@ -3786,11 +3821,26 @@ footer {
   }
 
   .markets-hero,
-  .practice-hero,
-  .bot-hero {
+  .practice-hero {
     align-items: start;
     flex-direction: column;
     padding: 24px 20px;
+  }
+
+  .bot-toolbar {
+    align-items: start;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .bot-toolbar-controls {
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .bot-toolbar-controls .toggle-switch {
+    flex: 1 1 calc(50% - 4px);
+    min-width: 0;
   }
 
   .simulator-section {
@@ -3887,6 +3937,7 @@ footer {
   }
 
   .market-toolbar,
+  .bot-toolbar,
   .pro-section > .section-heading {
     align-items: start;
     flex-direction: column;
