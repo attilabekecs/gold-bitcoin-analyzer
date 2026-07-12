@@ -148,7 +148,8 @@
   };
 
   const MAX_TOTAL_EXPOSURE_RATIO = 0.95;
-  const MAX_BALANCE_MULTIPLIER = 50;
+  const MAX_EQUITY_MULTIPLIER_IDLE = 2;
+  const MAX_EQUITY_MULTIPLIER_ABSOLUTE = 10;
   const COMMON_HUF_CAPITAL_INPUTS = [10000, 50000, 100000, 200000, 500000, 1000000];
 
   function clampParam(key, value) {
@@ -268,54 +269,100 @@
     for (const hufInput of COMMON_HUF_CAPITAL_INPUTS) {
       if (Math.abs(storedUsd - hufInput) < 1) {
         const corrected = hufInput / hufRate;
-        if (corrected >= 100 && corrected < storedUsd / 10) return corrected;
+        if (corrected >= 50 && corrected < storedUsd / 10) return corrected;
       }
     }
     return null;
   }
 
+  function scanUnconvertedHufFields(botState, currency, hufRate) {
+    if (currency !== "HUF" || !(hufRate > 50)) return null;
+    const candidates = [
+      { field: "config", value: botState.config?.initialCapital },
+      { field: "cash", value: botState.cash },
+      { field: "initialCapital", value: botState.initialCapital },
+    ];
+    for (const candidate of candidates) {
+      const corrected = detectUnconvertedHufCapital(candidate.value, currency, hufRate);
+      if (corrected !== null) {
+        return { field: candidate.field, from: candidate.value, corrected };
+      }
+    }
+    return null;
+  }
+
+  function hasMeaningfulClosedGains(botState) {
+    const grossWins = botState.trades
+      .filter((trade) => trade.pnl > 0)
+      .reduce((sum, trade) => sum + trade.pnl, 0);
+    return grossWins > botState.initialCapital * 0.05;
+  }
+
+  function getMaxAllowedEquity(botState) {
+    const initial = botState.initialCapital;
+    if (!(initial > 0)) return 0;
+    if (!hasMeaningfulClosedGains(botState)) {
+      return initial * MAX_EQUITY_MULTIPLIER_IDLE;
+    }
+    const grossWins = botState.trades
+      .filter((trade) => trade.pnl > 0)
+      .reduce((sum, trade) => sum + trade.pnl, 0);
+    return Math.min(initial * MAX_EQUITY_MULTIPLIER_ABSOLUTE, initial + grossWins * 2);
+  }
+
   function hasRunawayBalance(botState) {
     const initial = botState.initialCapital;
     if (!(initial > 0)) return false;
-    return botState.cash > initial * MAX_BALANCE_MULTIPLIER;
+    const maxCash = getMaxAllowedEquity(botState);
+    return botState.cash > maxCash + 0.01;
   }
 
-  function reconcileBalanceOnLoad(botState, fxContext = null) {
-    if (!botState?.config) return botState;
+  function isEquityCorrupted(botState, context) {
+    const metrics = getMetrics(botState, context);
+    const maxAllowed = getMaxAllowedEquity(botState);
+    return metrics.equity > maxAllowed + 0.01;
+  }
+
+  function validateBalanceState(botState, context = null, fxContext = null) {
+    if (!botState?.config) return { repaired: false, botState };
 
     const currency = fxContext?.resolveCurrency?.(botState.config) ?? "USD";
     const hufRate = fxContext?.getRate?.("HUF");
-    const correctedCapital = detectUnconvertedHufCapital(
-      botState.config.initialCapital,
-      currency,
-      hufRate,
-    );
+    const hufIssue = scanUnconvertedHufFields(botState, currency, hufRate);
 
-    if (correctedCapital !== null) {
-      botState.config.initialCapital = correctedCapital;
+    if (hufIssue) {
+      botState.config.initialCapital = hufIssue.corrected;
       applyCapitalFromConfig(botState, {
         source: "beállítás",
         reason:
-          "Javítva: a kezdőtőke valószínűleg HUF-ként került USD-ként mentésre (hiányzó árfolyam)",
+          "Javítva: a tőke valószínűleg HUF-ként került USD-ként mentésre (hiányzó árfolyam)",
       });
       logActivity(
         botState,
-        `Egyenleg helyreállítva: ${Math.round(correctedCapital)} USD belső tőke (≈ ${Math.round(correctedCapital * hufRate).toLocaleString("hu-HU")} HUF)`,
+        `Egyenleg helyreállítva: ${Math.round(hufIssue.corrected)} USD belső tőke (≈ ${Math.round(hufIssue.corrected * hufRate).toLocaleString("hu-HU")} HUF)`,
       );
-      return botState;
+      return { repaired: true, botState };
     }
 
     reconcileCapitalOnLoad(botState);
 
-    if (hasRunawayBalance(botState)) {
+    if (hasRunawayBalance(botState) || isEquityCorrupted(botState, context)) {
       applyCapitalFromConfig(botState, {
         source: "beállítás",
         reason: "Javítva: szokatlanul magas egyenleg – számla visszaállítva a kezdőtőkére",
       });
-      logActivity(botState, "Egyenleg helyreállítva a mentett kezdőtőkére (inflált állapot észlelve).");
+      logActivity(
+        botState,
+        "Egyenleg helyreállítva a mentett kezdőtőkére (inflált állapot észlelve).",
+      );
+      return { repaired: true, botState };
     }
 
-    return botState;
+    return { repaired: false, botState };
+  }
+
+  function reconcileBalanceOnLoad(botState, fxContext = null) {
+    return validateBalanceState(botState, null, fxContext).botState;
   }
 
   function getTotalExposure(botState) {
@@ -1133,6 +1180,8 @@
   }
 
   function tick(botState, context) {
+    const validation = validateBalanceState(botState, context, context?.fxContext || null);
+    if (validation.repaired) saveBotState(botState);
     if (!botState.config.enabled) return { opened: 0, closed: 0 };
     const now = Date.now();
     let opened = 0;
@@ -1664,6 +1713,8 @@
     applyCapitalFromConfig,
     reconcileCapitalOnLoad,
     reconcileBalanceOnLoad,
+    validateBalanceState,
+    getMaxAllowedEquity,
     closePosition,
     getCurrentPrice,
     isWithinTradingHours,

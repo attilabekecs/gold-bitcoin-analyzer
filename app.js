@@ -459,9 +459,16 @@ async function loadDashboard() {
       if (!isCurrent()) return;
       state.exchangeRates = { USD: 1, ...rates };
       state.dataHealth.fx = "ok";
-      if (state.botState && window.VirtualBot?.reconcileBalanceOnLoad) {
-        window.VirtualBot.reconcileBalanceOnLoad(state.botState, getBotFxContext());
-        window.VirtualBot.saveBotState(state.botState);
+      if (state.botState && window.VirtualBot?.validateBalanceState) {
+        const result = window.VirtualBot.validateBalanceState(
+          state.botState,
+          getBotContext(),
+          getBotFxContext(),
+        );
+        if (result.repaired) {
+          window.VirtualBot.saveBotState(state.botState);
+          window.BotLab?.syncConfigForm?.();
+        }
       }
       getLoadedAssetKeys().forEach((assetKey) => {
         if (state.assets[assetKey]) renderAsset(assetKey);
@@ -3141,6 +3148,7 @@ function getBotContext() {
     getIntradaySeries,
     calculateTimeframeAlignment,
     botCurrency,
+    fxContext: getBotFxContext(),
     formatBotPrice: (usdValue) => formatBotMoney(usdValue, botCurrency),
     indicators: {
       ema: exponentialMovingAverage,
@@ -4026,6 +4034,13 @@ function convertFromCurrency(value, currency) {
 
 function formatBotMoney(usdValue, currency) {
   if (!Number.isFinite(usdValue)) return "–";
+  if (currency !== "USD" && !areExchangeRatesReady()) {
+    return new Intl.NumberFormat("hu-HU", {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: 0,
+    }).format(usdValue);
+  }
   const converted = convertToCurrency(usdValue, currency);
   return new Intl.NumberFormat("hu-HU", {
     style: "currency",
