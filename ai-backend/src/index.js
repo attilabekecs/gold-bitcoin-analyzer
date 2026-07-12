@@ -111,12 +111,19 @@ export default {
 
       const geminiData = await geminiResponse.json();
       if (!geminiResponse.ok) {
+        const providerCode = geminiData.error?.status || `HTTP_${geminiResponse.status}`;
+        const providerMessage = sanitizeProviderMessage(geminiData.error?.message);
         const status = geminiResponse.status === 429 ? 429 : 502;
-        const message =
-          geminiResponse.status === 429
-            ? "Az ingyenes AI-kvóta átmenetileg elfogyott."
-            : "Az AI-szolgáltató nem tudta elkészíteni az elemzést.";
-        return jsonResponse({ error: message }, status, corsHeaders);
+        return jsonResponse(
+          {
+            error: explainProviderError(providerCode),
+            code: providerCode,
+            providerStatus: geminiResponse.status,
+            details: providerMessage,
+          },
+          status,
+          corsHeaders,
+        );
       }
 
       let analysis = geminiData.candidates?.[0]?.content?.parts
@@ -142,8 +149,16 @@ export default {
         200,
         corsHeaders,
       );
-    } catch {
-      return jsonResponse({ error: "A backend átmenetileg nem elérhető." }, 502, corsHeaders);
+    } catch (error) {
+      return jsonResponse(
+        {
+          error: "A backend nem tudott kapcsolódni az AI-szolgáltatóhoz.",
+          code: "BACKEND_FETCH_FAILED",
+          details: sanitizeProviderMessage(error?.message),
+        },
+        502,
+        corsHeaders,
+      );
     }
   },
 };
@@ -175,4 +190,25 @@ function jsonResponse(payload, status, extraHeaders = {}) {
     status,
     headers: { ...JSON_HEADERS, ...extraHeaders },
   });
+}
+
+function explainProviderError(code) {
+  const messages = {
+    API_KEY_INVALID: "A Gemini API-kulcs érvénytelen.",
+    PERMISSION_DENIED: "A Gemini API-hozzáférés nincs engedélyezve ehhez a projekthez.",
+    NOT_FOUND: "A beállított Gemini modell nem érhető el.",
+    INVALID_ARGUMENT: "A Gemini elutasította a kérés formátumát.",
+    RESOURCE_EXHAUSTED: "Az ingyenes Gemini-kvóta elfogyott.",
+    UNAUTHENTICATED: "A Gemini API-kulcs hitelesítése sikertelen.",
+  };
+  return messages[code] || "A Gemini szolgáltató hibát jelzett.";
+}
+
+function sanitizeProviderMessage(value) {
+  if (typeof value !== "string" || !value.trim()) return "";
+  return value
+    .replace(/AIza[0-9A-Za-z_-]{20,}/g, "[API_KEY_REDACTED]")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 240);
 }

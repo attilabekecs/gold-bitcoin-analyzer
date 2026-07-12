@@ -1190,7 +1190,11 @@ async function requestAiAnalysis() {
     if (!response.ok) {
       const message =
         typeof payload === "object" && payload?.error
-          ? payload.error
+          ? [
+              payload.error,
+              payload.code ? `Hibakód: ${payload.code}` : "",
+              payload.details ? `Részlet: ${payload.details}` : "",
+            ].filter(Boolean).join("\n")
           : `A backend hibát jelzett (${response.status}).`;
       throw new Error(message);
     }
@@ -1201,7 +1205,10 @@ async function requestAiAnalysis() {
     resultElement.hidden = false;
     showToast("AI-elemzés elkészült.");
   } catch (error) {
-    showToast(error.message || "Az AI backend nem válaszolt. Ellenőrizd a beállításokat.");
+    resultElement.textContent =
+      `AI-diagnosztika\n\n${error.message || "Az AI backend nem válaszolt. Ellenőrizd a beállításokat."}`;
+    resultElement.hidden = false;
+    showToast("Az AI-hiba részletei megjelentek.");
   } finally {
     button.disabled = false;
     button.textContent = original;
