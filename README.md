@@ -1,22 +1,34 @@
 # Aurum & Satoshi
 
-Ingyenes, statikus Bitcoin- és aranypiaci figyelő. Aktuális árfolyamokat, technikai
-indikátorokat, friss híreket, portfóliókövetést és kockázatkezelési eszközöket jelenít meg.
+Ingyenes, statikus Bitcoin- és aranypiaci figyelő több kereskedhető eszközzel,
+technikai indikátorokkal, gyakorló résszel, virtuális bot kereskedéssel és
+Stratégialabor backtesttel.
 
 ## Funkciók
 
-- 7, 30, 90 és 365 napos Bitcoin-időtávok
-- 1 perces Bitcoin intraday diagram Kraken-adatokkal és percenkénti frissítéssel
-- 1, 5 és 15 perces, valamint 1 órás Bitcoin idősík és trendegyezési pontszám
+- 7, 30, 90 és 365 napos időtávok Bitcoin, arany és további eszközökre
+- **Kiemelt fülek:** Bitcoin és Arany továbbra is külön navigációs menüpont
+- **Bővített piacok:** Ethereum, Solana, EUR/USD, WTI olaj, S&P 500 (SPY) proxy
+- 1 perces intraday diagramok (Kraken kriptó, Yahoo Finance forex/olaj/részvény)
+- 1, 5 és 15 perces, valamint 1 órás idősíkok és trendegyezési pontszám
 - Opcionális 1 perces XAU/USD diagram Twelve Data API-kulccsal
-- Külön Áttekintés, Bitcoin, Arany, Hírek, Portfólió, Szimulátor és AI nézet
-- Helyi papírkereskedési számla LONG/SHORT pozíciókkal, automatikus stoppal és célárral
+- Külön Áttekintés, Bitcoin, Arany, Piacok, Hírek, Portfólió, Gyakorló, Szimulátor, Stratégialabor és AI nézet
+- **Gyakorló rész:** jelzés-értelmezési forgatókönyvek pontszámmal (localStorage)
+- **Virtuális bot:** szabályalapú automatikus papírkereskedés jelzések alapján
+- Bot metrikák: PnL, win rate, drawdown, ügyletnapló, miért nyert/vesztett
+- **Fejlesztési javaslatok** a bot tapasztalatai alapján (gyenge idősík, túl sok ügylet, R/R)
+- Helyi papírkereskedési számla LONG/SHORT pozíciókkal minden támogatott eszközön
 - Kereskedési napló, találati arány, profit factor, visszaesés és egyenleggörbe
 - EMA/RSI/ATR backtest választható idősíkkal és állítható kereskedési díjjal
 - Több idősíkú backtest és két gyertyával megerősített jelzésváltások
 - Konfigurálható Stratégialabor spread-, slippage- és kockázatmodellezéssel
 - Időrendi tanuló/ellenőrző szétválasztás és Buy & Hold benchmark
 - EMA-paraméter-hőtérkép, túlillesztési figyelmeztetések és CSV ügyletnapló
+- Moduláris EMA/RSI/MACD/momentum/volumen szabályrendszer és több idősíkú megerősítés
+- Walk-forward validáció, tanuló adatos optimalizálás, Sharpe-, expectancy- és kitettségmérés
+- Trailing stop, break-even, cooldown, LONG/SHORT szűrés és menthető stratégia-presetek
+- Helyi OHLCV CSV-import, CSV/JSON eredményexport és külön drawdown diagram
+- Jóváhagyásos Gemini AI-paraméterjavaslat strukturált, validált válasszal
 - Helyi jelzéstörténet és böngészős értesítés stabil VÉTEL/ELADÁS váltáskor
 - Interaktív intraday ár-, RSI-, MACD- és volumendiagramok
 - Fokozatos adatbetöltés: a gyors piaci adatok nem várnak a lassabb hírforrásokra
@@ -35,11 +47,13 @@ indikátorokat, friss híreket, portfóliókövetést és kockázatkezelési esz
 - ChatGPT-be másolható elemzési kérés
 - Biztonságos AI backend integrációjára előkészített végpont
 - Mobilbarát kialakítás és automatikus GitHub Pages telepítés
+- Egyedi, aranyszínű `favicon.svg` A&S motívummal
 
 ## Ingyenes adatforrások
 
-- [CoinGecko](https://www.coingecko.com/en/api) – Bitcoin
-- [Kraken](https://docs.kraken.com/api/) – 1 perces Bitcoin OHLC-adatok
+- [CoinGecko](https://www.coingecko.com/en/api) – Bitcoin, Ethereum, Solana (napi)
+- [Kraken](https://docs.kraken.com/api/) – kriptó intraday OHLC (BTC, ETH, SOL)
+- [Yahoo Finance](https://finance.yahoo.com/) – EUR/USD, WTI olaj (CL=F), SPY intraday/napi
 - [Gold API](https://gold-api.com/) – aktuális aranyár
 - [Free Gold API](https://freegoldapi.com/) – korábbi aranyárak
 - [GDELT Project](https://www.gdeltproject.org/) – hírek
@@ -66,10 +80,26 @@ tartalmaz. Telepítés után az oldal automatikusan lekérheti és megjeleníthe
 nyelvű AI-elemzést. A részletes beállítási útmutató az
 [`ai-backend/README.md`](ai-backend/README.md) fájlban található.
 
+A Stratégialabor AI-kártyája ugyanazt a biztonságos Workert használja a `/strategy`
+végponton. A javaslat csak engedélyezett technikai paramétereket tartalmazhat; a tőke,
+költség és kockázati százalék nem módosítható AI-ból. A paraméterek alkalmazása és a
+backtest futtatása két külön felhasználói művelet.
+
+## Stratégialabor adatformátum
+
+A saját OHLCV CSV első sora fejléc legyen. Kötelező oszlopok: `time`, `open`, `high`,
+`low`, `close`; opcionális a `volume`. A `time` lehet ISO dátum, Unix másodperc vagy
+Unix ezredmásodperc. Az importált fájl kizárólag a böngésző memóriájában marad.
+
+A számítási logika a böngészőben futó, tiszta `strategy-engine.js` modulban található.
+A `strategy-lab.js` kizárólag a nézetet, mentést, import/export folyamatot és az
+AI-javaslat jóváhagyását kezeli. A `favicon.svg` a repository gyökerében található,
+és az `index.html` közvetlenül hivatkozik rá.
+
 ## Beállítások és adatvédelem
 
-A pénznem, frissítési idő, portfólió, riasztások és opcionális API-beállítások a böngésző
-`localStorage` tárhelyén maradnak. Nem kerülnek a GitHub repositoryba. A böngészőben
+A pénznem, frissítési idő, portfólió, riasztások, gyakorló pontszám, virtuális bot
+állapota és opcionális API-beállítások a böngésző `localStorage` tárhelyén maradnak. Nem kerülnek a GitHub repositoryba. A böngészőben
 tárolt kulcsok nem tekinthetők teljesen titkosnak, ezért csak korlátozott, visszavonható
 ingyenes kulcs használata javasolt.
 

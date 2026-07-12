@@ -7,6 +7,7 @@
       name="description"
       content="Ingyenes Bitcoin- és aranypiaci figyelő technikai és híralapú elemzésekkel."
     />
+    <link rel="icon" href="favicon.svg?v=20260712-9" type="image/svg+xml" />
     <title>Aurum & Satoshi – Piaci figyelő</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -14,9 +15,14 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=20260712-8" />
+    <link rel="stylesheet" href="styles.css?v=20260712-10" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
-    <script src="app.js?v=20260712-8" defer></script>
+    <script src="assets-catalog.js?v=20260712-10" defer></script>
+    <script src="virtual-bot.js?v=20260712-10" defer></script>
+    <script src="practice-lab.js?v=20260712-10" defer></script>
+    <script src="app.js?v=20260712-10" defer></script>
+    <script src="strategy-engine.js?v=20260712-10" defer></script>
+    <script src="strategy-lab.js?v=20260712-10" defer></script>
   </head>
   <body data-view="overview">
     <header class="site-header">
@@ -28,9 +34,12 @@
         <button class="nav-link active" data-view-target="overview" type="button">Áttekintés</button>
         <button class="nav-link" data-view-target="bitcoin" type="button">Bitcoin</button>
         <button class="nav-link" data-view-target="gold" type="button">Arany</button>
+        <button class="nav-link" data-view-target="markets" type="button">Piacok</button>
         <button class="nav-link" data-view-target="news" type="button">Hírek</button>
         <button class="nav-link" data-view-target="portfolio" type="button">Portfólió</button>
+        <button class="nav-link" data-view-target="practice" type="button">Gyakorló</button>
         <button class="nav-link" data-view-target="simulator" type="button">Szimulátor</button>
+        <button class="nav-link" data-view-target="strategy" type="button">Stratégialabor</button>
         <button class="nav-link" data-view-target="ai" type="button">AI</button>
       </nav>
       <div class="header-actions">
@@ -45,7 +54,7 @@
     </header>
 
     <main>
-      <section class="decision-center" data-pages="overview bitcoin gold" aria-labelledby="decisionTitle">
+      <section class="decision-center" data-pages="overview bitcoin gold markets" aria-labelledby="decisionTitle">
         <div class="decision-header">
           <div>
             <p class="eyebrow">ÉLŐ KERESKEDÉSI KÖZPONT</p>
@@ -60,14 +69,14 @@
           </div>
         </div>
 
-        <div class="decision-switcher" role="tablist" aria-label="Kereskedési eszköz">
-          <button class="decision-asset active" data-trade-asset="bitcoin" type="button">
+        <div id="decisionAssetSwitcher" class="decision-switcher" role="tablist" aria-label="Kereskedési eszköz">
+          <button class="decision-asset featured-asset active" data-trade-asset="bitcoin" type="button">
             <span><b>₿</b> Bitcoin</span>
-            <strong id="decisionBtcSignal" class="neutral">Elemzés…</strong>
+            <strong id="decisionSignal-bitcoin" class="neutral">Elemzés…</strong>
           </button>
-          <button class="decision-asset" data-trade-asset="gold" type="button">
+          <button class="decision-asset featured-asset" data-trade-asset="gold" type="button">
             <span><b>Au</b> Arany</span>
-            <strong id="decisionGoldSignal" class="neutral">Elemzés…</strong>
+            <strong id="decisionSignal-gold" class="neutral">Elemzés…</strong>
           </button>
         </div>
 
@@ -193,7 +202,7 @@
 
       <div id="errorBanner" class="error-banner" role="alert" hidden></div>
 
-      <div class="market-toolbar" data-pages="overview bitcoin gold">
+      <div class="market-toolbar" data-pages="overview bitcoin gold markets">
         <div>
           <span>Megjelenített pénznem</span>
           <strong id="activeCurrency">USD</strong>
@@ -205,6 +214,35 @@
           <button class="tab" data-timeframe="365" type="button">1É</button>
         </div>
       </div>
+
+      <section class="markets-preview" data-pages="overview" aria-label="További piacok">
+        <div class="section-heading compact-heading">
+          <div>
+            <p class="eyebrow">BŐVÍTETT PIACOK</p>
+            <h2>Több kereskedhető eszköz</h2>
+          </div>
+          <button class="text-button" data-view-target="markets" type="button">Összes piac →</button>
+        </div>
+        <div id="marketsPreviewGrid" class="markets-mini-grid">
+          <span class="helper-text">További eszközök betöltése…</span>
+        </div>
+      </section>
+
+      <section class="markets-section" data-pages="markets" aria-labelledby="marketsTitle">
+        <div class="markets-hero">
+          <div>
+            <p class="eyebrow">KERESKEDHETŐ ESZKÖZÖK</p>
+            <h1 id="marketsTitle">Globális piacok egy nézetben</h1>
+            <p>
+              Ethereum, Solana, EUR/USD, olaj és S&P 500 proxy ingyenes forrásokból.
+              A Bitcoin és az arany továbbra is külön fülön érhető el.
+            </p>
+          </div>
+        </div>
+        <div id="marketsGrid" class="markets-grid">
+          <span class="helper-text">Piaci adatok betöltése…</span>
+        </div>
+      </section>
 
       <section class="asset-grid" data-pages="overview bitcoin gold" aria-label="Eszközök áttekintése">
         <article class="asset-card bitcoin-card" data-asset="bitcoin">
@@ -324,11 +362,187 @@
         </article>
       </section>
 
+      <section class="practice-section" data-pages="practice" aria-labelledby="practiceTitle">
+        <div class="practice-hero">
+          <div>
+            <p class="eyebrow">OKTATÁS · TESZT · BOT</p>
+            <h1 id="practiceTitle">Gyakorló és virtuális üzletelés</h1>
+            <p>
+              Jelzés-értelmezési forgatókönyvek, majd szabályalapú papírbot, amely automatikusan
+              nyit és zár pozíciókat a technikai jelek alapján – élő pénz nélkül.
+            </p>
+          </div>
+          <div class="practice-score-card">
+            <span>PONTSZÁM</span>
+            <strong id="practiceScore">0</strong>
+            <small id="practiceSummary">0/6 forgatókönyv megválaszolva.</small>
+            <div class="practice-progress-track"><span id="practiceProgressBar"></span></div>
+            <small><span id="practiceAttempts">0</span> próbálkozás</small>
+          </div>
+        </div>
+
+        <div class="practice-layout">
+          <article class="panel practice-quiz-panel">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">JELZÉS-GYAKORLÓ</p>
+                <h3>Teszteld a döntéshozatalod</h3>
+              </div>
+            </div>
+            <label>Forgatókönyv
+              <select id="practiceScenarioSelect"></select>
+            </label>
+            <p id="practicePrompt" class="practice-prompt">Betöltés…</p>
+            <div id="practiceOptions" class="practice-options"></div>
+            <div class="practice-actions">
+              <button id="practiceCheckButton" class="primary-button" type="button">Ellenőrzés</button>
+              <button id="practiceNextButton" class="text-button" type="button" hidden>Következő →</button>
+              <button id="practiceResetButton" class="text-button" type="button">Pontszám nullázása</button>
+            </div>
+            <p id="practiceFeedback" class="practice-feedback" hidden></p>
+          </article>
+
+          <article class="panel practice-guide-panel">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">ÚTMUTATÓ</p>
+                <h3>Mire figyelj?</h3>
+              </div>
+            </div>
+            <ul class="practice-tips">
+              <li>Több idősík egyezése növeli a megbízhatóságot.</li>
+              <li>RSI 70 felett LONG, 30 alatt SHORT kockázatos lehet.</li>
+              <li>Legalább 1.5–2 R/R arányt célozz meg.</li>
+              <li>Oldalazó piacon a kivárás is döntés.</li>
+              <li>A bot csak papírkereskedés – nem élő megbízás.</li>
+            </ul>
+            <button class="secondary-button" data-view-target="simulator" type="button">Kézi papírkereskedés →</button>
+          </article>
+        </div>
+
+        <div class="bot-hero">
+          <div>
+            <p class="eyebrow">REALTIME VIRTUÁLIS BOT</p>
+            <h2>Szabályalapú papírüzletelés</h2>
+            <p>
+              A bot a jelenlegi VÉTEL/ELADÁS jelek alapján automatikusan kezeli a papír pozíciókat.
+              Stop, célár és jelzésfordulás zárja a kereskedéseket.
+            </p>
+          </div>
+          <label class="bot-toggle">
+            <input id="botEnabled" type="checkbox" />
+            <span>Bot bekapcsolva</span>
+          </label>
+        </div>
+
+        <div class="bot-summary">
+          <div><span>Virtuális egyenleg</span><strong id="botEquity">–</strong></div>
+          <div><span>Realizált PnL</span><strong id="botRealizedPnl">–</strong></div>
+          <div><span>Nyitott PnL</span><strong id="botOpenPnl">–</strong></div>
+          <div><span>Találati arány</span><strong id="botWinRate">–</strong></div>
+          <div><span>Profit factor</span><strong id="botProfitFactor">–</strong></div>
+          <div><span>Max. drawdown</span><strong id="botDrawdown">–</strong></div>
+        </div>
+
+        <div class="bot-layout">
+          <article class="panel bot-config-panel">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">BOT BEÁLLÍTÁS</p>
+                <h3>Kereskedési szabályok</h3>
+              </div>
+            </div>
+            <form id="botConfigForm" class="form-grid">
+              <label>Kezdőtőke (USD)
+                <input id="botInitialCapital" type="number" min="100" step="100" value="10000" />
+              </label>
+              <label>Kockázat / ügylet (%)
+                <input id="botRiskPercent" type="number" min="0.1" max="5" step="0.1" value="1" />
+              </label>
+              <label>Min. megbízhatóság (%)
+                <input id="botMinConfidence" type="number" min="40" max="90" step="1" value="55" />
+              </label>
+              <label>Max. nyitott pozíció
+                <input id="botMaxPositions" type="number" min="1" max="10" step="1" value="4" />
+              </label>
+              <label>Cooldown (perc)
+                <input id="botCooldown" type="number" min="5" max="120" step="5" value="20" />
+              </label>
+              <label class="check-label wide-check"><input id="botAutoClose" type="checkbox" checked /> Zárás ellentétes jelzésnél</label>
+              <fieldset class="bot-asset-fieldset">
+                <legend>Követett eszközök</legend>
+                <div id="botAssetChecks" class="bot-asset-checks"></div>
+              </fieldset>
+              <div class="bot-form-actions">
+                <button id="botSaveConfig" class="primary-button" type="button">Beállítás mentése</button>
+                <button id="botResetButton" class="text-button" type="button">Bot újraindítása</button>
+              </div>
+            </form>
+            <p id="botStatus" class="bot-status">Bot kikapcsolva.</p>
+          </article>
+
+          <article class="panel">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">TELJESÍTMÉNY</p>
+                <h3>Bot egyenleggörbe</h3>
+              </div>
+            </div>
+            <div class="bot-chart-wrap"><canvas id="botEquityChart"></canvas></div>
+          </article>
+        </div>
+
+        <div class="bot-panels-grid">
+          <article class="panel">
+            <div class="section-heading compact-heading">
+              <div><p class="eyebrow">NYITOTT POZÍCIÓK</p><h3>Bot papírállomány</h3></div>
+              <span id="botOpenCount" class="local-badge">0 pozíció</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Eszköz</th><th>Irány</th><th>Belépés</th><th>Stop</th><th>Cél</th><th>Eredmény</th><th>Jelzés</th></tr></thead>
+                <tbody id="botPositionsTable"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="section-heading compact-heading">
+              <div><p class="eyebrow">FEJLESZTÉSI JAVASLATOK</p><h3>Bot tapasztalatok</h3></div>
+            </div>
+            <ul id="botSuggestions" class="bot-suggestions">
+              <li>Kapcsold be a botot az első javaslatokért.</li>
+            </ul>
+          </article>
+        </div>
+
+        <article class="panel">
+          <div class="section-heading compact-heading">
+            <div><p class="eyebrow">BOT NAPLÓ</p><h3>Lezárt ügyletek és okok</h3></div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Idő</th><th>Eszköz</th><th>Irány</th><th>Belépés</th><th>Kilépés</th><th>Ok</th><th>Miért?</th><th>Eredmény</th></tr></thead>
+              <tbody id="botTradesTable"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="section-heading compact-heading">
+            <div><p class="eyebrow">AKTIVITÁS</p><h3>Bot események</h3></div>
+          </div>
+          <div id="botActivityLog" class="bot-activity-log">
+            <span>Még nincs esemény.</span>
+          </div>
+        </article>
+      </section>
+
       <section class="simulator-section" data-pages="simulator">
         <div class="simulator-hero">
           <div>
             <p class="eyebrow">KOCKÁZATMENTES GYAKORLÁS</p>
-            <h1>Papírkereskedés és backtest</h1>
+            <h1>Papírkereskedési szimulátor</h1>
             <p>
               Teszteld a jelzéseket virtuális tőkével. Az eredmények helyben maradnak,
               és nem indítanak valódi megbízást.
@@ -365,6 +579,11 @@
                 <select id="paperAsset">
                   <option value="bitcoin">Bitcoin</option>
                   <option value="gold">Arany</option>
+                  <option value="ethereum">Ethereum</option>
+                  <option value="solana">Solana</option>
+                  <option value="eurusd">EUR/USD</option>
+                  <option value="oil">Olaj (WTI)</option>
+                  <option value="spy">S&P 500 (SPY)</option>
                 </select>
               </label>
               <label>Irány
@@ -419,164 +638,6 @@
           </div>
         </article>
 
-        <div class="backtest-area">
-          <article class="panel strategy-config-panel">
-            <div class="section-heading compact-heading">
-              <div>
-                <p class="eyebrow">STRATÉGIALABOR</p>
-                <h3>Konfigurálható, időben szétválasztott backtest</h3>
-              </div>
-            </div>
-            <form id="backtestForm" class="strategy-form">
-              <label>Eszköz
-                <select id="backtestAsset">
-                  <option value="bitcoin">Bitcoin</option>
-                  <option value="gold">Arany</option>
-                </select>
-              </label>
-              <label>Idősík
-                <select id="backtestInterval">
-                  <option value="1">1 perc</option>
-                  <option value="5">5 perc</option>
-                  <option value="15">15 perc</option>
-                  <option value="60">1 óra</option>
-                </select>
-              </label>
-              <label>Kezdőtőke (USD)
-                <input id="backtestCapital" type="number" min="100" step="100" value="10000" />
-              </label>
-              <label>Díj oldalanként (%)
-                <input id="backtestFee" type="number" min="0" max="2" step="0.01" value="0.10" />
-              </label>
-              <label>Spread (%)
-                <input id="backtestSpread" type="number" min="0" max="2" step="0.01" value="0.02" />
-              </label>
-              <label>Slippage (%)
-                <input id="backtestSlippage" type="number" min="0" max="2" step="0.01" value="0.01" />
-              </label>
-              <label>Kockázat / ügylet (%)
-                <input id="backtestRisk" type="number" min="0.1" max="10" step="0.1" value="1" />
-              </label>
-              <label>Tanuló időszak (%)
-                <input id="backtestSplit" type="number" min="50" max="85" step="5" value="70" />
-              </label>
-              <label>Gyors EMA
-                <input id="backtestFastEma" type="number" min="3" max="50" step="1" value="9" />
-              </label>
-              <label>Lassú EMA
-                <input id="backtestSlowEma" type="number" min="5" max="120" step="1" value="21" />
-              </label>
-              <label>Long RSI minimum
-                <input id="backtestRsiMin" type="number" min="20" max="70" step="1" value="50" />
-              </label>
-              <label>Long RSI maximum
-                <input id="backtestRsiMax" type="number" min="30" max="90" step="1" value="68" />
-              </label>
-              <label>ATR stop szorzó
-                <input id="backtestAtrMultiplier" type="number" min="0.5" max="5" step="0.1" value="1.5" />
-              </label>
-              <label>Célár (R)
-                <input id="backtestRewardRatio" type="number" min="0.5" max="10" step="0.1" value="2" />
-              </label>
-              <label>Momentum küszöb (%)
-                <input id="backtestMomentum" type="number" min="0" max="5" step="0.01" value="0.06" />
-              </label>
-              <button class="primary-button strategy-run-button" type="submit">
-                Stratégia tesztelése
-              </button>
-            </form>
-            <p class="helper-text">
-              A tanuló és ellenőrző szakasz időrendben különül el. A teszt díjat, spreadet és
-              slippage-et is levon, de a múltbeli eredmény nem garantál jövőbeli teljesítményt.
-            </p>
-          </article>
-
-          <article class="panel strategy-results-panel">
-            <div class="backtest-stats">
-              <div><span>Ügyletek</span><strong id="backtestTrades">–</strong></div>
-              <div><span>Találati arány</span><strong id="backtestWinRate">–</strong></div>
-              <div><span>Nettó eredmény</span><strong id="backtestPnl">–</strong></div>
-              <div><span>Profit factor</span><strong id="backtestProfitFactor">–</strong></div>
-              <div><span>Max. visszaesés</span><strong id="backtestDrawdown">–</strong></div>
-              <div><span>Vizsgált időszak</span><strong id="backtestPeriod">–</strong></div>
-            </div>
-            <div class="paper-chart-wrap"><canvas id="backtestChart"></canvas></div>
-            <div id="strategyVerdict" class="strategy-verdict neutral">
-              Futtasd a tesztet a stratégia értékeléséhez.
-            </div>
-          </article>
-        </div>
-
-        <div class="strategy-validation-grid">
-          <article class="panel">
-            <p class="eyebrow">TANULÓ SZAKASZ</p>
-            <strong id="strategyTrainReturn">–</strong>
-            <span id="strategyTrainDetails">Paraméterhangolási időszak</span>
-          </article>
-          <article class="panel">
-            <p class="eyebrow">ELLENŐRZŐ SZAKASZ</p>
-            <strong id="strategyTestReturn">–</strong>
-            <span id="strategyTestDetails">Korábban nem vizsgált adatok</span>
-          </article>
-          <article class="panel">
-            <p class="eyebrow">BUY & HOLD BENCHMARK</p>
-            <strong id="strategyBenchmark">–</strong>
-            <span id="strategyBenchmarkDetails">Azonos ellenőrző időszak</span>
-          </article>
-          <article class="panel">
-            <p class="eyebrow">TÚLILLESZTÉSI KOCKÁZAT</p>
-            <strong id="strategyOverfit">–</strong>
-            <span id="strategyOverfitDetails">Tanuló és teszt eredményének eltérése</span>
-          </article>
-        </div>
-
-        <div class="simulator-grid strategy-detail-grid">
-          <article class="panel">
-            <div class="section-heading compact-heading">
-              <div>
-                <p class="eyebrow">PARAMÉTER-HŐTÉRKÉP</p>
-                <h3>EMA-érzékenység a tanuló szakaszon</h3>
-              </div>
-            </div>
-            <div id="strategyHeatmap" class="strategy-heatmap">
-              <span>A teszt után jelenik meg.</span>
-            </div>
-          </article>
-          <article class="panel">
-            <div class="section-heading compact-heading">
-              <div>
-                <p class="eyebrow">ÉRTELMEZHETŐSÉG</p>
-                <h3>Mit jelent az eredmény?</h3>
-              </div>
-            </div>
-            <ul id="strategyWarnings" class="strategy-warnings">
-              <li>A kiértékelés a futtatás után jelenik meg.</li>
-            </ul>
-          </article>
-        </div>
-
-        <article class="panel strategy-trades-panel">
-          <div class="section-heading compact-heading">
-            <div>
-              <p class="eyebrow">BACKTEST ÜGYLETEK</p>
-              <h3>Ellenőrző időszak részletes naplója</h3>
-            </div>
-            <button id="backtestExportButton" class="text-button" type="button" disabled>
-              CSV export
-            </button>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr><th>Nyitás</th><th>Irány</th><th>Belépés</th><th>Kilépés</th><th>Ok</th><th>Költség</th><th>Eredmény</th></tr>
-              </thead>
-              <tbody id="backtestTradesTable">
-                <tr><td colspan="7" class="empty-table-cell">Még nincs backtest eredmény.</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </article>
-
         <article class="panel trade-history-panel">
           <div class="section-heading compact-heading">
             <div>
@@ -590,6 +651,294 @@
                 <tr><th>Idő</th><th>Eszköz</th><th>Irány</th><th>Belépés</th><th>Kilépés</th><th>Ok</th><th>Eredmény</th></tr>
               </thead>
               <tbody id="paperTradesTable"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="strategy-section" data-pages="strategy" aria-labelledby="strategyTitle">
+        <div class="strategy-hero">
+          <div>
+            <p class="eyebrow">KUTATÁS · VALIDÁCIÓ · KOCKÁZAT</p>
+            <h1 id="strategyTitle">Professzionális Stratégialabor</h1>
+            <p>
+              Építs, tesztelj és hasonlíts össze szabályalapú stratégiákat. Az AI csak
+              paramétereket javasol; alkalmazás és futtatás mindig külön jóváhagyást igényel.
+            </p>
+          </div>
+          <div class="strategy-data-health">
+            <span>ADATKÉSZLET</span>
+            <strong id="strategyDataStatus">Adatok betöltése…</strong>
+            <small id="strategyDataDetails">A Kraken legfeljebb 720 gyertyát biztosít.</small>
+          </div>
+        </div>
+
+        <div class="strategy-toolbar">
+          <label>Gyors preset
+            <select id="strategyPreset">
+              <option value="balanced">Kiegyensúlyozott trend</option>
+              <option value="conservative">Óvatos trend</option>
+              <option value="active">Aktív momentum</option>
+            </select>
+          </label>
+          <button id="strategyApplyPreset" class="secondary-button" type="button">Preset betöltése</button>
+          <label>Mentett stratégia
+            <select id="strategySavedSelect"><option value="">Válassz…</option></select>
+          </label>
+          <button id="strategyLoadSaved" class="secondary-button" type="button">Betöltés</button>
+          <button id="strategySaveButton" class="secondary-button" type="button">Aktuális mentése</button>
+          <label class="strategy-file-button">
+            OHLCV CSV import
+            <input id="strategyCsvInput" type="file" accept=".csv,text/csv" />
+          </label>
+          <button id="strategyClearCsv" class="text-button" type="button" hidden>Saját adat törlése</button>
+        </div>
+
+        <div class="strategy-layout">
+          <article class="panel strategy-config-panel">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">SZABÁLYRENDSZER</p>
+                <h3>Belépés és piaci környezet</h3>
+              </div>
+            </div>
+            <form id="backtestForm" class="strategy-form">
+              <label>Eszköz
+                <select id="backtestAsset">
+                  <option value="bitcoin">Bitcoin</option>
+                  <option value="gold">Arany</option>
+                  <option value="ethereum">Ethereum</option>
+                  <option value="solana">Solana</option>
+                  <option value="eurusd">EUR/USD</option>
+                  <option value="oil">Olaj (WTI)</option>
+                  <option value="spy">S&P 500 (SPY)</option>
+                  <option value="csv">Importált CSV</option>
+                </select>
+              </label>
+              <label>Idősík
+                <select id="backtestInterval">
+                  <option value="1">1 perc</option>
+                  <option value="5">5 perc</option>
+                  <option value="15">15 perc</option>
+                  <option value="60">1 óra</option>
+                </select>
+              </label>
+              <label>Kereskedési irány
+                <select id="backtestDirection">
+                  <option value="both">LONG és SHORT</option>
+                  <option value="long">Csak LONG</option>
+                  <option value="short">Csak SHORT</option>
+                </select>
+              </label>
+              <label>Optimalizálási cél
+                <select id="backtestObjective">
+                  <option value="returnDrawdown">Hozam / drawdown</option>
+                  <option value="return">Nettó hozam</option>
+                  <option value="profitFactor">Profit factor</option>
+                </select>
+              </label>
+
+              <fieldset>
+                <legend>Trend és lendület</legend>
+                <label>Gyors EMA
+                  <input id="backtestFastEma" type="number" min="3" max="50" step="1" value="9" />
+                </label>
+                <label>Lassú EMA
+                  <input id="backtestSlowEma" type="number" min="5" max="120" step="1" value="21" />
+                </label>
+                <label>RSI periódus
+                  <input id="backtestRsiPeriod" type="number" min="5" max="30" step="1" value="14" />
+                </label>
+                <label>Long RSI minimum
+                  <input id="backtestRsiMin" type="number" min="20" max="70" step="1" value="50" />
+                </label>
+                <label>Long RSI maximum
+                  <input id="backtestRsiMax" type="number" min="30" max="90" step="1" value="68" />
+                </label>
+                <label>Momentum ablak
+                  <input id="backtestMomentumLookback" type="number" min="3" max="60" step="1" value="15" />
+                </label>
+                <label>Momentum küszöb (%)
+                  <input id="backtestMomentum" type="number" min="0" max="5" step="0.01" value="0.06" />
+                </label>
+                <label class="check-label"><input id="backtestUseMacd" type="checkbox" checked /> MACD megerősítés</label>
+                <label class="check-label"><input id="backtestUseVolume" type="checkbox" /> Volumen megerősítés</label>
+                <label>Volumen szorzó
+                  <input id="backtestVolumeMultiplier" type="number" min="0.5" max="5" step="0.1" value="1.1" />
+                </label>
+                <label class="check-label"><input id="backtestUseHigherTf" type="checkbox" /> Magasabb idősík megerősítése</label>
+              </fieldset>
+
+              <fieldset>
+                <legend>Kilépés és pozíciókezelés</legend>
+                <label>ATR periódus
+                  <input id="backtestAtrPeriod" type="number" min="5" max="50" step="1" value="14" />
+                </label>
+                <label>ATR stop szorzó
+                  <input id="backtestAtrMultiplier" type="number" min="0.5" max="5" step="0.1" value="1.5" />
+                </label>
+                <label>Célár (R)
+                  <input id="backtestRewardRatio" type="number" min="0.5" max="10" step="0.1" value="2" />
+                </label>
+                <label class="check-label"><input id="backtestUseTrailing" type="checkbox" /> Követő stop</label>
+                <label>Követő ATR szorzó
+                  <input id="backtestTrailingAtr" type="number" min="0.5" max="5" step="0.1" value="1.2" />
+                </label>
+                <label class="check-label"><input id="backtestUseBreakEven" type="checkbox" /> Nullszaldós stop</label>
+                <label>Break-even (R)
+                  <input id="backtestBreakEvenR" type="number" min="0.5" max="5" step="0.1" value="1" />
+                </label>
+                <label>Cooldown (gyertya)
+                  <input id="backtestCooldown" type="number" min="0" max="100" step="1" value="0" />
+                </label>
+              </fieldset>
+
+              <fieldset>
+                <legend>Tőke és végrehajtás</legend>
+                <label>Kezdőtőke (USD)
+                  <input id="backtestCapital" type="number" min="100" step="100" value="10000" />
+                </label>
+                <label>Kockázat / ügylet (%)
+                  <input id="backtestRisk" type="number" min="0.1" max="10" step="0.1" value="1" />
+                </label>
+                <label>Díj oldalanként (%)
+                  <input id="backtestFee" type="number" min="0" max="2" step="0.01" value="0.10" />
+                </label>
+                <label>Spread (%)
+                  <input id="backtestSpread" type="number" min="0" max="2" step="0.01" value="0.02" />
+                </label>
+                <label>Slippage (%)
+                  <input id="backtestSlippage" type="number" min="0" max="2" step="0.01" value="0.01" />
+                </label>
+                <label>Tanuló időszak (%)
+                  <input id="backtestSplit" type="number" min="50" max="85" step="5" value="70" />
+                </label>
+                <label>Walk-forward foldok
+                  <select id="backtestFolds">
+                    <option value="0">Kikapcsolva</option>
+                    <option value="2">2 fold</option>
+                    <option value="3" selected>3 fold</option>
+                    <option value="4">4 fold</option>
+                  </select>
+                </label>
+              </fieldset>
+
+              <div class="strategy-form-actions">
+                <button class="primary-button" type="submit">Stratégia tesztelése</button>
+                <button id="strategyOptimizeButton" class="secondary-button" type="button">Optimalizálás tanuló adaton</button>
+              </div>
+            </form>
+          </article>
+
+          <aside class="strategy-side">
+            <article class="panel ai-strategy-panel">
+              <div class="section-heading compact-heading">
+                <div>
+                  <p class="eyebrow">AI PARAMÉTERJAVASLAT</p>
+                  <h3>Elemzésből kért beállítás</h3>
+                </div>
+              </div>
+              <label>Kockázati profil
+                <select id="strategyAiRiskProfile">
+                  <option value="low">Óvatos</option>
+                  <option value="medium" selected>Kiegyensúlyozott</option>
+                  <option value="high">Aktív</option>
+                </select>
+              </label>
+              <label>Elsődleges cél
+                <select id="strategyAiGoal">
+                  <option value="robustness">Robusztusság</option>
+                  <option value="drawdown">Alacsony visszaesés</option>
+                  <option value="return">Magasabb hozam</option>
+                </select>
+              </label>
+              <button id="strategyAiRequest" class="primary-button" type="button">AI-javaslat kérése</button>
+              <div id="strategyAiPreview" class="ai-strategy-preview" hidden>
+                <strong id="strategyAiTitle">Javaslat elkészült</strong>
+                <p id="strategyAiRationale"></p>
+                <div id="strategyAiDiff" class="strategy-ai-diff"></div>
+                <ul id="strategyAiWarnings"></ul>
+                <div class="strategy-ai-actions">
+                  <button id="strategyAiApply" class="primary-button" type="button">Javaslat alkalmazása</button>
+                  <button id="strategyAiDismiss" class="text-button" type="button">Elvetés</button>
+                </div>
+                <small>Az alkalmazás nem indít backtestet vagy valódi kereskedést.</small>
+              </div>
+            </article>
+
+            <article class="panel strategy-run-summary">
+              <p class="eyebrow">AKTUÁLIS FUTTATÁS</p>
+              <div class="strategy-mini-stats">
+                <div><span>Teszt hozam</span><strong id="strategyTestReturn">–</strong></div>
+                <div><span>Benchmark</span><strong id="strategyBenchmark">–</strong></div>
+                <div><span>Profit factor</span><strong id="backtestProfitFactor">–</strong></div>
+                <div><span>Max. drawdown</span><strong id="backtestDrawdown">–</strong></div>
+                <div><span>Sharpe-becslés</span><strong id="strategySharpe">–</strong></div>
+                <div><span>Kitettség</span><strong id="strategyExposure">–</strong></div>
+              </div>
+              <div id="strategyVerdict" class="strategy-verdict neutral">
+                Futtasd a tesztet az értékeléshez.
+              </div>
+            </article>
+          </aside>
+        </div>
+
+        <div class="strategy-validation-grid">
+          <article class="panel"><p class="eyebrow">TANULÓ SZAKASZ</p><strong id="strategyTrainReturn">–</strong><span id="strategyTrainDetails">–</span></article>
+          <article class="panel"><p class="eyebrow">ELLENŐRZŐ SZAKASZ</p><strong id="strategyValidationReturn">–</strong><span id="strategyTestDetails">–</span></article>
+          <article class="panel"><p class="eyebrow">WALK-FORWARD</p><strong id="strategyWalkForward">–</strong><span id="strategyWalkForwardDetails">–</span></article>
+          <article class="panel"><p class="eyebrow">TÚLILLESZTÉS</p><strong id="strategyOverfit">–</strong><span id="strategyOverfitDetails">–</span></article>
+          <article class="panel"><p class="eyebrow">ÖSSZKÖLTSÉG</p><strong id="strategyCosts">–</strong><span>Díj + spread + slippage</span></article>
+          <article class="panel"><p class="eyebrow">EXPECTANCY</p><strong id="strategyExpectancy">–</strong><span>Átlagos eredmény / ügylet</span></article>
+        </div>
+
+        <div class="strategy-chart-grid">
+          <article class="panel">
+            <div class="section-heading compact-heading"><div><p class="eyebrow">TELJESÍTMÉNY</p><h3>Equity és benchmark</h3></div></div>
+            <div class="strategy-chart-wrap"><canvas id="strategyEquityChart"></canvas></div>
+          </article>
+          <article class="panel">
+            <div class="section-heading compact-heading"><div><p class="eyebrow">KOCKÁZAT</p><h3>Visszaesési görbe</h3></div></div>
+            <div class="strategy-chart-wrap"><canvas id="strategyDrawdownChart"></canvas></div>
+          </article>
+        </div>
+
+        <div class="strategy-chart-grid">
+          <article class="panel">
+            <div class="section-heading compact-heading"><div><p class="eyebrow">ÉRZÉKENYSÉG</p><h3>EMA-paraméter hőtérkép</h3></div></div>
+            <div id="strategyHeatmap" class="strategy-heatmap"><span>A teszt után jelenik meg.</span></div>
+          </article>
+          <article class="panel">
+            <div class="section-heading compact-heading"><div><p class="eyebrow">DIAGNOSZTIKA</p><h3>Értékelés és figyelmeztetések</h3></div></div>
+            <ul id="strategyWarnings" class="strategy-warnings"><li>A kiértékelés a futtatás után jelenik meg.</li></ul>
+          </article>
+        </div>
+
+        <article class="panel strategy-optimizer-panel">
+          <div class="section-heading compact-heading">
+            <div><p class="eyebrow">OPTIMALIZÁLÓ</p><h3>Legjobb tanuló konfigurációk</h3></div>
+            <button id="strategyApplyBest" class="text-button" type="button" disabled>Legjobb alkalmazása</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Hely</th><th>EMA</th><th>ATR</th><th>Cél R</th><th>Hozam</th><th>PF</th><th>Drawdown</th><th>Pontszám</th></tr></thead>
+              <tbody id="strategyOptimizerTable"><tr><td colspan="8" class="empty-table-cell">Még nem futott optimalizálás.</td></tr></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="panel strategy-trades-panel">
+          <div class="section-heading compact-heading">
+            <div><p class="eyebrow">ÜGYLETNAPLÓ</p><h3>Ellenőrző időszak</h3></div>
+            <div class="strategy-export-actions">
+              <button id="backtestExportButton" class="text-button" type="button" disabled>CSV export</button>
+              <button id="strategyJsonExport" class="text-button" type="button" disabled>JSON export</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Nyitás</th><th>Irány</th><th>Belépés</th><th>Kilépés</th><th>Időtartam</th><th>Ok</th><th>Költség</th><th>Eredmény</th></tr></thead>
+              <tbody id="backtestTradesTable"><tr><td colspan="8" class="empty-table-cell">Még nincs eredmény.</td></tr></tbody>
             </table>
           </div>
         </article>
@@ -774,7 +1123,7 @@
         <div id="aiResult" class="ai-result" hidden></div>
       </section>
 
-      <section class="disclaimer" data-pages="overview bitcoin gold news portfolio simulator ai">
+      <section class="disclaimer" data-pages="overview bitcoin gold markets news portfolio practice simulator strategy ai">
         <strong>Fontos kockázati figyelmeztetés</strong>
         <p>
           Az oldal kizárólag oktatási és tájékoztatási célú. Nem minősül befektetési

@@ -88,11 +88,72 @@ Sikeres válasz:
 }
 ```
 
+### `POST /strategy`
+
+A Stratégialabor strukturált paraméterjavaslata. Ugyanazt a Bearer tokent használja,
+mint az `/analyze` végpont.
+
+Kérés:
+
+```json
+{
+  "asset": "bitcoin",
+  "interval": 15,
+  "candleCount": 720,
+  "riskProfile": "medium",
+  "goal": "robustness",
+  "currentConfig": {
+    "fastEma": 9,
+    "slowEma": 21,
+    "rsiPeriod": 14,
+    "rsiMin": 50,
+    "rsiMax": 68,
+    "atrMultiplier": 1.5,
+    "rewardRatio": 2
+  },
+  "marketSnapshot": {
+    "price": 60000,
+    "emaGapPercent": 0.12,
+    "rsi": 56,
+    "atrPercent": 0.4
+  }
+}
+```
+
+Sikeres válasz:
+
+```json
+{
+  "suggestion": {
+    "direction": "both",
+    "fastEma": 9,
+    "slowEma": 26,
+    "rsiPeriod": 14,
+    "rsiMin": 50,
+    "rsiMax": 67,
+    "atrMultiplier": 1.8,
+    "rewardRatio": 2
+  },
+  "rationale": "A volatilitás miatt szélesebb stop és lassabb trendfilter indokolt.",
+  "confidence": "medium",
+  "warnings": ["A 720 gyertyás minta rövid."],
+  "model": "gemini-2.5-flash",
+  "generatedAt": "2026-07-12T08:00:00.000Z"
+}
+```
+
+A Worker whitelisteli és biztonságos tartományra korlátozza a paramétereket. Nem adhat
+vissza tőkét, kockázati százalékot, díjat, spreadet, slippage-et vagy train/test arányt.
+A frontend csak külön felhasználói kattintásra alkalmazza a javaslatot, és attól még nem
+fut le automatikusan backtest.
+
 ## Biztonsági korlátok
 
 - Csak a beállított GitHub Pages eredetről fogad böngészős kérést.
 - Minden elemzési kéréshez hozzáférési token szükséges.
 - A kérés mérete és a prompt hossza korlátozott.
+- A stratégiajavaslat strukturált JSON, mező-whitelisttel és szerveroldali határértékekkel.
+- A Worker egy példányon belül rövid időablakos stratégiajavaslat-korlátot alkalmaz.
 - A válaszok nem gyorsítótárazhatók.
 - A Worker nem naplózza a promptot vagy a titkos kulcsokat.
 

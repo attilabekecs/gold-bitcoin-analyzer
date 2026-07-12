@@ -1,8 +1,7 @@
+const Catalog = window.AssetCatalog;
+
 const state = {
-  assets: {
-    bitcoin: null,
-    gold: null,
-  },
+  assets: Object.fromEntries(Catalog.ALL_KEYS.map((key) => [key, null])),
   news: [],
   sentiment: { score: 0, label: "Semleges" },
   selectedAsset: "bitcoin",
@@ -10,16 +9,11 @@ const state = {
   selectedIntradayInterval: 1,
   activeView: "overview",
   charts: {},
+  marketCharts: {},
   intradayChart: null,
   technicalCharts: {},
-  intraday: {
-    bitcoin: null,
-    gold: null,
-  },
-  multiTimeframe: {
-    bitcoin: {},
-    gold: {},
-  },
+  intraday: Object.fromEntries(Catalog.ALL_KEYS.map((key) => [key, null])),
+  multiTimeframe: Object.fromEntries(Catalog.ALL_KEYS.map((key) => [key, {}])),
   signalHistory: [],
   pendingSignals: {},
   timeframe: 30,
@@ -31,9 +25,10 @@ const state = {
   paperEquityChart: null,
   backtestChart: null,
   strategyLabResult: null,
+  botState: null,
+  botEquityChart: null,
   dataHealth: {
-    bitcoin: "pending",
-    gold: "pending",
+    ...Object.fromEntries(Catalog.ALL_KEYS.map((key) => [key, "pending"])),
     news: "pending",
     fx: "pending",
   },
@@ -41,6 +36,26 @@ const state = {
   intradayTimer: null,
   loadSequence: 0,
 };
+
+function getAssetMeta(assetKey) {
+  return Catalog.getAsset(assetKey);
+}
+
+function getAssetName(assetKey) {
+  return Catalog.getName(assetKey);
+}
+
+function getAssetDecimals(assetKey) {
+  return getAssetMeta(assetKey)?.priceDecimals ?? 2;
+}
+
+function isTradeableAsset(assetKey) {
+  return Catalog.ALL_KEYS.includes(assetKey);
+}
+
+function getLoadedAssetKeys() {
+  return Catalog.ALL_KEYS.filter((key) => state.assets[key]);
+}
 
 const endpoints = {
   goldSpot: "https://api.gold-api.com/price/XAU",
@@ -67,6 +82,7 @@ document.addEventListener("DOMContentLoaded", () => {
   state.alerts = loadLocalArray("aurum-alerts");
   state.signalHistory = loadLocalArray("aurum-signal-history");
   state.paperAccount = loadPaperAccount();
+  state.botState = window.VirtualBot?.loadBotState() || null;
   document.getElementById("year").textContent = new Date().getFullYear();
   document.getElementById("portfolioDate").valueAsDate = new Date();
   document.getElementById("refreshButton").addEventListener("click", loadDashboard);
@@ -88,8 +104,6 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("paperTarget").addEventListener("input", updatePaperOrderPreview);
   document.getElementById("paperUseSignalButton").addEventListener("click", useSignalForPaperOrder);
   document.getElementById("paperResetButton").addEventListener("click", resetPaperAccount);
-  document.getElementById("backtestForm").addEventListener("submit", runBacktest);
-  document.getElementById("backtestExportButton").addEventListener("click", exportBacktestCsv);
   ["riskCapital", "riskPercent", "riskEntry", "riskStop", "riskTarget"].forEach((id) => {
     document.getElementById(id).addEventListener("input", calculateRisk);
   });
@@ -114,13 +128,18 @@ document.addEventListener("DOMContentLoaded", () => {
     event.preventDefault();
     setActiveView("overview");
   });
+  initBotUi();
+  window.PracticeLab?.init?.();
   const initialView = [
     "overview",
     "bitcoin",
     "gold",
+    "markets",
     "news",
     "portfolio",
+    "practice",
     "simulator",
+    "strategy",
     "ai",
   ].includes(
     window.location.hash.slice(1),
@@ -132,6 +151,7 @@ document.addEventListener("DOMContentLoaded", () => {
   renderPortfolio();
   renderAlerts();
   renderPaperTrading();
+  renderBotTrading();
   updatePaperOrderForm();
   calculateRisk();
   loadDashboard();
@@ -154,7 +174,8 @@ async function loadDashboard() {
     const asset = state.assets[assetKey];
     if (!asset || !isCurrent()) return;
     asset.analysis = analyzeAsset(asset, assetSpecificSentiment(assetKey));
-    renderAsset(assetKey);
+    if (Catalog.isFeatured(assetKey)) renderAsset(assetKey);
+    renderMarketsGrid();
     renderIndicators(state.selectedAsset);
     renderTradingCenter();
     renderPortfolio();
@@ -163,91 +184,78 @@ async function loadDashboard() {
     revealMarket();
   };
 
-  const bitcoinTask = fetchBitcoin()
-    .then((asset) => {
-      if (!isCurrent()) return;
-      state.assets.bitcoin = asset;
-      state.dataHealth.bitcoin = "ok";
-      renderProgressiveAsset("bitcoin");
-      renderDataHealth();
-    })
-    .catch(() => {
-      if (!isCurrent()) return;
-      errors.push("A Bitcoin-adatok most nem érhetők el.");
-      state.dataHealth.bitcoin = "error";
-      if (!state.assets.bitcoin) renderUnavailableAsset("bitcoin");
-      renderDataHealth();
-    });
+  const loadAssetDaily = (assetKey) =>
+    Catalog.fetchDaily(assetKey, state.timeframe, state.settings, endpoints)
+      .then((asset) => {
+        if (!isCurrent()) return;
+        state.assets[assetKey] = asset;
+        state.dataHealth[assetKey] = asset.warning ? "warning" : "ok";
+        renderProgressiveAsset(assetKey);
+        renderDataHealth();
+      })
+      .catch(() => {
+        if (!isCurrent()) return;
+        const name = getAssetName(assetKey);
+        if (Catalog.isFeatured(assetKey)) errors.push(`A ${name}-adatok most nem érhetők el.`);
+        state.dataHealth[assetKey] = "error";
+        if (!state.assets[assetKey] && Catalog.isFeatured(assetKey)) renderUnavailableAsset(assetKey);
+        renderMarketsGrid();
+        renderDataHealth();
+      });
 
-  const bitcoinIntradayTask = fetchBitcoinIntraday()
-    .then((asset) => {
-      if (!isCurrent()) return;
-      state.intraday.bitcoin = asset;
-      renderTradingCenter();
-      updatePaperPositions("bitcoin");
-      revealMarket();
-    })
-    .catch(() => {
-      if (!isCurrent()) return;
-      if (!state.intraday.bitcoin) renderTradingCenter();
-    });
+  const loadAssetIntraday = (assetKey) =>
+    Catalog.fetchIntraday(
+      assetKey,
+      1,
+      state.settings,
+      formatIntervalShort,
+      formatIntervalLong,
+    )
+      .then((asset) => {
+        if (!isCurrent()) return;
+        if (asset) state.intraday[assetKey] = asset;
+        renderTradingCenter();
+        updatePaperPositions(assetKey);
+        runVirtualBotTick();
+        revealMarket();
+      })
+      .catch(() => {
+        if (!isCurrent()) return;
+        renderTradingCenter();
+      });
 
-  const bitcoinTimeframesTask = fetchAdditionalTimeframes("bitcoin")
-    .then((timeframes) => {
-      if (!isCurrent()) return;
-      state.multiTimeframe.bitcoin = timeframes;
-      renderTradingCenter();
-    })
-    .catch(() => {
-      // The 1-minute Bitcoin stream remains available as a fallback.
-    });
+  const loadAssetTimeframes = (assetKey) =>
+    Catalog.fetchAdditionalTimeframes(
+      assetKey,
+      state.settings,
+      formatIntervalShort,
+      formatIntervalLong,
+      endpoints,
+    )
+      .then((timeframes) => {
+        if (!isCurrent()) return;
+        state.multiTimeframe[assetKey] = timeframes;
+        renderTradingCenter();
+      })
+      .catch(() => {
+        // Optional timeframes may be unavailable for some sources.
+      });
 
-  const goldTask = fetchGold()
-    .then((asset) => {
-      if (!isCurrent()) return;
-      state.assets.gold = asset;
-      state.dataHealth.gold = asset.warning ? "warning" : "ok";
-      renderProgressiveAsset("gold");
-      renderDataHealth();
-    })
-    .catch(() => {
-      if (!isCurrent()) return;
-      errors.push("Az aranyadatok most nem érhetők el.");
-      state.dataHealth.gold = "error";
-      if (!state.assets.gold) renderUnavailableAsset("gold");
-      renderDataHealth();
-    });
-
-  const goldIntradayTask = fetchGoldIntraday()
-    .then((asset) => {
-      if (!isCurrent()) return;
-      state.intraday.gold = asset;
-      renderTradingCenter();
-      updatePaperPositions("gold");
-    })
-    .catch(() => {
-      if (!isCurrent()) return;
-      if (!state.intraday.gold) renderTradingCenter();
-    });
-
-  const goldTimeframesTask = fetchAdditionalTimeframes("gold")
-    .then((timeframes) => {
-      if (!isCurrent()) return;
-      state.multiTimeframe.gold = timeframes;
-      renderTradingCenter();
-    })
-    .catch(() => {
-      // Optional gold timeframes depend on the user's Twelve Data plan.
-    });
+  const assetTasks = Catalog.ALL_KEYS.flatMap((assetKey) => [
+    loadAssetDaily(assetKey),
+    loadAssetIntraday(assetKey),
+    loadAssetTimeframes(assetKey),
+  ]);
 
   const ratesTask = fetchExchangeRates()
     .then((rates) => {
       if (!isCurrent()) return;
       state.exchangeRates = { USD: 1, ...rates };
       state.dataHealth.fx = "ok";
-      ["bitcoin", "gold"].forEach((assetKey) => {
+      getLoadedAssetKeys().forEach((assetKey) => {
         if (state.assets[assetKey]) renderAsset(assetKey);
       });
+      renderMarketsGrid();
       renderTradingCenter();
       renderPortfolio();
       renderDataHealth();
@@ -267,7 +275,7 @@ async function loadDashboard() {
       state.news = articles;
       state.sentiment = analyzeSentiment(state.news);
       state.dataHealth.news = state.news.length ? "ok" : "warning";
-      ["bitcoin", "gold"].forEach((assetKey) => {
+      Catalog.ALL_KEYS.forEach((assetKey) => {
         if (state.assets[assetKey]) renderProgressiveAsset(assetKey);
       });
       renderSentiment();
@@ -283,17 +291,11 @@ async function loadDashboard() {
       renderDataHealth();
     });
 
-  await Promise.allSettled([
-    bitcoinTask,
-    bitcoinIntradayTask,
-    bitcoinTimeframesTask,
-    goldTask,
-    goldIntradayTask,
-    goldTimeframesTask,
-    ratesTask,
-    newsTask,
-  ]);
+  await Promise.allSettled([...assetTasks, ratesTask, newsTask]);
   if (!isCurrent()) return;
+
+  runVirtualBotTick();
+  renderBotTrading();
 
   if (errors.length) showError(errors.join(" "));
   document.getElementById("lastUpdated").textContent = new Intl.DateTimeFormat("hu-HU", {
@@ -335,30 +337,24 @@ async function fetchBitcoin() {
   return buildAsset("Bitcoin", points, points.at(-1).price);
 }
 
-async function fetchBitcoinIntraday(interval = 1) {
-  const data = await fetchJson(
-    `https://api.kraken.com/0/public/OHLC?pair=XBTUSD&interval=${interval}`,
-    12000,
+async function fetchAdditionalTimeframes(assetKey) {
+  return Catalog.fetchAdditionalTimeframes(
+    assetKey,
+    state.settings,
+    formatIntervalShort,
+    formatIntervalLong,
+    endpoints,
   );
-  if (data.error?.length) throw new Error(data.error.join(", "));
-  const series = Object.entries(data.result || {}).find(([key, value]) => {
-    return key !== "last" && Array.isArray(value);
-  })?.[1];
-  const candles = (series || [])
-    .slice(-720)
-    .map((item) => ({
-      time: Number(item[0]) * 1000,
-      open: Number(item[1]),
-      high: Number(item[2]),
-      low: Number(item[3]),
-      close: Number(item[4]),
-      volume: Number(item[6]),
-    }))
-    .filter(isValidCandle);
-  if (candles.length < 30) {
-    throw new Error(`Nincs elegendő ${formatIntervalLong(interval)} Bitcoin-adat`);
-  }
-  return buildIntradayAsset("Bitcoin", candles, `Kraken · ${formatIntervalShort(interval)}`, interval);
+}
+
+async function fetchBitcoinIntraday(interval = 1) {
+  return Catalog.fetchIntraday(
+    "bitcoin",
+    interval,
+    state.settings,
+    formatIntervalShort,
+    formatIntervalLong,
+  );
 }
 
 async function fetchGoldIntraday(interval = 1) {
@@ -408,17 +404,6 @@ function buildIntradayAsset(name, candles, source, interval = 1) {
     currentPrice: candles.at(-1).close,
     updatedAt: candles.at(-1).time,
   };
-}
-
-async function fetchAdditionalTimeframes(assetKey) {
-  const fetcher = assetKey === "bitcoin" ? fetchBitcoinIntraday : fetchGoldIntraday;
-  const intervals = [5, 15, 60];
-  const results = await Promise.allSettled(intervals.map((interval) => fetcher(interval)));
-  return Object.fromEntries(
-    results
-      .map((result, index) => [intervals[index], result.status === "fulfilled" ? result.value : null])
-      .filter(([, value]) => value),
-  );
 }
 
 function getIntradaySeries(assetKey, interval = state.selectedIntradayInterval) {
@@ -1048,8 +1033,8 @@ function analyzeSentiment(articles) {
 }
 
 function assetSpecificSentiment(assetKey) {
-  const keywords =
-    assetKey === "bitcoin" ? ["bitcoin", "crypto", "btc"] : ["gold", "bullion", "xau"];
+  const meta = getAssetMeta(assetKey);
+  const keywords = meta?.sentimentKeywords || [assetKey];
   const relevant = state.news.filter((article) => {
     const title = article.title.toLowerCase();
     return keywords.some((keyword) => title.includes(keyword));
@@ -1187,6 +1172,10 @@ function setActiveView(view, updateHash = true) {
     selectTradeAsset(view);
     selectIndicatorAsset(view);
   }
+  if (view === "markets" || view === "practice") {
+    renderMarketsGrid();
+    renderBotTrading();
+  }
   if (updateHash) window.history.replaceState(null, "", `#${view}`);
   window.scrollTo({ top: 0, behavior: "smooth" });
   requestAnimationFrame(() => {
@@ -1194,7 +1183,9 @@ function setActiveView(view, updateHash = true) {
     Object.values(state.charts).forEach((chart) => chart?.resize());
     Object.values(state.technicalCharts).forEach((chart) => chart?.resize());
     state.paperEquityChart?.resize();
+    state.botEquityChart?.resize();
     state.backtestChart?.resize();
+    window.StrategyLab?.resize?.();
   });
 }
 
@@ -1216,21 +1207,165 @@ function selectTradeAsset(assetKey) {
   renderTradingCenter();
 }
 
+function renderDecisionSwitcher() {
+  const container = document.getElementById("decisionAssetSwitcher");
+  if (!container) return;
+  const featuredButtons = container.querySelectorAll(".featured-asset");
+  featuredButtons.forEach((button) => {
+    button.classList.toggle("active", button.dataset.tradeAsset === state.selectedTradeAsset);
+  });
+  container.querySelectorAll("[data-trade-asset]:not(.featured-asset)").forEach((button) => {
+    button.remove();
+  });
+  Catalog.EXTENDED_KEYS.forEach((assetKey) => {
+    const meta = getAssetMeta(assetKey);
+    const button = document.createElement("button");
+    button.className = "decision-asset";
+    button.type = "button";
+    button.dataset.tradeAsset = assetKey;
+    button.innerHTML =
+      `<span><b>${meta.icon}</b> ${meta.shortName}</span>` +
+      `<strong id="decisionSignal-${assetKey}" class="neutral">Elemzés…</strong>`;
+    button.addEventListener("click", () => selectTradeAsset(assetKey));
+    button.classList.toggle("active", state.selectedTradeAsset === assetKey);
+    container.append(button);
+  });
+}
+
+function renderMarketCard(assetKey, target) {
+  const meta = getAssetMeta(assetKey);
+  const asset = state.assets[assetKey];
+  const decision = analyzeIntraday(assetKey);
+  const card = document.createElement("article");
+  card.className = `market-card ${meta.cardClass}`;
+  card.dataset.asset = assetKey;
+
+  const heading = document.createElement("div");
+  heading.className = "market-card-heading";
+  heading.innerHTML =
+    `<div class="asset-icon ${meta.iconClass}">${meta.icon}</div>` +
+    `<div><p>${meta.name}</p><span>${meta.pair}</span></div>`;
+  const change = document.createElement("span");
+  change.className = `change ${valueClass(asset?.change)}`;
+  change.textContent = asset?.change === null ? "–" : formatPercent(asset.change);
+  heading.append(change);
+  card.append(heading);
+
+  const priceRow = document.createElement("div");
+  priceRow.className = "market-price-row";
+  const price = document.createElement("strong");
+  price.textContent = asset
+    ? formatNumber(convertCurrency(asset.currentPrice), getAssetDecimals(assetKey))
+    : "Nem elérhető";
+  priceRow.append(price, document.createTextNode(` ${state.settings.currency}`));
+  card.append(priceRow);
+
+  const chartWrap = document.createElement("div");
+  chartWrap.className = "market-chart-wrap";
+  const canvas = document.createElement("canvas");
+  canvas.id = `marketChart-${assetKey}`;
+  chartWrap.append(canvas);
+  card.append(chartWrap);
+
+  const signalRow = document.createElement("div");
+  signalRow.className = "market-signal-row";
+  signalRow.innerHTML =
+    `<div><span>Jelzés</span><strong class="signal ${decision?.className || "neutral"}">${decision?.signal || "Nincs adat"}</strong></div>` +
+    `<div><span>Bizalom</span><strong>${decision?.confidence ?? "–"}${decision?.confidence ? "%" : ""}</strong></div>`;
+  card.append(signalRow);
+
+  const source = document.createElement("small");
+  source.className = "market-source";
+  source.textContent = state.intraday[assetKey]?.source || state.dataHealth[assetKey] || "–";
+  card.append(source);
+
+  const action = document.createElement("button");
+  action.className = "text-button";
+  action.type = "button";
+  action.textContent = "Részletek →";
+  action.addEventListener("click", () => {
+    selectTradeAsset(assetKey);
+    setActiveView("overview");
+  });
+  card.append(action);
+
+  target.append(card);
+
+  if (asset && typeof Chart !== "undefined") {
+    state.marketCharts[assetKey]?.destroy();
+    state.marketCharts[assetKey] = new Chart(canvas, {
+      type: "line",
+      data: {
+        labels: asset.points.map((point) =>
+          new Intl.DateTimeFormat("hu-HU", { month: "short", day: "numeric" }).format(point.time),
+        ),
+        datasets: [{
+          data: asset.prices.map(convertCurrency),
+          borderColor: meta.chartColor,
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: true,
+          backgroundColor: createGradient(canvas, meta.chartColor),
+          tension: 0.35,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { x: { display: false }, y: { display: false } },
+      },
+    });
+  }
+}
+
+function renderMarketsGrid() {
+  const grid = document.getElementById("marketsGrid");
+  const preview = document.getElementById("marketsPreviewGrid");
+  if (!grid && !preview) return;
+
+  if (grid) {
+    grid.replaceChildren();
+    Catalog.EXTENDED_KEYS.forEach((assetKey) => renderMarketCard(assetKey, grid));
+    if (!Catalog.EXTENDED_KEYS.some((key) => state.assets[key])) {
+      grid.append(Object.assign(document.createElement("span"), {
+        className: "helper-text",
+        textContent: "A további piacok betöltése folyamatban…",
+      }));
+    }
+  }
+
+  if (preview) {
+    preview.replaceChildren();
+    Catalog.EXTENDED_KEYS.slice(0, 3).forEach((assetKey) => {
+      const meta = getAssetMeta(assetKey);
+      const asset = state.assets[assetKey];
+      const decision = analyzeIntraday(assetKey);
+      const item = document.createElement("article");
+      item.className = "market-preview-card";
+      item.innerHTML =
+        `<span class="asset-icon ${meta.iconClass}">${meta.icon}</span>` +
+        `<div><strong>${meta.name}</strong><small>${asset ? `$${formatNumber(asset.currentPrice, getAssetDecimals(assetKey))}` : "Betöltés…"}</small></div>` +
+        `<span class="signal ${decision?.className || "neutral"}">${decision?.signal || "–"}</span>`;
+      item.addEventListener("click", () => setActiveView("markets"));
+      preview.append(item);
+    });
+  }
+}
+
 function renderTradingCenter() {
-  const decisions = {
-    bitcoin: analyzeIntraday("bitcoin"),
-    gold: analyzeIntraday("gold"),
-  };
-  updateDecisionShortcut("bitcoin", decisions.bitcoin);
-  updateDecisionShortcut("gold", decisions.gold);
+  renderDecisionSwitcher();
+  const decisions = Object.fromEntries(
+    Catalog.ALL_KEYS.map((assetKey) => [assetKey, analyzeIntraday(assetKey)]),
+  );
+  Catalog.ALL_KEYS.forEach((assetKey) => updateDecisionShortcut(assetKey, decisions[assetKey]));
   if (state.selectedIntradayInterval === 1) {
-    trackSignalChange("bitcoin", decisions.bitcoin);
-    trackSignalChange("gold", decisions.gold);
+    Catalog.ALL_KEYS.forEach((assetKey) => trackSignalChange(assetKey, decisions[assetKey]));
   }
 
   const assetKey = state.selectedTradeAsset;
-  const decision = decisions[assetKey];
-  const name = assetKey === "bitcoin" ? "Bitcoin" : "Arany";
+  const decision = decisions[assetKey] || analyzeIntraday(assetKey);
+  const name = getAssetName(assetKey);
   const interval = state.selectedIntradayInterval;
   const selectedSeries = getIntradaySeries(assetKey, interval);
   const status = document.getElementById("intradayStatus");
@@ -1316,16 +1451,16 @@ function renderTradingCenter() {
   empty.querySelector("span").textContent =
     assetKey === "gold"
       ? "Az arany több idősíkú nézetéhez megfelelő Twelve Data csomag szükséges."
-      : "Ez az idősík átmenetileg nem érhető el.";
+      : getAssetMeta(assetKey)?.dataType === "yahoo"
+        ? "A Yahoo Finance adatforrás átmenetileg nem elérhető."
+        : "Ez az idősík átmenetileg nem érhető el.";
   canvas.hidden = !decision.hasIntraday;
   renderIntradayChart(assetKey, decision.hasIntraday ? selectedSeries : null);
   renderTechnicalCharts(assetKey, decision.hasIntraday ? selectedSeries : null);
 }
 
 function updateDecisionShortcut(assetKey, decision) {
-  const element = document.getElementById(
-    assetKey === "bitcoin" ? "decisionBtcSignal" : "decisionGoldSignal",
-  );
+  const element = document.getElementById(`decisionSignal-${assetKey}`);
   if (!element) return;
   element.textContent = decision?.signal || "Nincs adat";
   element.className = decision?.className || "neutral";
@@ -1377,7 +1512,7 @@ function addSignalHistoryEntry(assetKey, decision, shouldNotify) {
   saveLocalArray("aurum-signal-history", state.signalHistory);
   renderSignalHistory(state.selectedTradeAsset);
   if (shouldNotify && "Notification" in window && Notification.permission === "granted") {
-    const assetName = assetKey === "bitcoin" ? "Bitcoin" : "Arany";
+    const assetName = getAssetName(assetKey);
     new Notification(`${assetName}: ${decision.signal}`, {
       body: `${decision.confidence}% bizalom · ${decision.alignment.text}`,
     });
@@ -1428,7 +1563,7 @@ function renderIntradayChart(assetKey, intraday) {
   const ema21 = exponentialMovingAverageSeries(closes, 21).map((value) =>
     value === null ? null : convertCurrency(value),
   );
-  const priceColor = assetKey === "bitcoin" ? "#e2863b" : "#b98a35";
+  const priceColor = getAssetMeta(assetKey)?.chartColor || "#6f7771";
   const labels = candles.map((candle) =>
     new Intl.DateTimeFormat("hu-HU", {
       hour: "2-digit",
@@ -1610,13 +1745,28 @@ function renderTechnicalCharts(assetKey, intraday) {
   });
 }
 
-async function refreshBitcoinIntraday() {
-  try {
-    state.intraday.bitcoin = await fetchBitcoinIntraday();
-    if (state.selectedTradeAsset === "bitcoin") renderTradingCenter();
-  } catch {
-    // Keep the last valid intraday series during a temporary source failure.
-  }
+async function refreshLiveIntraday() {
+  const refreshKeys = new Set(["bitcoin", ...(state.botState?.config?.assets || [])]);
+  await Promise.allSettled(
+    [...refreshKeys].map(async (assetKey) => {
+      try {
+        const asset = await Catalog.fetchIntraday(
+          assetKey,
+          1,
+          state.settings,
+          formatIntervalShort,
+          formatIntervalLong,
+        );
+        if (asset) state.intraday[assetKey] = asset;
+        updatePaperPositions(assetKey);
+      } catch {
+        // Keep the last valid intraday series during a temporary source failure.
+      }
+    }),
+  );
+  renderTradingCenter();
+  runVirtualBotTick();
+  renderBotTrading();
 }
 
 function renderIndicators(assetKey) {
@@ -1874,7 +2024,7 @@ function applySettings() {
   if (state.settings.refreshMinutes > 0) {
     state.refreshTimer = setInterval(loadDashboard, state.settings.refreshMinutes * 60000);
   }
-  state.intradayTimer = setInterval(refreshBitcoinIntraday, 60000);
+  state.intradayTimer = setInterval(refreshLiveIntraday, 60000);
 }
 
 function openSettings() {
@@ -1969,7 +2119,7 @@ function renderPortfolio() {
 
     const row = document.createElement("tr");
     const cells = [
-      entry.asset === "bitcoin" ? "Bitcoin" : "Arany",
+      getAssetName(entry.asset),
       formatNumber(entry.quantity, 6),
       `$${formatNumber(entry.buyPrice, 2)}`,
       value === null ? "Nincs adat" : formatMoney(convertCurrency(value - cost)),
@@ -2026,7 +2176,9 @@ function updatePaperOrderForm(forceLevels = false) {
   const direction = document.getElementById("paperDirection").value;
   const entry = getPaperCurrentPrice(assetKey);
   const entryInput = document.getElementById("paperEntry");
-  entryInput.value = Number.isFinite(entry) ? entry.toFixed(assetKey === "bitcoin" ? 2 : 3) : "";
+  entryInput.value = Number.isFinite(entry)
+    ? entry.toFixed(getAssetDecimals(assetKey))
+    : "";
   const intraday = state.intraday[assetKey];
   const atr = intraday ? calculateAtr(intraday.candles, 14) : null;
   const fallbackDistance = Number.isFinite(entry) ? entry * 0.01 : null;
@@ -2035,12 +2187,12 @@ function updatePaperOrderForm(forceLevels = false) {
   const targetInput = document.getElementById("paperTarget");
   if (Number.isFinite(entry) && distance && (forceLevels || !(Number(stopInput.value) > 0))) {
     stopInput.value = (entry + (direction === "long" ? -distance : distance)).toFixed(
-      assetKey === "bitcoin" ? 2 : 3,
+      getAssetDecimals(assetKey),
     );
   }
   if (Number.isFinite(entry) && distance && (forceLevels || !(Number(targetInput.value) > 0))) {
     targetInput.value = (entry + (direction === "long" ? distance * 2 : -distance * 2)).toFixed(
-      assetKey === "bitcoin" ? 2 : 3,
+      getAssetDecimals(assetKey),
     );
   }
   updatePaperOrderPreview();
@@ -2316,7 +2468,7 @@ function renderPaperPositions() {
       : null;
     const row = document.createElement("tr");
     [
-      position.asset === "bitcoin" ? "Bitcoin" : "Arany",
+      getAssetName(position.asset),
       position.direction.toUpperCase(),
       formatNumber(position.quantity, 6),
       `$${formatNumber(position.entry, 2)}`,
@@ -2353,7 +2505,7 @@ function renderPaperTrades() {
     const row = document.createElement("tr");
     [
       new Intl.DateTimeFormat("hu-HU", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(trade.closedAt),
-      trade.asset === "bitcoin" ? "Bitcoin" : "Arany",
+      getAssetName(trade.asset),
       trade.direction.toUpperCase(),
       `$${formatNumber(trade.entry, 2)}`,
       `$${formatNumber(trade.exit, 2)}`,
@@ -2417,6 +2569,262 @@ function paperChartOptions(prefix = "") {
       },
     },
   };
+}
+
+function getBotContext() {
+  return {
+    assets: state.assets,
+    intraday: state.intraday,
+    analyzeIntraday,
+  };
+}
+
+function runVirtualBotTick() {
+  if (!state.botState || !window.VirtualBot) return;
+  window.VirtualBot.tick(state.botState, getBotContext());
+}
+
+function initBotUi() {
+  if (!state.botState || !window.VirtualBot) return;
+  const checks = document.getElementById("botAssetChecks");
+  if (checks) {
+    checks.replaceChildren(
+      ...Catalog.ALL_KEYS.map((assetKey) => {
+        const meta = getAssetMeta(assetKey);
+        const label = document.createElement("label");
+        label.className = "check-label";
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.value = assetKey;
+        input.checked = state.botState.config.assets.includes(assetKey);
+        label.append(input, document.createTextNode(` ${meta.name}`));
+        return label;
+      }),
+    );
+  }
+  document.getElementById("botEnabled")?.addEventListener("change", (event) => {
+    state.botState.config.enabled = event.target.checked;
+    window.VirtualBot.saveBotState(state.botState);
+    renderBotTrading();
+    if (state.botState.config.enabled) runVirtualBotTick();
+  });
+  document.getElementById("botSaveConfig")?.addEventListener("click", saveBotConfig);
+  document.getElementById("botResetButton")?.addEventListener("click", resetBotAccount);
+  syncBotConfigForm();
+  renderBotTrading();
+}
+
+function syncBotConfigForm() {
+  if (!state.botState) return;
+  const config = state.botState.config;
+  const setValue = (id, value) => {
+    const element = document.getElementById(id);
+    if (element) element.value = value;
+  };
+  setValue("botInitialCapital", config.initialCapital);
+  setValue("botRiskPercent", config.riskPercent);
+  setValue("botMinConfidence", config.minConfidence);
+  setValue("botMaxPositions", config.maxPositions);
+  setValue("botCooldown", config.cooldownMinutes);
+  const autoClose = document.getElementById("botAutoClose");
+  if (autoClose) autoClose.checked = config.autoCloseOnReversal;
+  const enabled = document.getElementById("botEnabled");
+  if (enabled) enabled.checked = config.enabled;
+  document.querySelectorAll("#botAssetChecks input").forEach((input) => {
+    input.checked = config.assets.includes(input.value);
+  });
+}
+
+function saveBotConfig() {
+  if (!state.botState) return;
+  const selectedAssets = [...document.querySelectorAll("#botAssetChecks input:checked")].map(
+    (input) => input.value,
+  );
+  state.botState.config = {
+    ...state.botState.config,
+    enabled: document.getElementById("botEnabled")?.checked || false,
+    initialCapital: Number(document.getElementById("botInitialCapital")?.value) || 10000,
+    riskPercent: Number(document.getElementById("botRiskPercent")?.value) || 1,
+    minConfidence: Number(document.getElementById("botMinConfidence")?.value) || 55,
+    maxPositions: Number(document.getElementById("botMaxPositions")?.value) || 4,
+    cooldownMinutes: Number(document.getElementById("botCooldown")?.value) || 20,
+    autoCloseOnReversal: document.getElementById("botAutoClose")?.checked ?? true,
+    assets: selectedAssets.length ? selectedAssets : ["bitcoin"],
+  };
+  window.VirtualBot.saveBotState(state.botState);
+  renderBotTrading();
+  showToast("Bot beállítások elmentve.");
+  if (state.botState.config.enabled) runVirtualBotTick();
+}
+
+function resetBotAccount() {
+  if (!window.confirm("Biztosan törlöd a bot összes pozícióját és ügyletét?")) return;
+  const config = {
+    ...state.botState.config,
+    initialCapital: Number(document.getElementById("botInitialCapital")?.value) || 10000,
+  };
+  state.botState = window.VirtualBot.resetBot(config);
+  syncBotConfigForm();
+  renderBotTrading();
+  showToast("A virtuális bot újraindult.");
+}
+
+function renderBotTrading() {
+  if (!state.botState || !window.VirtualBot) return;
+  const metrics = window.VirtualBot.getMetrics(state.botState, getBotContext());
+  setMetricValue("botEquity", `$${formatNumber(metrics.equity, 2)}`, metrics.equity - state.botState.initialCapital);
+  setMetricValue("botRealizedPnl", formatSignedUsd(metrics.realizedPnl), metrics.realizedPnl);
+  setMetricValue("botOpenPnl", formatSignedUsd(metrics.openPnl), metrics.openPnl);
+  document.getElementById("botWinRate").textContent =
+    metrics.winRate === null ? "–" : `${formatNumber(metrics.winRate, 1)}%`;
+  document.getElementById("botProfitFactor").textContent =
+    metrics.profitFactor === null
+      ? "–"
+      : metrics.profitFactor === Infinity
+        ? "∞"
+        : formatNumber(metrics.profitFactor, 2);
+  document.getElementById("botDrawdown").textContent = `${formatNumber(metrics.maxDrawdown, 2)}%`;
+  document.getElementById("botOpenCount").textContent = `${metrics.openCount} pozíció`;
+
+  const status = document.getElementById("botStatus");
+  if (status) {
+    status.textContent = state.botState.config.enabled
+      ? `Bot aktív · ${metrics.tradeCount} lezárt ügylet · utolsó tick: ${
+          state.botState.lastTickAt
+            ? new Intl.DateTimeFormat("hu-HU", { hour: "2-digit", minute: "2-digit" }).format(
+                state.botState.lastTickAt,
+              )
+            : "most"
+        }`
+      : "Bot kikapcsolva – kapcsold be a automatikus papírkereskedéshez.";
+    status.className = `bot-status ${state.botState.config.enabled ? "live" : ""}`;
+  }
+
+  renderBotPositions();
+  renderBotTrades();
+  renderBotSuggestions();
+  renderBotActivity();
+  renderBotEquityChart();
+}
+
+function renderBotPositions() {
+  const table = document.getElementById("botPositionsTable");
+  if (!table) return;
+  table.replaceChildren();
+  if (!state.botState.positions.length) {
+    appendEmptyTableRow(table, 7, "Nincs nyitott bot-pozíció.");
+    return;
+  }
+  state.botState.positions.forEach((position) => {
+    const price = window.VirtualBot.getCurrentPrice(position.asset, getBotContext());
+    const multiplier = position.direction === "long" ? 1 : -1;
+    const pnl = Number.isFinite(price)
+      ? (price - position.entry) * position.quantity * multiplier
+      : null;
+    const row = document.createElement("tr");
+    [
+      getAssetName(position.asset),
+      position.direction.toUpperCase(),
+      `$${formatNumber(position.entry, getAssetDecimals(position.asset))}`,
+      `$${formatNumber(position.stop, getAssetDecimals(position.asset))}`,
+      `$${formatNumber(position.target, getAssetDecimals(position.asset))}`,
+      pnl === null ? "–" : formatSignedUsd(pnl),
+      position.signal || "–",
+    ].forEach((text, index) => {
+      const cell = document.createElement("td");
+      cell.textContent = text;
+      if (index === 5 && pnl !== null) cell.className = valueClass(pnl);
+      row.append(cell);
+    });
+    table.append(row);
+  });
+}
+
+function renderBotTrades() {
+  const table = document.getElementById("botTradesTable");
+  if (!table) return;
+  table.replaceChildren();
+  if (!state.botState.trades.length) {
+    appendEmptyTableRow(table, 8, "Még nincs bot-ügylet.");
+    return;
+  }
+  state.botState.trades.slice(0, 40).forEach((trade) => {
+    const row = document.createElement("tr");
+    const why = (trade.analysis || []).join(" ");
+    [
+      new Intl.DateTimeFormat("hu-HU", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(trade.closedAt),
+      getAssetName(trade.asset),
+      trade.direction.toUpperCase(),
+      `$${formatNumber(trade.entry, getAssetDecimals(trade.asset))}`,
+      `$${formatNumber(trade.exit, getAssetDecimals(trade.asset))}`,
+      trade.reason,
+      why || "–",
+      formatSignedUsd(trade.pnl),
+    ].forEach((text, index) => {
+      const cell = document.createElement("td");
+      cell.textContent = text;
+      if (index === 7) cell.className = valueClass(trade.pnl);
+      row.append(cell);
+    });
+    table.append(row);
+  });
+}
+
+function renderBotSuggestions() {
+  const list = document.getElementById("botSuggestions");
+  if (!list || !window.VirtualBot) return;
+  const suggestions = window.VirtualBot.buildSuggestions(state.botState, getBotContext());
+  list.replaceChildren(
+    ...suggestions.map((item) => {
+      const li = document.createElement("li");
+      li.className = `bot-suggestion ${item.severity}`;
+      li.innerHTML = `<strong>${item.title}</strong><span>${item.detail}</span>`;
+      return li;
+    }),
+  );
+}
+
+function renderBotActivity() {
+  const log = document.getElementById("botActivityLog");
+  if (!log) return;
+  log.replaceChildren();
+  if (!state.botState.activityLog.length) {
+    log.append(Object.assign(document.createElement("span"), { textContent: "Még nincs esemény." }));
+    return;
+  }
+  state.botState.activityLog.slice(0, 20).forEach((entry) => {
+    const item = document.createElement("div");
+    item.className = "bot-activity-item";
+    item.innerHTML =
+      `<time>${new Intl.DateTimeFormat("hu-HU", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(entry.time)}</time>` +
+      `<span>${entry.message}</span>`;
+    log.append(item);
+  });
+}
+
+function renderBotEquityChart() {
+  state.botEquityChart?.destroy();
+  if (typeof Chart === "undefined") return;
+  const canvas = document.getElementById("botEquityChart");
+  if (!canvas) return;
+  const points = state.botState.equityHistory;
+  state.botEquityChart = new Chart(canvas, {
+    type: "line",
+    data: {
+      labels: points.map((point) =>
+        new Intl.DateTimeFormat("hu-HU", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(point.time),
+      ),
+      datasets: [{
+        data: points.map((point) => point.equity),
+        borderColor: "#2f5d50",
+        backgroundColor: "rgba(47, 93, 80, 0.12)",
+        fill: true,
+        tension: 0.3,
+        pointRadius: 0,
+      }],
+    },
+    options: paperChartOptions(),
+  });
 }
 
 function resetPaperAccount() {
@@ -2985,7 +3393,7 @@ function renderAlerts() {
     const item = document.createElement("div");
     item.className = "alert-item";
     const text = document.createElement("span");
-    const assetName = alert.asset === "bitcoin" ? "Bitcoin" : "Arany";
+    const assetName = getAssetName(alert.asset);
     text.textContent = `${assetName}: ${alert.direction === "above" ? "fölötte" : "alatta"} $${formatNumber(alert.price, 2)}${alert.triggered ? " ✓ teljesült" : ""}`;
     const removeButton = document.createElement("button");
     removeButton.className = "delete-button";
@@ -3022,7 +3430,7 @@ function checkAlerts() {
     if (!triggered) return;
     alert.triggered = true;
     changed = true;
-    const assetName = alert.asset === "bitcoin" ? "Bitcoin" : "Arany";
+    const assetName = getAssetName(alert.asset);
     const message = `${assetName}: $${formatNumber(currentPrice, 2)} – a figyelt árszint teljesült.`;
     showToast(message);
     if ("Notification" in window && Notification.permission === "granted") {
@@ -3081,7 +3489,7 @@ function buildAnalysisPrompt() {
       `algoritmikus jelzés: ${analysis.signal} (${analysis.confidence}% becsült bizalom)`,
     ].join(", ");
   });
-  const intradayLines = ["bitcoin", "gold"].map((key) => {
+  const intradayLines = Catalog.ALL_KEYS.map((key) => {
     const decision = analyzeIntraday(key);
     if (!decision) return `${key} intraday: nincs adat`;
     return [
