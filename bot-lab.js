@@ -11,11 +11,11 @@
 
   const CONFIG_FIELDS = [
     { id: "botInitialCapital", key: "initialCapital", type: "number" },
-    { id: "botRiskPercent", key: "riskPercent", type: "number" },
-    { id: "botMinConfidence", key: "minConfidence", type: "number" },
-    { id: "botMaxPositions", key: "maxPositions", type: "number" },
-    { id: "botCooldown", key: "cooldownMinutes", type: "number" },
-    { id: "botPrimaryInterval", key: "primaryInterval", type: "number" },
+    { id: "botRiskPercent", key: "riskPercent", type: "range", decimals: 1 },
+    { id: "botMinConfidence", key: "minConfidence", type: "range", decimals: 0 },
+    { id: "botMaxPositions", key: "maxPositions", type: "range", decimals: 0 },
+    { id: "botCooldown", key: "cooldownMinutes", type: "range", decimals: 0 },
+    { id: "botPrimaryInterval", key: "primaryInterval", type: "select" },
     { id: "botDirection", key: "direction", type: "select" },
     { id: "botFastEma", key: "fastEma", type: "number" },
     { id: "botSlowEma", key: "slowEma", type: "number" },
@@ -27,13 +27,13 @@
     { id: "botRsiOverbought", key: "rsiOverbought", type: "number" },
     { id: "botRsiOversold", key: "rsiOversold", type: "number" },
     { id: "botMomentumLookback", key: "momentumLookback", type: "number" },
-    { id: "botMomentumThreshold", key: "momentumThreshold", type: "number" },
-    { id: "botSignalScore", key: "signalScoreThreshold", type: "number" },
-    { id: "botMinAlignmentRatio", key: "minAlignmentRatio", type: "number" },
+    { id: "botMomentumThreshold", key: "momentumThreshold", type: "range", decimals: 2 },
+    { id: "botSignalScore", key: "signalScoreThreshold", type: "range", decimals: 2 },
+    { id: "botMinAlignmentRatio", key: "minAlignmentRatio", type: "range", decimals: 0, displayScale: 100 },
     { id: "botMinAlignedTimeframes", key: "minAlignedTimeframes", type: "number" },
     { id: "botAtrPeriod", key: "atrPeriod", type: "number" },
-    { id: "botAtrStopMultiplier", key: "atrStopMultiplier", type: "number" },
-    { id: "botRewardRatio", key: "rewardRatio", type: "number" },
+    { id: "botAtrStopMultiplier", key: "atrStopMultiplier", type: "range", decimals: 2 },
+    { id: "botRewardRatio", key: "rewardRatio", type: "range", decimals: 2 },
     { id: "botFeePercent", key: "feePercent", type: "number" },
     { id: "botSpreadPercent", key: "spreadPercent", type: "number" },
     { id: "botSlippagePercent", key: "slippagePercent", type: "number" },
@@ -76,6 +76,29 @@
     return bridge?.getBotContext?.() || {};
   }
 
+  function formatSliderDisplay(field, value) {
+    const scale = field.displayScale || 1;
+    const scaled = value * scale;
+    if (field.decimals === 0) return String(Math.round(scaled));
+    return scaled.toFixed(field.decimals ?? 2);
+  }
+
+  function updateSliderOutput(field) {
+    const element = document.getElementById(field.id);
+    const output = document.getElementById(`${field.id}Out`);
+    if (!element || !output) return;
+    output.textContent = formatSliderDisplay(field, Number(element.value));
+  }
+
+  function bindSliderOutputs() {
+    CONFIG_FIELDS.filter((field) => field.type === "range").forEach((field) => {
+      const element = document.getElementById(field.id);
+      if (!element || element.dataset.sliderBound) return;
+      element.dataset.sliderBound = "1";
+      element.addEventListener("input", () => updateSliderOutput(field));
+    });
+  }
+
   function bindEvents() {
     const checks = document.getElementById("botAssetChecks");
     if (checks) {
@@ -83,15 +106,19 @@
         ...Catalog.ALL_KEYS.map((assetKey) => {
           const meta = Catalog.getAsset(assetKey);
           const label = document.createElement("label");
-          label.className = `check-label${meta.featured ? " featured-asset-check" : ""}`;
+          label.className = `toggle-chip${meta.featured ? " featured-asset-check" : ""}`;
           const input = document.createElement("input");
           input.type = "checkbox";
           input.value = assetKey;
-          label.append(input, document.createTextNode(` ${meta.name}`));
+          const text = document.createElement("span");
+          text.textContent = meta.name;
+          label.append(input, text);
           return label;
         }),
       );
     }
+
+    bindSliderOutputs();
 
     document.getElementById("botEnabled")?.addEventListener("change", (event) => {
       const botState = getBotState();
@@ -157,9 +184,11 @@
     CONFIG_FIELDS.forEach(({ id, key, type }) => {
       const element = document.getElementById(id);
       if (!element) return;
-      if (type === "number") element.value = config[key];
+      if (type === "number" || type === "range") element.value = config[key];
       else element.value = config[key];
     });
+
+    CONFIG_FIELDS.filter((field) => field.type === "range").forEach(updateSliderOutput);
 
     CHECKBOX_FIELDS.forEach(({ id, key }) => {
       const element = document.getElementById(id);
@@ -185,7 +214,11 @@
     CONFIG_FIELDS.forEach(({ id, key, type }) => {
       const element = document.getElementById(id);
       if (!element) return;
-      next[key] = type === "number" ? Number(element.value) : element.value;
+      if (type === "number" || type === "range" || key === "primaryInterval") {
+        next[key] = Number(element.value);
+      } else {
+        next[key] = element.value;
+      }
     });
 
     CHECKBOX_FIELDS.forEach(({ id, key }) => {
