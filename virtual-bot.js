@@ -2,6 +2,8 @@
   "use strict";
 
   const STORAGE_KEY = "aurum-virtual-bot";
+  const STORAGE_KEY_TRADES_BACKUP = "aurum-virtual-bot-trades-backup";
+  const STORAGE_KEY_LEARNING_BACKUP = "aurum-virtual-bot-learning-backup";
 
   const PARAM_BOUNDS = {
     minConfidence: { min: 40, max: 90, step: 5 },
@@ -187,19 +189,76 @@
     };
   }
 
+  function backupPersistentData(botState) {
+    if (!botState) return;
+    try {
+      if (Array.isArray(botState.trades) && botState.trades.length) {
+        localStorage.setItem(STORAGE_KEY_TRADES_BACKUP, JSON.stringify(botState.trades));
+      }
+      const learningPayload = {
+        learningHistory: botState.learningHistory || [],
+        configChangeLog: botState.configChangeLog || [],
+        activityLog: botState.activityLog || [],
+        equityHistory: botState.equityHistory || [],
+      };
+      if (
+        learningPayload.learningHistory.length ||
+        learningPayload.configChangeLog.length ||
+        learningPayload.equityHistory.length > 1
+      ) {
+        localStorage.setItem(STORAGE_KEY_LEARNING_BACKUP, JSON.stringify(learningPayload));
+      }
+    } catch {
+      // Ignore storage failures.
+    }
+  }
+
+  function restorePersistentDataFallback(saved) {
+    if (!saved || typeof saved !== "object") return saved;
+    try {
+      if (!Array.isArray(saved.trades) || !saved.trades.length) {
+        const backupTrades = JSON.parse(localStorage.getItem(STORAGE_KEY_TRADES_BACKUP) || "[]");
+        if (Array.isArray(backupTrades) && backupTrades.length) {
+          saved.trades = backupTrades;
+        }
+      }
+      const backupLearning = JSON.parse(localStorage.getItem(STORAGE_KEY_LEARNING_BACKUP) || "null");
+      if (backupLearning && typeof backupLearning === "object") {
+        if (!saved.learningHistory?.length && backupLearning.learningHistory?.length) {
+          saved.learningHistory = backupLearning.learningHistory;
+        }
+        if (!saved.configChangeLog?.length && backupLearning.configChangeLog?.length) {
+          saved.configChangeLog = backupLearning.configChangeLog;
+        }
+        if (!saved.activityLog?.length && backupLearning.activityLog?.length) {
+          saved.activityLog = backupLearning.activityLog;
+        }
+        if (
+          (!Array.isArray(saved.equityHistory) || saved.equityHistory.length <= 1) &&
+          backupLearning.equityHistory?.length > 1
+        ) {
+          saved.equityHistory = backupLearning.equityHistory;
+        }
+      }
+    } catch {
+      // Ignore restore failures.
+    }
+    return saved;
+  }
+
   function loadBotState(fxContext = null) {
     try {
-      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
-      if (
-        !saved ||
-        !Number.isFinite(saved.initialCapital) ||
-        !Number.isFinite(saved.cash) ||
-        !Array.isArray(saved.positions) ||
-        !Array.isArray(saved.trades)
-      ) {
+      let saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+      if (!saved || typeof saved !== "object") {
+        return createBotState();
+      }
+      saved = restorePersistentDataFallback(saved);
+      if (!Number.isFinite(saved.initialCapital) || !Number.isFinite(saved.cash)) {
         return createBotState();
       }
       saved.config = { ...DEFAULT_CONFIG, ...saved.config };
+      saved.positions = Array.isArray(saved.positions) ? saved.positions : [];
+      saved.trades = Array.isArray(saved.trades) ? saved.trades : [];
       saved.equityHistory = Array.isArray(saved.equityHistory) ? saved.equityHistory : [];
       saved.activityLog = Array.isArray(saved.activityLog) ? saved.activityLog : [];
       saved.learningHistory = Array.isArray(saved.learningHistory) ? saved.learningHistory : [];
@@ -215,6 +274,54 @@
     } catch {
       return createBotState();
     }
+  }
+
+  function recalculateCashFromTrades(botState) {
+    if (!botState) return false;
+    const tradePnl = (botState.trades || []).reduce(
+      (sum, trade) => sum + (Number.isFinite(trade.pnl) ? trade.pnl : 0),
+      0,
+    );
+    botState.cash = botState.initialCapital + tradePnl;
+    if (botState.cash < 0) botState.cash = 0;
+    return true;
+  }
+
+  function syncCapitalBalanceOnly(botState, options = {}) {
+    if (!botState?.config) return false;
+    const newCapital = options.newCapital ?? botState.config.initialCapital;
+    if (!Number.isFinite(newCapital) || newCapital < 100) return false;
+
+    const fromCapital = botState.cash;
+    botState.initialCapital = newCapital;
+    if (botState.config) botState.config.initialCapital = newCapital;
+
+    const hasHistory = botState.trades.length > 0 || botState.positions.length > 0;
+    if (hasHistory) {
+      recalculateCashFromTrades(botState);
+    } else {
+      botState.cash = newCapital;
+      const now = Date.now();
+      botState.equityHistory = [{ time: now, equity: newCapital }];
+    }
+
+    if (!options.skipLog) {
+      logConfigChanges(
+        botState,
+        options.source || "beállítás",
+        [
+          {
+            key: "initialCapital",
+            from: fromCapital,
+            to: botState.cash,
+            reason: options.reason || "Egyenleg szinkronizálva – ügylet- és tanulási előzmények megmaradtak",
+          },
+        ],
+      );
+    } else {
+      saveBotState(botState);
+    }
+    return true;
   }
 
   function applyCapitalFromConfig(botState, options = {}) {
@@ -249,6 +356,10 @@
       saveBotState(botState);
     }
     return true;
+  }
+
+  function resetCapitalAccount(botState, options = {}) {
+    return applyCapitalFromConfig(botState, options);
   }
 
   function needsFxForCurrency(currency) {
@@ -365,12 +476,65 @@
     botState.initialCapital = configCapital;
     botState.cash = configCapital;
     const now = Date.now();
-    botState.equityHistory = [{ time: now, equity: configCapital }];
+    if (!botState.equityHistory?.length) {
+      botState.equityHistory = [{ time: now, equity: configCapital }];
+    } else {
+      botState.equityHistory.push({ time: now, equity: configCapital });
+      botState.equityHistory = botState.equityHistory.slice(-500);
+    }
     logAutoBalanceFix(
       botState,
       "Tétlen számla egyenlege visszaállítva a mentett kezdőtőkére",
       fromCapital,
       configCapital,
+    );
+    return true;
+  }
+
+  function fixHufConversionIssue(botState, hufIssue) {
+    const fromCapital = botState.cash;
+    if (hufIssue.field === "config") {
+      botState.config.initialCapital = hufIssue.corrected;
+    }
+    if (hufIssue.field === "initialCapital" || hufIssue.field === "config") {
+      botState.initialCapital = hufIssue.corrected;
+    }
+    if (hufIssue.field === "cash") {
+      botState.cash = hufIssue.corrected;
+    }
+
+    const hasHistory = botState.trades.length > 0 || botState.positions.length > 0;
+    if (hasHistory) {
+      if (hufIssue.field !== "cash") {
+        botState.initialCapital = botState.config.initialCapital;
+        recalculateCashFromTrades(botState);
+      }
+    } else {
+      botState.initialCapital = botState.config.initialCapital;
+      botState.cash = botState.config.initialCapital;
+    }
+
+    logAutoBalanceFix(
+      botState,
+      `HUF/USD átváltási hiba javítva (${Math.round(hufIssue.from).toLocaleString("hu-HU")} → belső ${Math.round(hufIssue.corrected)} USD) – ügylet-előzmények megmaradtak`,
+      fromCapital,
+      botState.cash,
+    );
+    return true;
+  }
+
+  function fixRunawayBalance(botState) {
+    const fromCapital = botState.cash;
+    recalculateCashFromTrades(botState);
+    const maxCash = getMaxAllowedEquity(botState);
+    if (botState.cash > maxCash + 0.01) {
+      botState.cash = maxCash;
+    }
+    logAutoBalanceFix(
+      botState,
+      "Inflált készpénz egyenleg korrigálva – ügylet- és tanulási előzmények megmaradtak",
+      fromCapital,
+      botState.cash,
     );
     return true;
   }
@@ -389,22 +553,7 @@
     const hufIssue = scanUnconvertedHufFields(botState, currency, hufRate);
 
     if (hufIssue) {
-      const fromCapital = botState.cash;
-      if (hufIssue.field === "config") {
-        botState.config.initialCapital = hufIssue.corrected;
-      }
-      applyCapitalFromConfig(botState, {
-        source: "beállítás",
-        reason:
-          "Javítva: a tőke valószínűleg HUF-ként került USD-ként mentésre (hiányzó árfolyam)",
-        skipLog: true,
-      });
-      logAutoBalanceFix(
-        botState,
-        `HUF/USD átváltási hiba javítva (${Math.round(hufIssue.from).toLocaleString("hu-HU")} → belső ${Math.round(hufIssue.corrected)} USD)`,
-        fromCapital,
-        botState.config.initialCapital,
-      );
+      fixHufConversionIssue(botState, hufIssue);
       return { repaired: true, botState };
     }
 
@@ -415,18 +564,7 @@
     }
 
     if (hasRunawayBalance(botState)) {
-      const fromCapital = botState.cash;
-      applyCapitalFromConfig(botState, {
-        source: "beállítás",
-        reason: "Javítva: szokatlanul magas készpénz – számla visszaállítva a kezdőtőkére",
-        skipLog: true,
-      });
-      logAutoBalanceFix(
-        botState,
-        "Inflált készpénz egyenleg észlelve – számla visszaállítva",
-        fromCapital,
-        botState.config.initialCapital,
-      );
+      fixRunawayBalance(botState);
       return { repaired: true, botState };
     }
 
@@ -454,6 +592,7 @@
 
   function saveBotState(botState) {
     try {
+      backupPersistentData(botState);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(botState));
     } catch {
       // Ignore storage failures.
@@ -1793,6 +1932,11 @@
     runAutoLearn,
     resetBot,
     applyCapitalFromConfig,
+    resetCapitalAccount,
+    syncCapitalBalanceOnly,
+    recalculateCashFromTrades,
+    backupPersistentData,
+    restorePersistentDataFallback,
     reconcileCapitalOnLoad,
     reconcileBalanceOnLoad,
     validateBalanceState,

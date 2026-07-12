@@ -516,7 +516,12 @@
 
     if (needsAccountReset && botState.positions.length > 0) {
       const confirmed = window.confirm(
-        "A kezdőtőke vagy pénznem módosítása újraindítja a számlát és törli a nyitott pozíciókat. Folytatod?",
+        "A kezdőtőke vagy pénznem módosítása újraindítja a kereskedési számlát (pozíciók és ügyletek törlődnek). A tapasztalatok és tanulási napló megmarad. Folytatod?",
+      );
+      if (!confirmed) return;
+    } else if (needsAccountReset && botState.trades.length > 0) {
+      const confirmed = window.confirm(
+        "A kezdőtőke vagy pénznem módosítása törli a korábbi ügyleteket, de a tapasztalatok és auto-tanulási előzmények megmaradnak. Folytatod?",
       );
       if (!confirmed) return;
     }
@@ -565,16 +570,22 @@
   }
 
   function resetAccount() {
-    if (!window.confirm("Biztosan törlöd a bot összes pozícióját és ügyletét?")) return;
+    if (
+      !window.confirm(
+        "Biztosan újraindítod a kereskedési számlát? A pozíciók és ügyletek törlődnek, de a tapasztalatok (tanulási napló, beállítás-változások) megmaradnak.",
+      )
+    ) {
+      return;
+    }
     const botState = getBotState();
     if (!botState) return;
-    Bot.applyCapitalFromConfig(botState, {
+    Bot.resetCapitalAccount(botState, {
       source: "kézi",
       reason: "Számla kézi újraindítása",
     });
     syncConfigForm();
     render();
-    bridge?.showToast?.("A virtuális bot újraindult.");
+    bridge?.showToast?.("Kereskedési számla újraindítva – tanulási adatok megmaradtak.");
   }
 
   function runLearnPreview() {
