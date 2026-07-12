@@ -265,12 +265,20 @@
       if (!botState) return;
       const previousCurrency = getBotCurrency(botState.config);
       const previousChoice = botState.config.currency || "sync";
+      const nextChoice = document.getElementById("botCurrency").value;
+      const nextCurrency = nextChoice === "sync"
+        ? bridge.getBotCurrency?.({ currency: "sync" }) || previousCurrency
+        : nextChoice;
+      if (nextCurrency !== "USD" && !bridge.areExchangeRatesReady?.()) {
+        document.getElementById("botCurrency").value = previousChoice;
+        bridge?.showToast?.("Devizaárfolyamok betöltése folyamatban – várj a pénznem váltásával.");
+        return;
+      }
       const capitalInput = document.getElementById("botInitialCapital");
       const displayValue = Number(capitalInput?.value);
       if (Number.isFinite(displayValue) && displayValue > 0) {
         const usdValue = bridge.convertFromCurrency(displayValue, previousCurrency);
-        botState.config.currency = document.getElementById("botCurrency").value;
-        const nextCurrency = getBotCurrency(botState.config);
+        botState.config.currency = nextChoice;
         if (capitalInput) {
           const converted = bridge.convertToCurrency(usdValue, nextCurrency);
           capitalInput.value =
@@ -279,7 +287,7 @@
               : String(Math.round(converted * 100) / 100);
         }
       } else {
-        botState.config.currency = document.getElementById("botCurrency").value;
+        botState.config.currency = nextChoice;
       }
       logToggleChange(
         "currency",
@@ -432,7 +440,16 @@
     const displayCapital = Number(capitalInput?.value);
     const currency = getBotCurrency(next);
     if (Number.isFinite(displayCapital) && displayCapital > 0) {
-      next.initialCapital = bridge.convertFromCurrency(displayCapital, currency);
+      if (currency !== "USD" && !bridge.areExchangeRatesReady?.()) {
+        next.initialCapital = base.initialCapital;
+      } else {
+        const usdCapital = bridge.convertFromCurrency(displayCapital, currency);
+        if (!Number.isFinite(usdCapital) || usdCapital <= 0) {
+          next.initialCapital = base.initialCapital;
+        } else {
+          next.initialCapital = usdCapital;
+        }
+      }
     }
 
     const selectedAssets = [...document.querySelectorAll("#botAssetChecks input:checked")].map(
@@ -448,6 +465,12 @@
     const before = { ...botState.config, assets: [...botState.config.assets] };
     const next = readConfigFromForm();
     const currency = getBotCurrency(next);
+    if (currency !== "USD" && !bridge.areExchangeRatesReady?.()) {
+      bridge?.showToast?.(
+        "Devizaárfolyamok betöltése folyamatban – várj, mielőtt mented a kezdőtőkét.",
+      );
+      return;
+    }
     if (!(next.initialCapital >= 100)) {
       bridge?.showToast?.(
         `A kezdőtőke legalább ${bridge.formatBotMoney(100, currency)} legyen.`,

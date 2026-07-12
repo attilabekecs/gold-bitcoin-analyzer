@@ -118,7 +118,7 @@ document.addEventListener("DOMContentLoaded", () => {
   state.alerts = loadLocalArray("aurum-alerts");
   state.signalHistory = loadLocalArray("aurum-signal-history");
   state.paperAccount = loadPaperAccount();
-  state.botState = window.VirtualBot?.loadBotState() || null;
+  state.botState = window.VirtualBot?.loadBotState(getBotFxContext()) || null;
   document.getElementById("year").textContent = new Date().getFullYear();
   document.getElementById("portfolioDate").valueAsDate = new Date();
   document.getElementById("refreshButton").addEventListener("click", loadDashboard);
@@ -309,12 +309,17 @@ async function loadDashboard() {
       if (!isCurrent()) return;
       state.exchangeRates = { USD: 1, ...rates };
       state.dataHealth.fx = "ok";
+      if (state.botState && window.VirtualBot?.reconcileBalanceOnLoad) {
+        window.VirtualBot.reconcileBalanceOnLoad(state.botState, getBotFxContext());
+        window.VirtualBot.saveBotState(state.botState);
+      }
       getLoadedAssetKeys().forEach((assetKey) => {
         if (state.assets[assetKey]) renderAsset(assetKey);
       });
       renderMarketsGrid();
       renderTradingCenter();
       renderPortfolio();
+      renderBotTrading();
       renderDataHealth();
     })
     .catch(() => {
@@ -2701,6 +2706,7 @@ function initBotUi() {
     paperChartOptions,
     initialBotSection,
     getBotCurrency: (config) => resolveBotCurrency(config || state.botState?.config),
+    areExchangeRatesReady,
     convertToCurrency,
     convertFromCurrency,
     formatBotMoney,
@@ -3513,16 +3519,32 @@ function resolveBotCurrency(botConfig) {
   return SUPPORTED_CURRENCIES.includes(choice) ? choice : "USD";
 }
 
+function areExchangeRatesReady() {
+  const huf = state.exchangeRates.HUF;
+  const eur = state.exchangeRates.EUR;
+  return Number.isFinite(huf) && huf > 50 && Number.isFinite(eur) && eur > 0.5 && eur < 2;
+}
+
+function getBotFxContext() {
+  return {
+    ratesReady: areExchangeRatesReady(),
+    getRate: (currency) => state.exchangeRates[currency] ?? null,
+    resolveCurrency: (config) => resolveBotCurrency(config),
+  };
+}
+
 function convertToCurrency(value, currency) {
   if (!Number.isFinite(value)) return value;
+  if (currency !== "USD" && !areExchangeRatesReady()) return value;
   const rate = state.exchangeRates[currency] ?? 1;
   return value * rate;
 }
 
 function convertFromCurrency(value, currency) {
   if (!Number.isFinite(value)) return value;
+  if (currency !== "USD" && !areExchangeRatesReady()) return NaN;
   const rate = state.exchangeRates[currency] ?? 1;
-  if (!(rate > 0)) return value;
+  if (!(rate > 0)) return NaN;
   return value / rate;
 }
 

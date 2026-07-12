@@ -147,6 +147,10 @@
     beállítás: "Gyors beállítás",
   };
 
+  const MAX_TOTAL_EXPOSURE_RATIO = 0.95;
+  const MAX_BALANCE_MULTIPLIER = 50;
+  const COMMON_HUF_CAPITAL_INPUTS = [10000, 50000, 100000, 200000, 500000, 1000000];
+
   function clampParam(key, value) {
     const bounds = PARAM_BOUNDS[key];
     if (!bounds) return value;
@@ -182,7 +186,7 @@
     };
   }
 
-  function loadBotState() {
+  function loadBotState(fxContext = null) {
     try {
       const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
       if (
@@ -206,7 +210,7 @@
         capturedCount: 0,
         missedLog: [],
       };
-      return reconcileCapitalOnLoad(saved);
+      return reconcileBalanceOnLoad(saved, fxContext);
     } catch {
       return createBotState();
     }
@@ -257,6 +261,76 @@
       reason: "Kezdőtőke szinkronizálva a mentett beállítással",
     });
     return botState;
+  }
+
+  function detectUnconvertedHufCapital(storedUsd, currency, hufRate) {
+    if (currency !== "HUF" || !(hufRate > 50) || !(storedUsd >= 1000)) return null;
+    for (const hufInput of COMMON_HUF_CAPITAL_INPUTS) {
+      if (Math.abs(storedUsd - hufInput) < 1) {
+        const corrected = hufInput / hufRate;
+        if (corrected >= 100 && corrected < storedUsd / 10) return corrected;
+      }
+    }
+    return null;
+  }
+
+  function hasRunawayBalance(botState) {
+    const initial = botState.initialCapital;
+    if (!(initial > 0)) return false;
+    return botState.cash > initial * MAX_BALANCE_MULTIPLIER;
+  }
+
+  function reconcileBalanceOnLoad(botState, fxContext = null) {
+    if (!botState?.config) return botState;
+
+    const currency = fxContext?.resolveCurrency?.(botState.config) ?? "USD";
+    const hufRate = fxContext?.getRate?.("HUF");
+    const correctedCapital = detectUnconvertedHufCapital(
+      botState.config.initialCapital,
+      currency,
+      hufRate,
+    );
+
+    if (correctedCapital !== null) {
+      botState.config.initialCapital = correctedCapital;
+      applyCapitalFromConfig(botState, {
+        source: "beállítás",
+        reason:
+          "Javítva: a kezdőtőke valószínűleg HUF-ként került USD-ként mentésre (hiányzó árfolyam)",
+      });
+      logActivity(
+        botState,
+        `Egyenleg helyreállítva: ${Math.round(correctedCapital)} USD belső tőke (≈ ${Math.round(correctedCapital * hufRate).toLocaleString("hu-HU")} HUF)`,
+      );
+      return botState;
+    }
+
+    reconcileCapitalOnLoad(botState);
+
+    if (hasRunawayBalance(botState)) {
+      applyCapitalFromConfig(botState, {
+        source: "beállítás",
+        reason: "Javítva: szokatlanul magas egyenleg – számla visszaállítva a kezdőtőkére",
+      });
+      logActivity(botState, "Egyenleg helyreállítva a mentett kezdőtőkére (inflált állapot észlelve).");
+    }
+
+    return botState;
+  }
+
+  function getTotalExposure(botState) {
+    return botState.positions.reduce((sum, position) => {
+      if (!(position.entry > 0) || !(position.quantity > 0)) return sum;
+      return sum + position.entry * position.quantity;
+    }, 0);
+  }
+
+  function getAvailableBuyingPower(botState, config, context) {
+    const metrics = getMetrics(botState, context);
+    const equity = Math.max(0, metrics.equity);
+    const maxTotalExposure = equity * MAX_TOTAL_EXPOSURE_RATIO;
+    const usedExposure = getTotalExposure(botState);
+    return Math.max(0, maxTotalExposure - usedExposure);
   }
 
   function saveBotState(botState) {
@@ -660,14 +734,28 @@
     return !status.blocked;
   }
 
-  function calculatePositionSize(botState, entry, stop, config) {
+  function calculatePositionSize(botState, entry, stop, config, context) {
     const unitRisk = Math.abs(entry - stop);
-    if (!(unitRisk > 0)) return 0;
-    const desiredRisk = botState.cash * (config.riskPercent / 100);
+    if (!(unitRisk > 0) || !(entry > 0)) return 0;
+
+    const metrics = getMetrics(botState, context);
+    const equity = Math.max(0, metrics.equity);
+    if (!(equity > 0)) return 0;
+
+    const desiredRisk = equity * (config.riskPercent / 100);
     const feeBuffer = entry * ((config.feePercent || 0.1) / 100);
-    const quantity = desiredRisk / (unitRisk + feeBuffer);
-    const cashLimited = botState.cash / entry;
-    return Math.max(0, Math.min(quantity, cashLimited));
+    let quantity = desiredRisk / (unitRisk + feeBuffer);
+
+    const maxPositions = Math.max(1, config.maxPositions || 1);
+    const maxSingleNotional = (equity * MAX_TOTAL_EXPOSURE_RATIO) / maxPositions;
+    quantity = Math.min(quantity, maxSingleNotional / entry);
+
+    const availableNotional = getAvailableBuyingPower(botState, config, context);
+    quantity = Math.min(quantity, availableNotional / entry);
+
+    quantity = Math.min(quantity, equity / entry);
+
+    return Math.max(0, quantity);
   }
 
   function passesAlignment(direction, decision, config) {
@@ -856,6 +944,7 @@
     const fees = calcExecutionCosts(position.entry, adjustedExit, position.quantity, config);
     const pnl = grossPnl - fees;
     botState.cash += pnl;
+    if (botState.cash < 0) botState.cash = 0;
     const trade = {
       ...position,
       exit: adjustedExit,
@@ -981,8 +1070,12 @@
 
     const rawEntry = decision.currentPrice;
     const entry = applySlippage(rawEntry, direction, true, config);
-    const quantity = calculatePositionSize(botState, entry, decision.stop, config);
+    const quantity = calculatePositionSize(botState, entry, decision.stop, config, context);
     if (!(quantity > 0)) return null;
+
+    const notional = entry * quantity;
+    const availableNotional = getAvailableBuyingPower(botState, config, context);
+    if (notional > availableNotional + 0.01) return null;
 
     const cooldownStatus = getCooldownStatus(config, botState, assetKey, now, opportunityScore);
     const position = {
@@ -1567,6 +1660,7 @@
     resetBot,
     applyCapitalFromConfig,
     reconcileCapitalOnLoad,
+    reconcileBalanceOnLoad,
     closePosition,
     getCurrentPrice,
     isWithinTradingHours,
