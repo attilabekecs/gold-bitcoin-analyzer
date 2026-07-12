@@ -14,9 +14,9 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=20260712-5" />
+    <link rel="stylesheet" href="styles.css?v=20260712-7" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
-    <script src="app.js?v=20260712-5" defer></script>
+    <script src="app.js?v=20260712-7" defer></script>
   </head>
   <body data-view="overview">
     <header class="site-header">
@@ -51,7 +51,7 @@
             <p class="eyebrow">ÉLŐ KERESKEDÉSI KÖZPONT</p>
             <h1 id="decisionTitle">Vétel, kivárás vagy eladás?</h1>
             <p>
-              Rövid távú technikai jelzés 1 perces adatok, trend és kockázati szintek alapján.
+              Több idősíkú technikai jelzés trendegyezés és kockázati szintek alapján.
             </p>
           </div>
           <div id="intradayStatus" class="live-data-state pending">
@@ -96,8 +96,9 @@
             <div class="trade-metrics">
               <div><span>EMA 9 / 21</span><strong id="tradeEma">–</strong></div>
               <div><span>RSI (14)</span><strong id="tradeRsi">–</strong></div>
-              <div><span>15 perces lendület</span><strong id="tradeMomentum">–</strong></div>
+              <div><span id="tradeMomentumLabel">15 perces lendület</span><strong id="tradeMomentum">–</strong></div>
               <div><span>ATR volatilitás</span><strong id="tradeAtr">–</strong></div>
+              <div class="wide-metric"><span>Idősíkok egyezése</span><strong id="tradeAlignment">–</strong></div>
             </div>
 
             <div class="trade-plan">
@@ -115,7 +116,15 @@
                 <span>INTRADAY ÁRFOLYAM</span>
                 <h2 id="intradayChartTitle">Bitcoin · 1 perces</h2>
               </div>
-              <span id="intradaySource" class="source-chip">–</span>
+              <div class="intraday-controls">
+                <div class="timeframe-switcher" role="tablist" aria-label="Intraday idősík">
+                  <button class="active" data-intraday-interval="1" type="button">1p</button>
+                  <button data-intraday-interval="5" type="button">5p</button>
+                  <button data-intraday-interval="15" type="button">15p</button>
+                  <button data-intraday-interval="60" type="button">1ó</button>
+                </div>
+                <span id="intradaySource" class="source-chip">–</span>
+              </div>
             </div>
             <div class="intraday-legend">
               <span><i class="legend-price"></i> Ár</span>
@@ -146,6 +155,19 @@
             <div><span>Forgalom</span><strong id="miniVolumeValue">–</strong></div>
             <div class="mini-chart-wrap"><canvas id="volumeChart"></canvas></div>
           </article>
+        </div>
+
+        <div class="signal-history-panel">
+          <div>
+            <span>JELZÉSTÖRTÉNET</span>
+            <strong id="signalStability">Stabilitás számítása…</strong>
+          </div>
+          <div id="signalHistoryList" class="signal-history-list">
+            <span>Még nincs rögzített jelzés.</span>
+          </div>
+          <button id="signalNotificationButton" class="signal-notification-button" type="button">
+            Jelzésértesítések
+          </button>
         </div>
 
         <p class="decision-disclaimer">
@@ -402,7 +424,7 @@
             <div class="section-heading compact-heading">
               <div>
                 <p class="eyebrow">TÖRTÉNETI TESZT</p>
-                <h3>1 perces backtest</h3>
+                <h3>Több idősíkú backtest</h3>
               </div>
             </div>
             <form id="backtestForm" class="form-grid">
@@ -410,6 +432,14 @@
                 <select id="backtestAsset">
                   <option value="bitcoin">Bitcoin</option>
                   <option value="gold">Arany</option>
+                </select>
+              </label>
+              <label>Idősík
+                <select id="backtestInterval">
+                  <option value="1">1 perc</option>
+                  <option value="5">5 perc</option>
+                  <option value="15">15 perc</option>
+                  <option value="60">1 óra</option>
                 </select>
               </label>
               <label>Kezdőtőke (USD)

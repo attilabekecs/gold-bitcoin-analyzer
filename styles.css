@@ -436,6 +436,13 @@ footer {
   padding: 11px;
 }
 
+.trade-metrics .wide-metric {
+  align-items: center;
+  flex-direction: row;
+  grid-column: span 2;
+  justify-content: space-between;
+}
+
 .trade-metrics strong,
 .trade-plan strong {
   font-size: 12px;
@@ -466,6 +473,37 @@ footer {
 .intraday-heading h2 {
   font-size: 23px;
   margin-top: 4px;
+}
+
+.intraday-controls {
+  align-items: flex-end;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.timeframe-switcher {
+  background: #efede6;
+  border-radius: 7px;
+  display: flex;
+  padding: 3px;
+}
+
+.timeframe-switcher button {
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 9px;
+  padding: 5px 8px;
+}
+
+.timeframe-switcher button.active {
+  background: var(--paper);
+  box-shadow: 0 2px 6px rgba(23, 33, 28, 0.1);
+  color: var(--ink);
+  font-weight: 700;
 }
 
 .intraday-legend {
@@ -583,6 +621,73 @@ footer {
 .mini-chart-wrap {
   height: 105px;
   margin-top: 9px;
+}
+
+.signal-history-panel {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  display: grid;
+  gap: 15px;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(0, 2fr) auto;
+  margin-top: 14px;
+  padding: 15px;
+  position: relative;
+  z-index: 1;
+}
+
+.signal-history-panel > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.signal-history-panel > div:first-child span {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 8px;
+  letter-spacing: 0.1em;
+}
+
+.signal-history-panel > div:first-child strong {
+  color: var(--paper);
+  font-size: 10px;
+}
+
+.signal-history-list {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.signal-history-list span {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  color: rgba(255, 255, 255, 0.6);
+  flex: 0 0 auto;
+  font-size: 8px;
+  padding: 6px 8px;
+}
+
+.signal-history-list span.positive {
+  background: rgba(95, 211, 154, 0.15);
+  color: #8fe3b8;
+}
+
+.signal-history-list span.negative {
+  background: rgba(220, 103, 88, 0.15);
+  color: #ef9b8f;
+}
+
+.signal-notification-button {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 7px;
+  color: var(--paper);
+  cursor: pointer;
+  font-size: 9px;
+  padding: 8px 10px;
+  white-space: nowrap;
 }
 
 .hero {
@@ -1691,6 +1796,11 @@ footer {
     grid-template-columns: 1fr;
   }
 
+  .signal-history-panel {
+    align-items: start;
+    grid-template-columns: 1fr;
+  }
+
   .simulator-hero {
     align-items: start;
     flex-direction: column;
@@ -1800,6 +1910,17 @@ footer {
 
   .trade-call-heading {
     align-items: start;
+  }
+
+  .intraday-heading {
+    align-items: start;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .intraday-controls {
+    align-items: start;
+    width: 100%;
   }
 
   .trade-signal {
