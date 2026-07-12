@@ -43,6 +43,7 @@ const state = {
   botTickInterval: null,
   loadSequence: 0,
   scanLoadProgress: null,
+  initialLoadComplete: false,
 };
 
 const INTRADAY_STALE_MS = 90000;
@@ -262,7 +263,13 @@ async function loadDashboard() {
     )
       .then((asset) => {
         if (!isCurrent()) return;
-        if (asset) state.intraday[assetKey] = asset;
+        if (asset) {
+          state.intraday[assetKey] = asset;
+          state.assetRefreshMeta[assetKey] = {
+            ...(state.assetRefreshMeta[assetKey] || {}),
+            intradayAt: asset.fetchedAt || Date.now(),
+          };
+        }
         renderTradingCenter();
         updatePaperPositions(assetKey);
         runVirtualBotTick();
@@ -294,11 +301,19 @@ async function loadDashboard() {
         // Optional timeframes may be unavailable for some sources.
       });
 
-  const assetTasks = Catalog.PRIORITY_KEYS.flatMap((assetKey) => [
-    loadAssetDaily(assetKey),
-    loadAssetIntraday(assetKey),
-    loadAssetTimeframes(assetKey),
-  ]);
+  const loadPriorityAssets = async () => {
+    for (const assetKey of Catalog.PRIORITY_KEYS) {
+      if (!isCurrent()) return;
+      await loadAssetDaily(assetKey);
+      await loadAssetIntraday(assetKey);
+      await loadAssetTimeframes(assetKey);
+      if (Catalog.SCAN_BATCH_DELAY_MS > 0) {
+        await new Promise((resolve) => setTimeout(resolve, Catalog.SCAN_BATCH_DELAY_MS));
+      }
+    }
+  };
+
+  const assetTasks = [loadPriorityAssets()];
 
   const ratesTask = fetchExchangeRates()
     .then((rates) => {
@@ -352,7 +367,8 @@ async function loadDashboard() {
   await Promise.allSettled([...assetTasks, ratesTask, newsTask]);
   if (!isCurrent()) return;
 
-  startContinuousAssetRefresh();
+  state.initialLoadComplete = true;
+  restartContinuousAssetRefresh();
   updateScanLoadProgress();
 
   runVirtualBotTick();
@@ -457,6 +473,7 @@ function isValidCandle(candle) {
 }
 
 function buildIntradayAsset(name, candles, source, interval = 1) {
+  const fetchedAt = Date.now();
   return {
     name,
     candles,
@@ -464,6 +481,7 @@ function buildIntradayAsset(name, candles, source, interval = 1) {
     interval,
     currentPrice: candles.at(-1).close,
     updatedAt: candles.at(-1).time,
+    fetchedAt,
   };
 }
 
@@ -1236,6 +1254,9 @@ function setActiveView(view, updateHash = true) {
   if (view === "markets" || view === "bot") {
     renderMarketsGrid();
     renderBotTrading();
+    if (view === "bot" && state.initialLoadComplete && !state.assetRefreshTimer) {
+      restartContinuousAssetRefresh();
+    }
   }
   if (updateHash) {
     const botSection = view === "bot" ? window.BotLab?.getActiveSection?.() || "summary" : null;
@@ -1845,6 +1866,10 @@ async function refreshAssetBundle(assetKey, options = {}) {
         formatIntervalLong,
       );
       if (asset) state.intraday[assetKey] = asset;
+      state.assetRefreshMeta[assetKey] = {
+        ...(state.assetRefreshMeta[assetKey] || {}),
+        intradayAt: asset?.fetchedAt || Date.now(),
+      };
       renderTradingCenter();
       updatePaperPositions(assetKey);
     } catch {
@@ -1872,8 +1897,11 @@ async function refreshAssetBundle(assetKey, options = {}) {
 
 function isIntradayStale(assetKey) {
   const intraday = state.intraday[assetKey];
-  if (!intraday?.updatedAt) return true;
-  return Date.now() - intraday.updatedAt > INTRADAY_STALE_MS;
+  if (!intraday) return true;
+  const fetchedAt = intraday.fetchedAt || state.assetRefreshMeta[assetKey]?.intradayAt;
+  if (fetchedAt) return Date.now() - fetchedAt > INTRADAY_STALE_MS;
+  if (!intraday.updatedAt) return true;
+  return Date.now() - intraday.updatedAt > INTRADAY_STALE_MS * 4;
 }
 
 function isDailyStale(assetKey) {
@@ -1927,10 +1955,17 @@ function updateScanLoadProgress(staleKeys = getStaleAssetKeys()) {
     loaded,
     total,
     complete: staleKeys.length === 0,
-    continuous: true,
+    continuous: Boolean(state.assetRefreshTimer),
+    active: Boolean(state.assetRefreshTimer),
     pending: staleKeys.length,
     updatedAt: Date.now(),
   };
+}
+
+function stopContinuousAssetRefresh() {
+  clearInterval(state.assetRefreshTimer);
+  state.assetRefreshTimer = null;
+  updateScanLoadProgress();
 }
 
 function startContinuousAssetRefresh() {
@@ -1938,6 +1973,12 @@ function startContinuousAssetRefresh() {
   updateScanLoadProgress();
   runAssetRefreshCycle();
   state.assetRefreshTimer = setInterval(runAssetRefreshCycle, ASSET_REFRESH_TICK_MS);
+  updateScanLoadProgress();
+}
+
+function restartContinuousAssetRefresh() {
+  stopContinuousAssetRefresh();
+  startContinuousAssetRefresh();
 }
 
 async function runAssetRefreshCycle() {
@@ -2003,6 +2044,10 @@ async function refreshLiveIntraday() {
           formatIntervalLong,
         );
         if (asset) state.intraday[assetKey] = asset;
+        state.assetRefreshMeta[assetKey] = {
+          ...(state.assetRefreshMeta[assetKey] || {}),
+          intradayAt: asset?.fetchedAt || Date.now(),
+        };
         updatePaperPositions(assetKey);
       } catch {
         // Keep the last valid intraday series during a temporary source failure.
@@ -2271,7 +2316,9 @@ function applySettings() {
     state.refreshTimer = setInterval(loadDashboard, state.settings.refreshMinutes * 60000);
   }
   state.intradayTimer = setInterval(refreshLiveIntraday, 60000);
-  startContinuousAssetRefresh();
+  if (state.initialLoadComplete) {
+    restartContinuousAssetRefresh();
+  }
   scheduleBotTick();
 }
 

@@ -1003,6 +1003,7 @@
     const grid = document.getElementById("botSignalGrid");
     const summary = document.getElementById("botScanSummary");
     const heading = document.getElementById("botScanHeading");
+    const dataStatus = document.getElementById("botScanDataStatus");
     if (!grid || !botState) return;
 
     const context = getContext();
@@ -1010,6 +1011,26 @@
     const marketWide = botState.config.marketWideMode;
     const appState = getState();
     const scanProgress = appState?.scanLoadProgress;
+    const currency = getBotCurrency(botState.config);
+
+    if (dataStatus) {
+      const statusClass = scanProgress?.active ? "live" : appState?.initialLoadComplete ? "warning" : "pending";
+      const statusTitle = scanProgress?.active
+        ? "Adatok: aktív"
+        : appState?.initialLoadComplete
+          ? "Adatok: leállítva"
+          : "Adatok betöltése";
+      const statusDetail = scanProgress?.active
+        ? scanProgress.complete
+          ? `${scanProgress.loaded}/${scanProgress.total} eszköz naprakész`
+          : `${scanProgress.loaded}/${scanProgress.total} betöltve · ${scanProgress.pending} várakozik`
+        : appState?.initialLoadComplete
+          ? "Frissítés újraindítása…"
+          : "Első piaci adatok";
+      dataStatus.className = `live-data-state ${statusClass}`;
+      dataStatus.innerHTML = `<span></span><div><strong>${statusTitle}</strong><small>${statusDetail}</small></div>`;
+    }
+
     if (heading) {
       const totalAssets = Catalog.ALL_KEYS.length;
       heading.textContent = marketWide
@@ -1046,9 +1067,14 @@
           <strong class="${result.className}">${result.signal}</strong>`;
         headingRow.prepend(rank);
 
+        const price = result.decision?.currentPrice;
+        const change = result.decision?.momentum15 ?? result.decision?.minuteChange;
+        const decimals = Catalog.getAsset(result.assetKey)?.priceDecimals ?? 2;
         const metrics = document.createElement("div");
         metrics.className = "bot-scan-metrics";
         metrics.innerHTML = `
+          <div><span>Ár</span><strong>${Number.isFinite(price) ? bridge.formatBotAssetPrice(price, currency, decimals) : "0"}</strong></div>
+          <div><span>Változás</span><strong class="${bridge.valueClass(change || 0)}">${Number.isFinite(change) ? `${change >= 0 ? "+" : ""}${formatNumber(change, 2)}%` : "–%"}</strong></div>
           <div><span>Pontszám</span><strong>${formatNumber(result.opportunityScore, 0)}</strong></div>
           <div><span>Bizalom</span><strong>${result.confidence ?? "–"}%</strong></div>
           <div><span>Jel</span><strong>${result.score !== null ? formatNumber(result.score, 2) : "–"}</strong></div>`;
@@ -1073,10 +1099,12 @@
 
     if (summary) {
       summary.replaceChildren();
-      if (scanProgress && marketWide) {
-        const progressText = scanProgress.complete
-          ? `Folyamatos frissítés: ${scanProgress.loaded}/${scanProgress.total} eszköz naprakész`
-          : `Háttérbetöltés: ${scanProgress.loaded}/${scanProgress.total} eszköz adata érkezett${scanProgress.pending ? ` · ${scanProgress.pending} várakozik` : ""}…`;
+      if (scanProgress) {
+        const progressText = scanProgress.active
+          ? scanProgress.complete
+            ? `Folyamatos frissítés: ${scanProgress.loaded}/${scanProgress.total} eszköz naprakész`
+            : `Háttérbetöltés: ${scanProgress.loaded}/${scanProgress.total} eszköz adata érkezett${scanProgress.pending ? ` · ${scanProgress.pending} várakozik` : ""}…`
+          : `Frissítés leállítva – ${withDataCount}/${results.length} eszközön van élő adat`;
         summary.append(
           Object.assign(document.createElement("p"), {
             className: "helper-text",

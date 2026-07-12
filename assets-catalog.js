@@ -336,6 +336,7 @@
   }
 
   function buildIntradayAsset(meta, candles, source, interval = 1) {
+    const fetchedAt = Date.now();
     return {
       name: meta.name,
       candles,
@@ -343,6 +344,7 @@
       interval,
       currentPrice: candles.at(-1).close,
       updatedAt: candles.at(-1).time,
+      fetchedAt,
     };
   }
 
@@ -375,6 +377,41 @@
     }
   }
 
+  async function fetchJsonWithRetry(url, options = {}) {
+    const {
+      timeout = 12000,
+      headers = {},
+      retries = 2,
+      retryDelayMs = 800,
+      retryStatuses = [408, 425, 429, 500, 502, 503, 504],
+    } = options;
+    let lastError = null;
+    for (let attempt = 0; attempt <= retries; attempt += 1) {
+      try {
+        return await fetchJson(url, timeout, headers);
+      } catch (error) {
+        lastError = error;
+        const status = Number(String(error?.message || "").replace("HTTP ", ""));
+        const shouldRetry = retryStatuses.includes(status) || /abort/i.test(String(error?.message || ""));
+        if (!shouldRetry || attempt >= retries) break;
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs * (attempt + 1)));
+      }
+    }
+    throw lastError || new Error("Fetch failed");
+  }
+
+  async function fetchYahooChart(yahooSymbol, interval, range) {
+    const chartUrl =
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}` +
+      `?interval=${interval}&range=${range}`;
+    try {
+      return await fetchJsonWithRetry(chartUrl, { timeout: 15000, retries: 1 });
+    } catch {
+      const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(chartUrl)}`;
+      return fetchJsonWithRetry(proxyUrl, { timeout: 20000, retries: 2 });
+    }
+  }
+
   async function fetchCryptoDaily(meta, timeframe, settings) {
     const url =
       `https://api.coingecko.com/api/v3/coins/${meta.coingeckoId}/market_chart` +
@@ -382,7 +419,7 @@
     const headers = settings.coinGeckoKey
       ? { "x-cg-demo-api-key": settings.coinGeckoKey }
       : {};
-    const data = await fetchJson(url, 12000, headers);
+    const data = await fetchJsonWithRetry(url, { timeout: 12000, headers, retries: 2 });
     const points = (data.prices || [])
       .map(([time, price]) => ({ time: Number(time), price: Number(price) }))
       .filter((point) => Number.isFinite(point.price));
@@ -393,9 +430,9 @@
   }
 
   async function fetchKrakenIntraday(meta, interval, formatIntervalShort, formatIntervalLong) {
-    const data = await fetchJson(
+    const data = await fetchJsonWithRetry(
       `https://api.kraken.com/0/public/OHLC?pair=${meta.krakenPair}&interval=${interval}`,
-      12000,
+      { timeout: 12000, retries: 2 },
     );
     if (data.error?.length) throw new Error(data.error.join(", "));
     const series = Object.entries(data.result || {}).find(([key, value]) => {
@@ -426,10 +463,7 @@
   async function fetchYahooIntraday(meta, interval, formatIntervalShort, formatIntervalLong) {
     const yahooInterval = YAHOO_INTERVALS[interval] || "1m";
     const range = interval === 60 ? "5d" : "1d";
-    const url =
-      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(meta.yahooSymbol)}` +
-      `?interval=${yahooInterval}&range=${range}`;
-    const data = await fetchJson(url, 15000);
+    const data = await fetchYahooChart(meta.yahooSymbol, yahooInterval, range);
     const result = data.chart?.result?.[0];
     const timestamps = result?.timestamp || [];
     const quote = result?.indicators?.quote?.[0] || {};
@@ -457,10 +491,7 @@
 
   async function fetchYahooDaily(meta, timeframe) {
     const range = timeframe <= 7 ? "7d" : timeframe <= 30 ? "1mo" : timeframe <= 90 ? "3mo" : "1y";
-    const url =
-      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(meta.yahooSymbol)}` +
-      `?interval=1d&range=${range}`;
-    const data = await fetchJson(url, 15000);
+    const data = await fetchYahooChart(meta.yahooSymbol, "1d", range);
     const result = data.chart?.result?.[0];
     const timestamps = result?.timestamp || [];
     const closes = result?.indicators?.quote?.[0]?.close || [];
