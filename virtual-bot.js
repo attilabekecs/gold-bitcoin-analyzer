@@ -73,6 +73,79 @@
     "momentumThreshold",
   ];
 
+  const CONFIG_LABELS = {
+    enabled: "Bot bekapcsolva",
+    autoLearnEnabled: "Auto-tanulás",
+    professionalMode: "Professzionális mód",
+    marketWideMode: "Piaci mód (összes eszköz)",
+    currency: "Pénznem",
+    assets: "Követett eszközök",
+    initialCapital: "Kezdőtőke",
+    riskPercent: "Kockázat / ügylet",
+    maxPositions: "Max. pozíció",
+    cooldownMinutes: "Cooldown (perc)",
+    proMinConfidenceFloor: "Pro: min. bizalom padló",
+    proHighScoreThreshold: "Pro: magas pontszám küszöb",
+    proWinCooldownMinutes: "Pro: pihenő nyertes után",
+    primaryInterval: "Primér idősík",
+    direction: "Kereskedési irány",
+    fastEma: "Gyors EMA",
+    slowEma: "Lassú EMA",
+    rsiPeriod: "RSI periódus",
+    rsiLongMin: "LONG RSI min",
+    rsiLongMax: "LONG RSI max",
+    rsiShortMin: "SHORT RSI min",
+    rsiShortMax: "SHORT RSI max",
+    rsiOverbought: "RSI túlvett",
+    rsiOversold: "RSI túladott",
+    useMacd: "MACD megerősítés",
+    momentumLookback: "Momentum ablak",
+    momentumThreshold: "Momentum küszöb",
+    useVolume: "Volumen megerősítés",
+    signalScoreThreshold: "Jelzésküszöb",
+    minConfidence: "Min. megbízhatóság",
+    requireAlignment: "Idősík-egyezés kötelező",
+    minAlignmentRatio: "Min. egyezési arány",
+    minAlignedTimeframes: "Min. egyező idősíkok",
+    atrPeriod: "ATR periódus",
+    atrStopMultiplier: "ATR stop szorzó",
+    rewardRatio: "Cél R arány",
+    autoCloseOnReversal: "Zárás ellentétes jelzésnél",
+    feePercent: "Díj oldalanként",
+    spreadPercent: "Spread",
+    slippagePercent: "Slippage",
+    useTradingHours: "Kereskedési óra szűrő",
+    tradingHoursStart: "Kezdő óra",
+    tradingHoursEnd: "Záró óra",
+  };
+
+  const DIRECTION_LABELS = {
+    both: "LONG és SHORT",
+    long: "Csak LONG",
+    short: "Csak SHORT",
+  };
+
+  const INTERVAL_LABELS = {
+    1: "1 perc",
+    5: "5 perc",
+    15: "15 perc",
+    60: "1 óra",
+  };
+
+  const CURRENCY_LABELS = {
+    sync: "Szinkron (globális)",
+    USD: "USD",
+    EUR: "EUR",
+    HUF: "HUF",
+  };
+
+  const SOURCE_LABELS = {
+    "auto-tanulás": "Auto-tanulás",
+    kézi: "Kézi mentés",
+    "pro mód": "Pro mód",
+    beállítás: "Gyors beállítás",
+  };
+
   function clampParam(key, value) {
     const bounds = PARAM_BOUNDS[key];
     if (!bounds) return value;
@@ -99,6 +172,7 @@
       lastScan: null,
       activityLog: [],
       learningHistory: [],
+      configChangeLog: [],
       performanceStats: {
         eligibleTicks: 0,
         capturedCount: 0,
@@ -123,6 +197,7 @@
       saved.equityHistory = Array.isArray(saved.equityHistory) ? saved.equityHistory : [];
       saved.activityLog = Array.isArray(saved.activityLog) ? saved.activityLog : [];
       saved.learningHistory = Array.isArray(saved.learningHistory) ? saved.learningHistory : [];
+      saved.configChangeLog = Array.isArray(saved.configChangeLog) ? saved.configChangeLog : [];
       saved.lastActionAt = saved.lastActionAt || {};
       saved.lastActionOutcome = saved.lastActionOutcome || {};
       saved.performanceStats = saved.performanceStats || {
@@ -1042,6 +1117,86 @@
     return { opened, closed };
   }
 
+  function formatConfigValue(key, value) {
+    if (value === null || value === undefined) return "–";
+    if (typeof value === "boolean") return value ? "bekapcsolva" : "kikapcsolva";
+    if (key === "assets" && Array.isArray(value)) {
+      return value.map((assetKey) => window.AssetCatalog?.getName(assetKey) || assetKey).join(", ");
+    }
+    if (key === "direction") return DIRECTION_LABELS[value] || String(value);
+    if (key === "primaryInterval") return INTERVAL_LABELS[value] || `${value} perc`;
+    if (key === "currency") return CURRENCY_LABELS[value] || String(value);
+    if (key === "minAlignmentRatio") return `${Math.round(value * 100)}%`;
+    if (key === "initialCapital") return `$${Number(value).toLocaleString("hu-HU", { maximumFractionDigits: 0 })}`;
+    if (typeof value === "number") return Number.isInteger(value) ? String(value) : value.toFixed(2);
+    return String(value);
+  }
+
+  function configValuesEqual(key, left, right) {
+    if (key === "assets") {
+      return [...(left || [])].sort().join() === [...(right || [])].sort().join();
+    }
+    return left === right;
+  }
+
+  function diffConfigs(before, after) {
+    const changes = [];
+    Object.keys(DEFAULT_CONFIG).forEach((key) => {
+      const from = before?.[key];
+      const to = after?.[key];
+      if (!configValuesEqual(key, from, to)) {
+        changes.push({ key, from, to });
+      }
+    });
+    return changes;
+  }
+
+  function logConfigChanges(botState, source, changes, defaultReason = "") {
+    if (!changes?.length || !botState) return;
+    botState.configChangeLog = botState.configChangeLog || [];
+    const time = Date.now();
+    changes.forEach((change) => {
+      botState.configChangeLog.unshift({
+        time,
+        source,
+        key: change.key,
+        label: CONFIG_LABELS[change.key] || change.key,
+        from: change.from,
+        to: change.to,
+        reason: change.reason || defaultReason,
+      });
+    });
+    botState.configChangeLog = botState.configChangeLog.slice(0, 200);
+    saveBotState(botState);
+  }
+
+  function clearConfigChangeLog(botState) {
+    if (!botState) return;
+    botState.configChangeLog = [];
+    saveBotState(botState);
+  }
+
+  function exportConfigChangeLogCsv(botState) {
+    const rows = [["Idő", "Mező", "Régi érték", "Új érték", "Forrás", "Indok"]];
+    (botState?.configChangeLog || []).forEach((entry) => {
+      rows.push([
+        new Date(entry.time).toISOString(),
+        entry.label,
+        formatConfigValue(entry.key, entry.from),
+        formatConfigValue(entry.key, entry.to),
+        SOURCE_LABELS[entry.source] || entry.source,
+        entry.reason || "",
+      ]);
+    });
+    return rows
+      .map((row) =>
+        row
+          .map((cell) => `"${String(cell).replace(/"/g, '""')}"`)
+          .join(","),
+      )
+      .join("\n");
+  }
+
   function pickLearnable(config) {
     const picked = {};
     LEARNABLE_KEYS.forEach((key) => {
@@ -1185,6 +1340,7 @@
     if (!dryRun && botState.config.autoLearnEnabled) {
       botState.config = { ...botState.config, ...next };
       botState.learningHistory = [entry, ...(botState.learningHistory || [])].slice(0, 30);
+      logConfigChanges(botState, "auto-tanulás", changes);
       logActivity(
         botState,
         `Auto-tanulás: ${changes.length} paraméter módosítva (${changes.map((c) => c.key).join(", ")}).`,
@@ -1322,6 +1478,13 @@
     DEFAULT_CONFIG,
     PARAM_BOUNDS,
     LEARNABLE_KEYS,
+    CONFIG_LABELS,
+    SOURCE_LABELS,
+    formatConfigValue,
+    diffConfigs,
+    logConfigChanges,
+    clearConfigChangeLog,
+    exportConfigChangeLogCsv,
     loadBotState,
     saveBotState,
     createBotState,

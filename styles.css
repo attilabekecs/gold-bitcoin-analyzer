@@ -1342,6 +1342,104 @@ h2 {
   margin: 0;
 }
 
+.bot-change-log-panel {
+  grid-column: 1 / -1;
+}
+
+.bot-change-log-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.bot-change-log {
+  display: grid;
+  gap: 8px;
+  max-height: 420px;
+  overflow: auto;
+}
+
+.bot-change-log-item {
+  background: rgba(255, 253, 249, 0.9);
+  border: 1px solid var(--line);
+  border-left: 3px solid #b9b0a0;
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+}
+
+.bot-change-log-item.source-auto-tanulás {
+  border-left-color: #3d6f8f;
+}
+
+.bot-change-log-item.source-kézi {
+  border-left-color: #2f5d50;
+}
+
+.bot-change-log-item.source-pro-mód {
+  border-left-color: #e2863b;
+}
+
+.bot-change-log-item.source-beállítás {
+  border-left-color: #9a8f7d;
+}
+
+.bot-change-log-head {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.bot-change-log-head time {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.bot-change-source {
+  background: rgba(18, 26, 22, 0.06);
+  border-radius: var(--radius-pill);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  text-transform: uppercase;
+}
+
+.bot-change-log-item strong {
+  font-size: 12px;
+}
+
+.bot-change-values {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12px;
+  gap: 6px;
+}
+
+.bot-change-from {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.bot-change-arrow {
+  color: var(--muted);
+}
+
+.bot-change-to {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.bot-change-log-item small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
 .markets-hero h1,
 .practice-hero h1 {
   font-size: clamp(30px, 3.6vw, 48px);

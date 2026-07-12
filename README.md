@@ -20,7 +20,7 @@ Stratégialabor backtesttel.
 - **Összes eszköz (piaci mód):** minden ciklusban az összes katalógus-eszközt szkenneli, pontozza (bizalom, jel, idősík-egyezés, momentum, RSI) és a legjobb lehetőséget választja
 - Kézi módban továbbra is rögzíthetők konkrét eszközök; piaci mód felülírja és az egész piacot figyeli
 - **Auto-tanulás:** a lezárt ügyletek alapján biztonságos határokon belül finomhangol (csak bekapcsolt módban alkalmaz)
-- Bot dashboard: élő státusz, rangsorolt piaci szkenner, választott lehetőség indoklással, PnL, win rate, drawdown, ügylet/óra, lehetőség-kihasználás, kihagyott lehetőségek napló, ügyletnapló okokkal, tanulási diff és előzmény
+- Bot dashboard: élő státusz, rangsorolt piaci szkenner, választott lehetőség indoklással, PnL, win rate, drawdown, ügylet/óra, lehetőség-kihasználás, kihagyott lehetőségek napló, **beállítás-változás napló** (régi → új érték, forrás, indok), ügyletnapló okokkal, tanulási diff és előzmény
 - Helyi papírkereskedési számla LONG/SHORT pozíciókkal minden támogatott eszközön
 - Kereskedési napló, találati arány, profit factor, visszaesés és egyenleggörbe
 - EMA/RSI/ATR backtest választható idősíkkal és állítható kereskedési díjjal

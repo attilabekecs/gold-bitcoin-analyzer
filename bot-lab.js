@@ -106,6 +106,12 @@
     });
   }
 
+  function logToggleChange(key, from, to, source, reason) {
+    const botState = getBotState();
+    if (!botState || from === to) return;
+    Bot.logConfigChanges(botState, source, [{ key, from, to, reason }], reason);
+  }
+
   function bindEvents() {
     const checks = document.getElementById("botAssetChecks");
     if (checks) {
@@ -130,7 +136,15 @@
     document.getElementById("botEnabled")?.addEventListener("change", (event) => {
       const botState = getBotState();
       if (!botState) return;
+      const from = botState.config.enabled;
       botState.config.enabled = event.target.checked;
+      logToggleChange(
+        "enabled",
+        from,
+        event.target.checked,
+        "beállítás",
+        event.target.checked ? "Bot bekapcsolva" : "Bot kikapcsolva",
+      );
       Bot.saveBotState(botState);
       render();
       bridge?.scheduleBotTick?.();
@@ -140,7 +154,17 @@
     document.getElementById("botProfessionalMode")?.addEventListener("change", (event) => {
       const botState = getBotState();
       if (!botState) return;
+      const from = botState.config.professionalMode;
       botState.config.professionalMode = event.target.checked;
+      logToggleChange(
+        "professionalMode",
+        from,
+        event.target.checked,
+        "pro mód",
+        event.target.checked
+          ? "Professzionális mód bekapcsolva – gyorsabb reagálás"
+          : "Professzionális mód kikapcsolva",
+      );
       Bot.saveBotState(botState);
       render();
       bridge?.scheduleBotTick?.();
@@ -154,7 +178,15 @@
     document.getElementById("botAutoLearn")?.addEventListener("change", (event) => {
       const botState = getBotState();
       if (!botState) return;
+      const from = botState.config.autoLearnEnabled;
       botState.config.autoLearnEnabled = event.target.checked;
+      logToggleChange(
+        "autoLearnEnabled",
+        from,
+        event.target.checked,
+        "beállítás",
+        event.target.checked ? "Auto-tanulás bekapcsolva" : "Auto-tanulás kikapcsolva",
+      );
       Bot.saveBotState(botState);
       renderLearnPanel();
       bridge?.showToast?.(
@@ -167,7 +199,15 @@
     document.getElementById("botMarketWideMode")?.addEventListener("change", (event) => {
       const botState = getBotState();
       if (!botState) return;
+      const from = botState.config.marketWideMode;
       botState.config.marketWideMode = event.target.checked;
+      logToggleChange(
+        "marketWideMode",
+        from,
+        event.target.checked,
+        "beállítás",
+        event.target.checked ? "Piaci mód bekapcsolva" : "Kézi eszközválasztás",
+      );
       Bot.saveBotState(botState);
       syncConfigForm();
       render();
@@ -193,10 +233,14 @@
       button.addEventListener("click", () => switchSection(button.dataset.botSection));
     });
 
+    document.getElementById("botClearChangeLog")?.addEventListener("click", clearChangeLog);
+    document.getElementById("botExportChangeLog")?.addEventListener("click", exportChangeLog);
+
     document.getElementById("botCurrency")?.addEventListener("change", () => {
       const botState = getBotState();
       if (!botState) return;
       const previousCurrency = getBotCurrency(botState.config);
+      const previousChoice = botState.config.currency || "sync";
       const capitalInput = document.getElementById("botInitialCapital");
       const displayValue = Number(capitalInput?.value);
       if (Number.isFinite(displayValue) && displayValue > 0) {
@@ -213,6 +257,13 @@
       } else {
         botState.config.currency = document.getElementById("botCurrency").value;
       }
+      logToggleChange(
+        "currency",
+        previousChoice,
+        botState.config.currency,
+        "kézi",
+        "Pénznem módosítva",
+      );
       Bot.saveBotState(botState);
       syncCapitalField(botState.config);
       render();
@@ -365,6 +416,7 @@
   function saveConfig() {
     const botState = getBotState();
     if (!botState) return;
+    const before = { ...botState.config, assets: [...botState.config.assets] };
     const next = readConfigFromForm();
     const currency = getBotCurrency(next);
     if (!(next.initialCapital >= 100)) {
@@ -373,8 +425,16 @@
       );
       return;
     }
+    const changes = Bot.diffConfigs(before, next).map((change) => ({
+      ...change,
+      reason: "Kézi beállítás mentése",
+    }));
     botState.config = next;
-    Bot.saveBotState(botState);
+    if (changes.length) {
+      Bot.logConfigChanges(botState, "kézi", changes);
+    } else {
+      Bot.saveBotState(botState);
+    }
     render();
     bridge?.scheduleBotTick?.();
     bridge?.showToast?.("Bot beállítások elmentve.");
@@ -419,6 +479,88 @@
     }
     lastLearnPreview = result;
     renderLearnPanel();
+    renderConfigChangeLog();
+  }
+
+  function clearChangeLog() {
+    const botState = getBotState();
+    if (!botState) return;
+    if (!window.confirm("Biztosan törlöd a teljes beállítás-változás naplót?")) return;
+    Bot.clearConfigChangeLog(botState);
+    renderConfigChangeLog();
+    bridge?.showToast?.("A változásnapló törölve.");
+  }
+
+  function exportChangeLog() {
+    const botState = getBotState();
+    if (!botState?.configChangeLog?.length) {
+      bridge?.showToast?.("Nincs exportálható naplóbejegyzés.");
+      return;
+    }
+    const csv = Bot.exportConfigChangeLogCsv(botState);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `bot-valtozasnaplo-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    bridge?.showToast?.("Változásnapló exportálva CSV-be.");
+  }
+
+  function renderConfigChangeLog() {
+    const botState = getBotState();
+    const container = document.getElementById("botChangeLog");
+    const countBadge = document.getElementById("botChangeLogCount");
+    if (!container || !botState) return;
+
+    const entries = botState.configChangeLog || [];
+    if (countBadge) countBadge.textContent = `${entries.length} bejegyzés`;
+
+    container.replaceChildren();
+    if (!entries.length) {
+      container.append(
+        Object.assign(document.createElement("p"), {
+          className: "helper-text",
+          textContent: "Még nincs rögzített beállítás-változás. A kézi mentések, auto-tanulás és fontos kapcsolók itt jelennek meg.",
+        }),
+      );
+      return;
+    }
+
+    entries.slice(0, 40).forEach((entry) => {
+      const card = document.createElement("article");
+      card.className = `bot-change-log-item source-${entry.source.replace(/\s+/g, "-")}`;
+      const time = new Intl.DateTimeFormat("hu-HU", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(entry.time);
+      const sourceLabel = Bot.SOURCE_LABELS?.[entry.source] || entry.source;
+      const fromText =
+        entry.key === "initialCapital"
+          ? bridge.formatBotMoney(entry.from, getBotCurrency(botState.config))
+          : Bot.formatConfigValue(entry.key, entry.from);
+      const toText =
+        entry.key === "initialCapital"
+          ? bridge.formatBotMoney(entry.to, getBotCurrency(botState.config))
+          : Bot.formatConfigValue(entry.key, entry.to);
+      card.innerHTML = `
+        <div class="bot-change-log-head">
+          <time>${time}</time>
+          <span class="bot-change-source">${sourceLabel}</span>
+        </div>
+        <strong>${entry.label}</strong>
+        <div class="bot-change-values">
+          <span class="bot-change-from">${fromText}</span>
+          <span class="bot-change-arrow">→</span>
+          <span class="bot-change-to">${toText}</span>
+        </div>
+        ${entry.reason ? `<small>${entry.reason}</small>` : ""}`;
+      container.append(card);
+    });
   }
 
   function renderLearnPanel() {
@@ -582,6 +724,7 @@
     renderEquityChart();
     renderMarketScan(formatNumber);
     renderLearnPanel();
+    renderConfigChangeLog();
   }
 
   function renderPositions(appendEmptyTableRow, formatNumber, valueClass, currency) {
