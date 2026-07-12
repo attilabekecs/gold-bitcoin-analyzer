@@ -18,7 +18,7 @@
     enabled: false,
     autoLearnEnabled: false,
     professionalMode: true,
-    marketWideMode: false,
+    marketWideMode: true,
     assets: ["bitcoin", "ethereum", "spy"],
     currency: "sync",
     initialCapital: 10000,

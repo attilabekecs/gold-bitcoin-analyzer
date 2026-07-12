@@ -115,20 +115,44 @@
   function bindEvents() {
     const checks = document.getElementById("botAssetChecks");
     if (checks) {
-      checks.replaceChildren(
-        ...Catalog.ALL_KEYS.map((assetKey) => {
-          const meta = Catalog.getAsset(assetKey);
-          const label = document.createElement("label");
-          label.className = `toggle-chip${meta.featured ? " featured-asset-check" : ""}`;
-          const input = document.createElement("input");
-          input.type = "checkbox";
-          input.value = assetKey;
-          const text = document.createElement("span");
-          text.textContent = meta.name;
-          label.append(input, text);
-          return label;
-        }),
-      );
+      const categories = [
+        { id: "crypto", label: "Kripto" },
+        { id: "forex", label: "Deviza" },
+        { id: "commodity", label: "Árucikk" },
+        { id: "index", label: "Index" },
+        { id: "etf", label: "ETF" },
+        { id: "stock", label: "Részvény" },
+      ];
+      const groups = categories
+        .map((category) => {
+          const keys = Catalog.ALL_KEYS.filter(
+            (assetKey) => Catalog.getAsset(assetKey)?.category === category.id,
+          );
+          if (!keys.length) return null;
+          const group = document.createElement("div");
+          group.className = "bot-asset-group";
+          const title = document.createElement("p");
+          title.className = "bot-asset-group-title";
+          title.textContent = `${category.label} (${keys.length})`;
+          const chips = document.createElement("div");
+          chips.className = "bot-asset-group-chips";
+          keys.forEach((assetKey) => {
+            const meta = Catalog.getAsset(assetKey);
+            const label = document.createElement("label");
+            label.className = `toggle-chip${meta.featured ? " featured-asset-check" : ""}`;
+            const input = document.createElement("input");
+            input.type = "checkbox";
+            input.value = assetKey;
+            const text = document.createElement("span");
+            text.textContent = meta.name;
+            label.append(input, text);
+            chips.append(label);
+          });
+          group.append(title, chips);
+          return group;
+        })
+        .filter(Boolean);
+      checks.replaceChildren(...groups);
     }
 
     bindSliderOutputs();
@@ -749,7 +773,7 @@
     if (modeBadge) {
       const parts = [];
       if (botState.config.professionalMode) parts.push("Pro mód");
-      if (botState.config.marketWideMode) parts.push("Összes eszköz");
+      if (botState.config.marketWideMode) parts.push(`Piaci mód (${Catalog.ALL_KEYS.length})`);
       if (botState.config.autoLearnEnabled) parts.push("Auto-tanulás");
       if (botState.config.currency && botState.config.currency !== "sync") {
         parts.push(botState.config.currency);
@@ -961,9 +985,15 @@
     const context = getContext();
     context.botConfig = botState.config;
     const marketWide = botState.config.marketWideMode;
+    const appState = getState();
+    const scanProgress = appState?.scanLoadProgress;
+    const displayLimit = 20;
 
     if (heading) {
-      heading.textContent = marketWide ? "Piaci szkenner – összes eszköz" : "Követett eszközök";
+      const totalAssets = Catalog.ALL_KEYS.length;
+      heading.textContent = marketWide
+        ? `Piaci szkenner – ${totalAssets} eszköz`
+        : "Követett eszközök";
     }
 
     let results = botState.lastScan?.results;
@@ -976,6 +1006,10 @@
       results.sort((a, b) => b.opportunityScore - a.opportunityScore);
     }
 
+    const eligibleCount = results.filter((result) => result.eligible).length;
+    const withDataCount = results.filter((result) => result.decision).length;
+    const displayResults = results.slice(0, displayLimit);
+
     grid.replaceChildren();
     if (!results.length) {
       grid.append(
@@ -987,7 +1021,7 @@
         }),
       );
     } else {
-      results.forEach((result, index) => {
+      displayResults.forEach((result, index) => {
         const isChosen = botState.lastScan?.chosen?.assetKey === result.assetKey;
         const card = document.createElement("article");
         card.className = `bot-scan-card ${result.className}${result.eligible ? " eligible" : ""}${isChosen ? " chosen" : ""}`;
@@ -1024,10 +1058,33 @@
         card.append(headingRow, metrics, breakdown, reasons);
         grid.append(card);
       });
+      if (results.length > displayLimit) {
+        grid.append(
+          Object.assign(document.createElement("p"), {
+            className: "helper-text bot-scan-more",
+            textContent: `+${results.length - displayLimit} további eszköz a teljes listában (top ${displayLimit} látható).`,
+          }),
+        );
+      }
     }
 
     if (summary) {
       summary.replaceChildren();
+      if (scanProgress && !scanProgress.complete && marketWide) {
+        summary.append(
+          Object.assign(document.createElement("p"), {
+            className: "helper-text",
+            textContent: `Háttérbetöltés: ${scanProgress.loaded}/${scanProgress.total} eszköz adata érkezett…`,
+          }),
+        );
+      } else if (marketWide && withDataCount < results.length) {
+        summary.append(
+          Object.assign(document.createElement("p"), {
+            className: "helper-text",
+            textContent: `${withDataCount}/${results.length} eszközön van élő adat – a többi még betöltődik vagy nem elérhető.`,
+          }),
+        );
+      }
       const chosen = botState.lastScan?.chosen;
       if (chosen?.assetKey) {
         const box = document.createElement("div");
@@ -1047,13 +1104,12 @@
           }),
         );
       } else if (marketWide && results.length) {
-        const eligibleCount = results.filter((result) => result.eligible).length;
         summary.append(
           Object.assign(document.createElement("p"), {
             className: "helper-text",
             textContent: eligibleCount
-              ? `${eligibleCount} kereskedhető lehetőség – a legmagasabb pontszámú nyitható pozíciót választja a bot.`
-              : "Egyetlen eszköz sem teljesíti a szűrőket ebben a ciklusban.",
+              ? `${eligibleCount} kereskedhető lehetőség ${results.length} szkennelt eszközből – a legmagasabb pontszámú nyitható pozíciót választja a bot.`
+              : `${results.length} eszköz szkennelve – egyik sem teljesíti a szűrőket ebben a ciklusban.`,
           }),
         );
       } else if (!marketWide) {

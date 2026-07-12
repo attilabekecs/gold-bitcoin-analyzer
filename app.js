@@ -37,6 +37,7 @@ const state = {
   botTickTimer: null,
   botTickInterval: null,
   loadSequence: 0,
+  scanLoadProgress: null,
 };
 
 const VALID_VIEWS = [
@@ -273,11 +274,35 @@ async function loadDashboard() {
         // Optional timeframes may be unavailable for some sources.
       });
 
-  const assetTasks = Catalog.ALL_KEYS.flatMap((assetKey) => [
+  const assetTasks = Catalog.PRIORITY_KEYS.flatMap((assetKey) => [
     loadAssetDaily(assetKey),
     loadAssetIntraday(assetKey),
     loadAssetTimeframes(assetKey),
   ]);
+
+  const loadBackgroundScanAssets = async () => {
+    if (!Catalog.SCAN_ONLY_KEYS.length) return;
+    state.scanLoadProgress = {
+      loaded: 0,
+      total: Catalog.SCAN_ONLY_KEYS.length,
+      complete: false,
+    };
+    await Catalog.runInBatches(
+      Catalog.SCAN_ONLY_KEYS,
+      async (assetKey) => {
+        await loadAssetDaily(assetKey);
+        await loadAssetIntraday(assetKey);
+        if (!isCurrent()) return;
+        state.scanLoadProgress.loaded += 1;
+        renderBotTrading();
+      },
+      Catalog.SCAN_BATCH_SIZE,
+      Catalog.SCAN_BATCH_DELAY_MS,
+    );
+    if (!isCurrent()) return;
+    state.scanLoadProgress.complete = true;
+    renderBotTrading();
+  };
 
   const ratesTask = fetchExchangeRates()
     .then((rates) => {
@@ -325,6 +350,8 @@ async function loadDashboard() {
 
   await Promise.allSettled([...assetTasks, ratesTask, newsTask]);
   if (!isCurrent()) return;
+
+  loadBackgroundScanAssets();
 
   runVirtualBotTick();
   renderBotTrading();

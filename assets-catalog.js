@@ -4,10 +4,57 @@
   const YAHOO_INTERVALS = { 1: "1m", 5: "5m", 15: "15m", 60: "1h" };
   const TWELVE_INTERVALS = { 1: "1min", 5: "5min", 15: "15min", 60: "1h" };
 
+  function cryptoAsset(key, name, shortName, icon, coingeckoId, krakenPair, chartColor, iconClass = "eth-icon") {
+    return {
+      key,
+      featured: false,
+      category: "crypto",
+      name,
+      shortName,
+      pair: `${shortName} / USD`,
+      icon,
+      iconClass,
+      cardClass: iconClass.replace("-icon", "-card"),
+      chartColor,
+      priceDecimals: shortName === "DOGE" ? 4 : 2,
+      sentimentKeywords: [name.toLowerCase(), shortName.toLowerCase(), "crypto"],
+      sourceLabel: `${name} árfolyam`,
+      dataType: "crypto",
+      coingeckoId,
+      krakenPair,
+    };
+  }
+
+  function yahooAsset(key, name, shortName, icon, yahooSymbol, chartColor, options = {}) {
+    const category = options.category || "stock";
+    const iconClass =
+      options.iconClass ||
+      (category === "forex" ? "fx-icon" : category === "commodity" ? "oil-icon" : "spy-icon");
+    return {
+      key,
+      featured: false,
+      category,
+      name,
+      shortName,
+      pair: options.pair || `${shortName} / USD`,
+      icon,
+      iconClass,
+      cardClass: iconClass.replace("-icon", "-card"),
+      chartColor,
+      priceDecimals: options.priceDecimals ?? (category === "forex" ? 5 : 2),
+      unitSuffix: options.unitSuffix,
+      sentimentKeywords: options.sentimentKeywords || [name.toLowerCase(), shortName.toLowerCase()],
+      sourceLabel: options.sourceLabel || name,
+      dataType: "yahoo",
+      yahooSymbol,
+    };
+  }
+
   const CATALOG = {
     bitcoin: {
       key: "bitcoin",
       featured: true,
+      category: "crypto",
       name: "Bitcoin",
       shortName: "BTC",
       pair: "BTC / USD",
@@ -25,6 +72,7 @@
     gold: {
       key: "gold",
       featured: true,
+      category: "commodity",
       name: "Arany",
       shortName: "Au",
       pair: "GOLD / USD",
@@ -38,94 +86,232 @@
       sourceLabel: "Arany spot ár",
       dataType: "gold",
     },
-    ethereum: {
-      key: "ethereum",
-      featured: false,
-      name: "Ethereum",
-      shortName: "ETH",
-      pair: "ETH / USD",
-      icon: "Ξ",
-      iconClass: "eth-icon",
-      cardClass: "eth-card",
-      chartColor: "#627eea",
-      priceDecimals: 2,
-      sentimentKeywords: ["ethereum", "eth", "crypto"],
-      sourceLabel: "Ethereum árfolyam",
-      dataType: "crypto",
-      coingeckoId: "ethereum",
-      krakenPair: "ETHUSD",
-    },
-    solana: {
-      key: "solana",
-      featured: false,
-      name: "Solana",
-      shortName: "SOL",
-      pair: "SOL / USD",
-      icon: "◎",
-      iconClass: "sol-icon",
-      cardClass: "sol-card",
-      chartColor: "#14f195",
-      priceDecimals: 2,
-      sentimentKeywords: ["solana", "sol", "crypto"],
-      sourceLabel: "Solana árfolyam",
-      dataType: "crypto",
-      coingeckoId: "solana",
-      krakenPair: "SOLUSD",
-    },
-    eurusd: {
-      key: "eurusd",
-      featured: false,
-      name: "EUR/USD",
-      shortName: "EUR",
-      pair: "EUR / USD",
-      icon: "€",
-      iconClass: "fx-icon",
-      cardClass: "fx-card",
-      chartColor: "#3d6f8f",
-      priceDecimals: 5,
+    ethereum: cryptoAsset("ethereum", "Ethereum", "ETH", "Ξ", "ethereum", "ETHUSD", "#627eea", "eth-icon"),
+    solana: cryptoAsset("solana", "Solana", "SOL", "◎", "solana", "SOLUSD", "#14f195", "sol-icon"),
+    cardano: cryptoAsset("cardano", "Cardano", "ADA", "A", "cardano", "ADAUSD", "#0033ad"),
+    ripple: cryptoAsset("ripple", "Ripple (XRP)", "XRP", "X", "ripple", "XRPUSD", "#0085c3"),
+    polkadot: cryptoAsset("polkadot", "Polkadot", "DOT", "D", "polkadot", "DOTUSD", "#e6007a"),
+    avalanche: cryptoAsset("avalanche", "Avalanche", "AVAX", "A", "avalanche-2", "AVAXUSD", "#e84142"),
+    chainlink: cryptoAsset("chainlink", "Chainlink", "LINK", "L", "chainlink", "LINKUSD", "#375bd2"),
+    litecoin: cryptoAsset("litecoin", "Litecoin", "LTC", "Ł", "litecoin", "LTCUSD", "#bfbbbb"),
+    dogecoin: cryptoAsset("dogecoin", "Dogecoin", "DOGE", "Ð", "dogecoin", "DOGEUSD", "#c2a633"),
+    uniswap: cryptoAsset("uniswap", "Uniswap", "UNI", "U", "uniswap", "UNIUSD", "#ff007a"),
+    stellar: cryptoAsset("stellar", "Stellar", "XLM", "★", "stellar", "XLMUSD", "#7d00ff"),
+    cosmos: cryptoAsset("cosmos", "Cosmos", "ATOM", "C", "cosmos", "ATOMUSD", "#2e3148"),
+    polygon: cryptoAsset("polygon", "Polygon", "MATIC", "M", "matic-network", "MATICUSD", "#8247e5"),
+    bitcoincash: cryptoAsset("bitcoincash", "Bitcoin Cash", "BCH", "B", "bitcoin-cash", "BCHUSD", "#8dc351"),
+    aave: cryptoAsset("aave", "Aave", "AAVE", "Å", "aave", "AAVEUSD", "#b6509e"),
+    near: cryptoAsset("near", "NEAR Protocol", "NEAR", "N", "near", "NEARUSD", "#00c08b"),
+    filecoin: cryptoAsset("filecoin", "Filecoin", "FIL", "F", "filecoin", "FILUSD", "#0090ff"),
+    eurusd: yahooAsset("eurusd", "EUR/USD", "EUR", "€", "EURUSD=X", "#3d6f8f", {
+      category: "forex",
       sentimentKeywords: ["euro", "eur", "ecb", "forex"],
       sourceLabel: "EUR/USD deviza",
-      dataType: "yahoo",
-      yahooSymbol: "EURUSD=X",
-    },
-    oil: {
-      key: "oil",
-      featured: false,
-      name: "Olaj (WTI)",
-      shortName: "OIL",
-      pair: "WTI / USD",
-      icon: "🛢",
-      iconClass: "oil-icon",
-      cardClass: "oil-card",
-      chartColor: "#5c4a32",
-      priceDecimals: 2,
+    }),
+    gbpusd: yahooAsset("gbpusd", "GBP/USD", "GBP", "£", "GBPUSD=X", "#4a6f8f", {
+      category: "forex",
+      sentimentKeywords: ["pound", "gbp", "boe", "forex"],
+      sourceLabel: "GBP/USD deviza",
+    }),
+    usdjpy: yahooAsset("usdjpy", "USD/JPY", "JPY", "¥", "USDJPY=X", "#6b4f3f", {
+      category: "forex",
+      pair: "USD / JPY",
+      sentimentKeywords: ["yen", "jpy", "boj", "forex"],
+      sourceLabel: "USD/JPY deviza",
+    }),
+    usdchf: yahooAsset("usdchf", "USD/CHF", "CHF", "₣", "USDCHF=X", "#5a6b72", {
+      category: "forex",
+      pair: "USD / CHF",
+      sentimentKeywords: ["franc", "chf", "snb", "forex"],
+      sourceLabel: "USD/CHF deviza",
+    }),
+    audusd: yahooAsset("audusd", "AUD/USD", "AUD", "A$", "AUDUSD=X", "#8f6b3d", {
+      category: "forex",
+      sentimentKeywords: ["aussie", "aud", "rba", "forex"],
+      sourceLabel: "AUD/USD deviza",
+    }),
+    usdcad: yahooAsset("usdcad", "USD/CAD", "CAD", "C$", "USDCAD=X", "#7a5a45", {
+      category: "forex",
+      pair: "USD / CAD",
+      sentimentKeywords: ["loonie", "cad", "boc", "forex"],
+      sourceLabel: "USD/CAD deviza",
+    }),
+    nzdusd: yahooAsset("nzdusd", "NZD/USD", "NZD", "N$", "NZDUSD=X", "#6f7a4a", {
+      category: "forex",
+      sentimentKeywords: ["kiwi", "nzd", "rbnz", "forex"],
+      sourceLabel: "NZD/USD deviza",
+    }),
+    eurgbp: yahooAsset("eurgbp", "EUR/GBP", "EURGBP", "€£", "EURGBP=X", "#4f6d82", {
+      category: "forex",
+      pair: "EUR / GBP",
+      sentimentKeywords: ["euro", "pound", "forex"],
+      sourceLabel: "EUR/GBP deviza",
+    }),
+    eurjpy: yahooAsset("eurjpy", "EUR/JPY", "EURJPY", "€¥", "EURJPY=X", "#5d6f7a", {
+      category: "forex",
+      pair: "EUR / JPY",
+      sentimentKeywords: ["euro", "yen", "forex"],
+      sourceLabel: "EUR/JPY deviza",
+    }),
+    oil: yahooAsset("oil", "Olaj (WTI)", "OIL", "🛢", "CL=F", "#5c4a32", {
+      category: "commodity",
       unitSuffix: " / hordó",
       sentimentKeywords: ["oil", "crude", "wti", "opec", "energy"],
       sourceLabel: "WTI olaj",
-      dataType: "yahoo",
-      yahooSymbol: "CL=F",
-    },
-    spy: {
-      key: "spy",
-      featured: false,
-      name: "S&P 500 (SPY)",
-      shortName: "SPY",
-      pair: "SPY / USD",
-      icon: "S",
-      iconClass: "spy-icon",
-      cardClass: "spy-card",
-      chartColor: "#2f5d50",
-      priceDecimals: 2,
-      sentimentKeywords: ["s&p", "spy", "stocks", "equity", "nasdaq"],
+    }),
+    brent: yahooAsset("brent", "Brent olaj", "BRENT", "🛢", "BZ=F", "#4a3d2a", {
+      category: "commodity",
+      unitSuffix: " / hordó",
+      sentimentKeywords: ["brent", "oil", "crude", "energy"],
+      sourceLabel: "Brent olaj",
+    }),
+    silver: yahooAsset("silver", "Ezüst", "Ag", "Ag", "SI=F", "#9aa3ad", {
+      category: "commodity",
+      unitSuffix: " / uncia",
+      sentimentKeywords: ["silver", "xag", "precious", "metal"],
+      sourceLabel: "Ezüst spot",
+    }),
+    naturalgas: yahooAsset("naturalgas", "Földgáz", "NG", "⛽", "NG=F", "#6f8f5d", {
+      category: "commodity",
+      sentimentKeywords: ["natural gas", "energy", "ng"],
+      sourceLabel: "Henry Hub földgáz",
+    }),
+    copper: yahooAsset("copper", "Réz", "Cu", "Cu", "HG=F", "#b87333", {
+      category: "commodity",
+      sentimentKeywords: ["copper", "metal", "commodity"],
+      sourceLabel: "Réz határidős",
+    }),
+    platinum: yahooAsset("platinum", "Platina", "Pt", "Pt", "PL=F", "#7f8c8d", {
+      category: "commodity",
+      unitSuffix: " / uncia",
+      sentimentKeywords: ["platinum", "precious", "metal"],
+      sourceLabel: "Platina spot",
+    }),
+    spy: yahooAsset("spy", "S&P 500 (SPY)", "SPY", "S", "SPY", "#2f5d50", {
+      category: "index",
+      sentimentKeywords: ["s&p", "spy", "stocks", "equity"],
       sourceLabel: "S&P 500 proxy",
-      dataType: "yahoo",
-      yahooSymbol: "SPY",
-    },
+    }),
+    qqq: yahooAsset("qqq", "Nasdaq 100 (QQQ)", "QQQ", "Q", "QQQ", "#1f4f7a", {
+      category: "index",
+      sentimentKeywords: ["nasdaq", "qqq", "tech", "stocks"],
+      sourceLabel: "Nasdaq 100 proxy",
+    }),
+    dia: yahooAsset("dia", "Dow Jones (DIA)", "DIA", "D", "DIA", "#3d5a4a", {
+      category: "index",
+      sentimentKeywords: ["dow", "dia", "stocks", "equity"],
+      sourceLabel: "Dow Jones proxy",
+    }),
+    iwm: yahooAsset("iwm", "Russell 2000 (IWM)", "IWM", "R", "IWM", "#5a4a3d", {
+      category: "index",
+      sentimentKeywords: ["russell", "small cap", "iwm", "stocks"],
+      sourceLabel: "Russell 2000 proxy",
+    }),
+    gld: yahooAsset("gld", "Arany ETF (GLD)", "GLD", "G", "GLD", "#b98a35", {
+      category: "etf",
+      sentimentKeywords: ["gold", "gld", "etf", "bullion"],
+      sourceLabel: "Arany ETF",
+    }),
+    slv: yahooAsset("slv", "Ezüst ETF (SLV)", "SLV", "Ag", "SLV", "#8f9aa8", {
+      category: "etf",
+      sentimentKeywords: ["silver", "slv", "etf"],
+      sourceLabel: "Ezüst ETF",
+    }),
+    uso: yahooAsset("uso", "Olaj ETF (USO)", "USO", "O", "USO", "#6b4f32", {
+      category: "etf",
+      sentimentKeywords: ["oil", "uso", "energy", "etf"],
+      sourceLabel: "Olaj ETF",
+    }),
+    tlt: yahooAsset("tlt", "Kötvény ETF (TLT)", "TLT", "B", "TLT", "#4a5d6f", {
+      category: "etf",
+      sentimentKeywords: ["bonds", "treasury", "tlt", "rates"],
+      sourceLabel: "USA kötvény ETF",
+    }),
+    xle: yahooAsset("xle", "Energia ETF (XLE)", "XLE", "E", "XLE", "#6f5a32", {
+      category: "etf",
+      sentimentKeywords: ["energy", "xle", "oil", "etf"],
+      sourceLabel: "Energia szektor ETF",
+    }),
+    xlk: yahooAsset("xlk", "Tech ETF (XLK)", "XLK", "T", "XLK", "#2f4f7a", {
+      category: "etf",
+      sentimentKeywords: ["tech", "xlk", "nasdaq", "etf"],
+      sourceLabel: "Technológia szektor ETF",
+    }),
+    xlf: yahooAsset("xlf", "Pénzügy ETF (XLF)", "XLF", "F", "XLF", "#3d5a50", {
+      category: "etf",
+      sentimentKeywords: ["financials", "xlf", "banks", "etf"],
+      sourceLabel: "Pénzügyi szektor ETF",
+    }),
+    eem: yahooAsset("eem", "Emerging ETF (EEM)", "EEM", "EM", "EEM", "#5a6f4a", {
+      category: "etf",
+      sentimentKeywords: ["emerging", "eem", "global", "etf"],
+      sourceLabel: "Fejlődő piacok ETF",
+    }),
+    vti: yahooAsset("vti", "USA részvény (VTI)", "VTI", "V", "VTI", "#3f5d4f", {
+      category: "etf",
+      sentimentKeywords: ["vti", "stocks", "usa", "etf"],
+      sourceLabel: "Teljes USA piac ETF",
+    }),
+    aapl: yahooAsset("aapl", "Apple", "AAPL", "A", "AAPL", "#6f6f6f", {
+      category: "stock",
+      sentimentKeywords: ["apple", "aapl", "tech", "stocks"],
+      sourceLabel: "Apple részvény",
+    }),
+    msft: yahooAsset("msft", "Microsoft", "MSFT", "M", "MSFT", "#4f8fd1", {
+      category: "stock",
+      sentimentKeywords: ["microsoft", "msft", "tech", "stocks"],
+      sourceLabel: "Microsoft részvény",
+    }),
+    nvda: yahooAsset("nvda", "NVIDIA", "NVDA", "N", "NVDA", "#76b900", {
+      category: "stock",
+      sentimentKeywords: ["nvidia", "nvda", "ai", "stocks"],
+      sourceLabel: "NVIDIA részvény",
+    }),
+    tsla: yahooAsset("tsla", "Tesla", "TSLA", "T", "TSLA", "#cc0000", {
+      category: "stock",
+      sentimentKeywords: ["tesla", "tsla", "ev", "stocks"],
+      sourceLabel: "Tesla részvény",
+    }),
+    amzn: yahooAsset("amzn", "Amazon", "AMZN", "Z", "AMZN", "#ff9900", {
+      category: "stock",
+      sentimentKeywords: ["amazon", "amzn", "retail", "stocks"],
+      sourceLabel: "Amazon részvény",
+    }),
+    goog: yahooAsset("goog", "Alphabet", "GOOG", "G", "GOOGL", "#4285f4", {
+      category: "stock",
+      sentimentKeywords: ["google", "alphabet", "goog", "stocks"],
+      sourceLabel: "Alphabet részvény",
+    }),
+    meta: yahooAsset("meta", "Meta", "META", "M", "META", "#1877f2", {
+      category: "stock",
+      sentimentKeywords: ["meta", "facebook", "social", "stocks"],
+      sourceLabel: "Meta részvény",
+    }),
+    jpm: yahooAsset("jpm", "JPMorgan", "JPM", "J", "JPM", "#005eb8", {
+      category: "stock",
+      sentimentKeywords: ["jpmorgan", "jpm", "bank", "stocks"],
+      sourceLabel: "JPMorgan részvény",
+    }),
   };
 
   const FEATURED_KEYS = ["bitcoin", "gold"];
-  const EXTENDED_KEYS = ["ethereum", "solana", "eurusd", "oil", "spy"];
-  const ALL_KEYS = [...FEATURED_KEYS, ...EXTENDED_KEYS];
+  const EXTENDED_KEYS = [
+    "ethereum",
+    "solana",
+    "eurusd",
+    "oil",
+    "spy",
+    "qqq",
+    "silver",
+    "gbpusd",
+    "nvda",
+    "aapl",
+  ];
+  const ALL_KEYS = Object.keys(CATALOG);
+  const PRIORITY_KEYS = [...new Set([...FEATURED_KEYS, ...EXTENDED_KEYS])];
+  const SCAN_ONLY_KEYS = ALL_KEYS.filter((key) => !PRIORITY_KEYS.includes(key));
+  const SCAN_BATCH_SIZE = 5;
+  const SCAN_BATCH_DELAY_MS = 300;
 
   function getAsset(key) {
     return CATALOG[key] || null;
@@ -433,11 +619,28 @@
     );
   }
 
+  async function runInBatches(items, worker, batchSize = SCAN_BATCH_SIZE, delayMs = SCAN_BATCH_DELAY_MS) {
+    const results = [];
+    for (let index = 0; index < items.length; index += batchSize) {
+      const batch = items.slice(index, index + batchSize);
+      const batchResults = await Promise.allSettled(batch.map((item) => worker(item)));
+      results.push(...batchResults);
+      if (index + batchSize < items.length && delayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+    return results;
+  }
+
   window.AssetCatalog = {
     CATALOG,
     FEATURED_KEYS,
     EXTENDED_KEYS,
     ALL_KEYS,
+    PRIORITY_KEYS,
+    SCAN_ONLY_KEYS,
+    SCAN_BATCH_SIZE,
+    SCAN_BATCH_DELAY_MS,
     getAsset,
     getName,
     isFeatured,
@@ -446,5 +649,6 @@
     fetchAdditionalTimeframes,
     buildIntradayAsset,
     isValidCandle,
+    runInBatches,
   };
 })();
