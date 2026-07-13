@@ -4,6 +4,12 @@
   "main": "src/index.js",
   "compatibility_date": "2026-07-11",
   "workers_dev": true,
+  "kv_namespaces": [
+    {
+      "binding": "BOT_STATE_KV",
+      "id": "bot_state_prod"
+    }
+  ],
   "vars": {
     "ALLOWED_ORIGIN": "https://attilabekecs.github.io",
     "ALLOW_LOCAL": "false",

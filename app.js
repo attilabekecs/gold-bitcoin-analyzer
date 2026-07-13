@@ -264,6 +264,10 @@ document.addEventListener("DOMContentLoaded", () => {
     setActiveView("overview");
   });
   initBotUi();
+  initBotCloudSync();
+  window.addEventListener("online", () => {
+    if (state.botState) initBotCloudSync();
+  });
   window.PracticeLab?.init?.();
   const { view: initialView, botSection: initialBotSection } = parseLocationHash();
   setActiveView(initialView, false);
@@ -3182,6 +3186,23 @@ function runVirtualBotTick() {
   }
   window.VirtualBot.tick(state.botState, getBotContext());
   renderBotTrading();
+}
+
+function initBotCloudSync() {
+  if (!state.botState || !window.VirtualBot?.initCloudSync) return;
+  const endpoint = window.VirtualBot.resolveBotSyncEndpoint(state.settings.aiEndpoint);
+  window.VirtualBot.initCloudSync({
+    endpoint,
+    fxContext: getBotFxContext(),
+    onMerged: (mergedState) => {
+      state.botState = mergedState;
+      window.BotLab?.syncConfigForm?.();
+      renderBotTrading();
+      window.BotLab?.render?.();
+      scheduleBotTick();
+    },
+    onStatusChange: () => window.BotLab?.renderCloudSyncStatus?.(),
+  });
 }
 
 function initBotUi() {

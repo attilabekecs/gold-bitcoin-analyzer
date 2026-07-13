@@ -38,6 +38,9 @@
     { id: "botShortMomentumMin", key: "shortMomentumMin", type: "range", decimals: 2 },
     { id: "botSignalScore", key: "signalScoreThreshold", type: "range", decimals: 2 },
     { id: "botMinOpportunityScore", key: "minOpportunityScore", type: "range", decimals: 0 },
+    { id: "botMinEntryQualityScore", key: "minEntryQualityScore", type: "range", decimals: 0 },
+    { id: "botEntryQualityReady", key: "entryQualityReadyThreshold", type: "range", decimals: 0 },
+    { id: "botEntryQualityWait", key: "entryQualityWaitThreshold", type: "range", decimals: 0 },
     { id: "botMinAlignmentRatio", key: "minAlignmentRatio", type: "range", decimals: 0, displayScale: 100 },
     { id: "botMinAlignedTimeframes", key: "minAlignedTimeframes", type: "number" },
     { id: "botAtrPeriod", key: "atrPeriod", type: "number" },
@@ -74,6 +77,174 @@
     { id: "botPartialTakeProfit", key: "partialTakeProfitEnabled" },
     { id: "botUseTradingHours", key: "useTradingHours" },
   ];
+
+  const SETTING_HELP = {
+    botCurrency: {
+      what: "Meghatározza, milyen pénznemben látod a bot tőkéjét és eredményeit.",
+      raise: "Ha USD-ben gondolkodsz, válaszd a szinkron vagy USD opciót.",
+      lower: "HUF/EUR csak megjelenítés – a belső számítás USD-ben marad.",
+    },
+    botInitialCapital: {
+      what: "A virtuális számla induló összege. Ebből számolja a pozícióméretet és a kockázatot.",
+      raise: "Nagyobb tőke = nagyobb abszolút pozíciók, de a % kockázat ugyanaz marad.",
+      lower: "Kisebb tőkével óvatosabban tesztelhetsz stratégiát.",
+    },
+    botMaxPositions: {
+      what: "Egyszerre hány ügylet lehet nyitva. Több pozíció = több expozíció.",
+      raise: "Ha diverzifikálnál több eszközre és van elég tőke.",
+      lower: "Ha koncentráltabb, kevésbé szétszórt kereskedést szeretnél.",
+    },
+    botCooldown: {
+      what: "Két ügylet közötti minimum várakozás ugyanazon az eszközön. Csökkenti az overtradinget.",
+      raise: "Ha túl sok egymás utáni belépést látsz ugyanazon a piacon.",
+      lower: "Ha a bot túl ritkán lép be jó setupokra (pro módban kevésbé számít).",
+    },
+    botPrimaryInterval: {
+      what: "Melyik gyertya-idősíkon értékeli a jeleket. Rövidebb = gyorsabb, zajosabb.",
+      raise: "15–60 perc stabilabb trendekhez; kevesebb, de tisztább jel.",
+      lower: "1–5 perc aktívabb piacokhoz; több lehetőség, több zaj.",
+    },
+    botDirection: {
+      what: "Mely irányokban kereskedhet: LONG, SHORT vagy mindkettő.",
+      raise: "Both, ha mindkét irányban látod az esélyt.",
+      lower: "Csak LONG vagy SHORT, ha egy irányban jobb a statisztikád.",
+    },
+    botAutoClose: {
+      what: "Ellentétes erős jelzésnél automatikusan zárja a pozíciót.",
+      raise: "Bekapcsolva, ha gyorsan reagálnál trendfordulásra.",
+      lower: "Kikapcsolva, ha a stop/target és trailing stopot bízod a zárásra.",
+    },
+    botMarketWideMode: {
+      what: "Az összes követett eszközt szkenneli, és a legjobb lehetőséget választja.",
+      raise: "Bekapcsolva a legtöbb felhasználónak – nem maradsz le a legjobb setupról.",
+      lower: "Kikapcsolva, ha csak konkrét eszközökre akarsz fókuszálni.",
+    },
+    botProHighScore: {
+      what: "Pro módban: ha a lehetőség pontszám eléri ezt, nyertes ügylet után is azonnal beléphet.",
+      raise: "Magasabb érték = csak kivételesen erős jeleknél ugrik be gyorsan.",
+      lower: "Alacsonyabb érték = több azonnali belépés pro módban.",
+    },
+    botProWinCooldown: {
+      what: "Pro módban nyertes ügylet után ennyi percet vár, mielőtt újra belép (ha nincs magas pontszám).",
+      raise: "Hosszabb pihenő = kevesebb overtrading nyertes szériában.",
+      lower: "Rövidebb pihenő = aktívabb kereskedés pro módban.",
+    },
+    botProConfidenceFloor: {
+      what: "Pro mód minimális bizalmi padlója – ennél alacsonyabb jelzést nem vesz figyelembe.",
+      raise: "Magasabb padló = kevesebb, de megbízhatóbb belépés.",
+      lower: "Alacsonyabb padló = több lehetőség, de több zaj.",
+    },
+    botMinConfidence: {
+      what: "A jelzés megbízhatósági százaléka. Csak ez felett nyit ügyletet.",
+      raise: "65–75% között, ha kevesebb, de jobb minőségű trade-et akarsz.",
+      lower: "55–60% körül, ha több belépést szeretnél adatvezérelten.",
+    },
+    botSignalScore: {
+      what: "A technikai jel erőssége (EMA, RSI, MACD, momentum összpontszám).",
+      raise: "3–3.5: szigorúbb, kevesebb hamis jel.",
+      lower: "2.5–2.75: több belépés, még mindig szűrt.",
+    },
+    botMinOpportunityScore: {
+      what: "Összesített lehetőség-pontszám (bizalom + jel + egyezés + momentum). Fő belépési szűrő.",
+      raise: "75–90: csak kiváló setupok.",
+      lower: "60–70: merészebb, de még adatvezérelt kereskedés.",
+    },
+    botMinEntryQualityScore: {
+      what: "Belépési minőség minimuma (piaci struktúra, HTF, volumen, S/R).",
+      raise: "70+: csak tiszta, jól felépült setupok.",
+      lower: "58–65: erős VÁR állapotú setupok is beléphetnek.",
+    },
+    botEntryQualityReady: {
+      what: "KÉSZ küszöb: e pontszám felett „készen áll” a belépésre a piaci kép.",
+      raise: "70+: csak teljesen kialakult setup.",
+      lower: "58–65: korábbi belépés, ha többi szűrő is teljesül.",
+    },
+    botEntryQualityWait: {
+      what: "VÁR küszöb: köztes zóna – még kialakul, de erős setupnál beléphet.",
+      raise: "50+: kevesebb korai belépés.",
+      lower: "38–45: több „majdnem kész” setup is megfontolható.",
+    },
+    botMomentumThreshold: {
+      what: "Minimum ármozgás % az utolsó N percben. Megerősíti a trend irányát.",
+      raise: "0.15–0.25%: csak erős momentum.",
+      lower: "0.08–0.12%: lassabb piacokon is belép.",
+    },
+    botLongMomentumMin: {
+      what: "LONG irányhoz szükséges minimum pozitív momentum.",
+      raise: "Magasabb = csak erős emelkedő lendület.",
+      lower: "Alacsonyabb = több LONG lehetőség.",
+    },
+    botShortMomentumMin: {
+      what: "SHORT irányhoz szükséges minimum negatív momentum.",
+      raise: "Magasabb = csak erős eső lendület.",
+      lower: "Alacsonyabb = több SHORT lehetőség.",
+    },
+    botRequireAlignment: {
+      what: "Több idősíknak is egy irányba kell mutatnia (pl. 1p, 5p, 15p).",
+      raise: "Bekapcsolva: kevesebb, de jobban megerősített jel.",
+      lower: "Kikapcsolva: több belépés, kevesebb megerősítés.",
+    },
+    botMinAlignmentRatio: {
+      what: "Az idősíkok hány százalékának kell egyeznie (pl. 70% = 7/10 idősík).",
+      raise: "80–100%: szigorú egyezés.",
+      lower: "60–70%: lazább, több setup átmegy.",
+    },
+    botBlockAgainstDailyTrend: {
+      what: "Napi trend ellen nem nyit pozíciót (pl. napi csökkenésben nem LONG).",
+      raise: "Bekapcsolva: trendkövetőbb stratégia.",
+      lower: "Kikapcsolva: kontratrend setupok is megengedettek.",
+    },
+    botUseMacd: {
+      what: "MACD (EMA12–EMA26) megerősíti az irányt. LONG-nál EMA9 > EMA21 kell.",
+      raise: "Bekapcsolva: kevesebb hamis keresztezés.",
+      lower: "Kikapcsolva: gyorsabb piacokon több jel.",
+    },
+    botUseVolume: {
+      what: "Átlag feletti forgalom kell a belépéshez – megerősíti a mozgást.",
+      raise: "Bekapcsolva: csak likvidebb, megbízhatóbb pillanatok.",
+      lower: "Kikapcsolva: alacsony volumenű piacokon is belép.",
+    },
+    botRiskPercent: {
+      what: "Egy ügyleten kockáztatott tőke %-a (stop távolság alapján számolja a méretet).",
+      raise: "2–3%: agresszívebb, nagyobb pozíciók.",
+      lower: "0.5–1%: konzervatív, kisebb drawdown.",
+    },
+    botAtrStopMultiplier: {
+      what: "Stop-loss távolság = ATR × szorzó. Nagyobb szorzó = tágabb stop.",
+      raise: "3–4: kevésbé zavar ki zaj, de nagyobb veszteség/ügylet.",
+      lower: "1.5–2: szűkebb stop, gyorsabb kiszállás.",
+    },
+    botRewardRatio: {
+      what: "Célár távolsága a stop-hoz képest (R arány). 2.5 = cél 2.5× a kockázat.",
+      raise: "3–5: nagyobb profitcél, kevesebb találati arány is lehet.",
+      lower: "1.5–2: közelebbi cél, gyakoribb TP.",
+    },
+    botMaxDailyLoss: {
+      what: "Ha a napi realizált veszteség eléri ezt a %-ot, a bot nem nyit új pozíciót.",
+      raise: "8–12%: lazább napi limit.",
+      lower: "3–5%: szigorú védelem rossz napokon.",
+    },
+    botUseTrailingStop: {
+      what: "Nyereséges pozíciónál a stop követi az árat (ATR alapú).",
+      raise: "Bekapcsolva: több profitot hagyhat bent futó trendben.",
+      lower: "Kikapcsolva: fix stop/target, egyszerűbb viselkedés.",
+    },
+    botPartialTakeProfit: {
+      what: "Eléri az 1R-t (vagy beállított R-t), részben realizál profitot.",
+      raise: "Bekapcsolva: biztosítja a nyereség egy részét.",
+      lower: "Kikapcsolva: mindent vagy stop, vagy teljes cél zár.",
+    },
+    botReversalMinConfidence: {
+      what: "Ellentétes jelzésnél zárás minimum bizalma.",
+      raise: "75–85%: csak erős fordulójel zár.",
+      lower: "60–70%: érzékenyebb fordulás-figyelés.",
+    },
+    botFeePercent: {
+      what: "Szimulált kereskedési díj oldalanként (%). Realisztikusabb eredmény.",
+      raise: "Magasabb díj = konzervatívabb nettó PnL becslés.",
+      lower: "Alacsonyabb díj, ha alacsony költségű brókert modellezel.",
+    },
+  };
 
   const PARAM_LABELS = {
     minConfidence: "Min. megbízhatóság",
@@ -134,6 +305,135 @@
       element.dataset.sliderBound = "1";
       element.addEventListener("input", () => updateSliderOutput(field));
     });
+  }
+
+  function getSettingTitle(element) {
+    if (!element) return "Beállítás";
+    const header = element.querySelector(".control-header span:first-child");
+    if (header?.textContent) return header.textContent.trim();
+    const toggle = element.querySelector(".toggle-label");
+    if (toggle?.textContent) return toggle.textContent.trim();
+    const firstText = [...element.childNodes]
+      .filter((node) => node.nodeType === Node.TEXT_NODE && node.textContent.trim())
+      .map((node) => node.textContent.trim())[0];
+    if (firstText) return firstText;
+    const label = element.closest("label");
+    if (label && label !== element) return getSettingTitle(label);
+    return "Beállítás";
+  }
+
+  function buildSettingHelpPanel(controlId, title) {
+    const help = SETTING_HELP[controlId];
+    if (!help) return null;
+    const panel = document.createElement("div");
+    panel.className = "bot-setting-help";
+    panel.hidden = true;
+    panel.innerHTML = `
+      <p><strong>Mi ez?</strong> ${help.what}</p>
+      <p><strong>Emeld, ha…</strong> ${help.raise}</p>
+      <p><strong>Csökkentsd, ha…</strong> ${help.lower}</p>
+    `;
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "bot-help-toggle";
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.textContent = "Mi ez?";
+    toggle.addEventListener("click", () => {
+      const expanded = toggle.getAttribute("aria-expanded") === "true";
+      toggle.setAttribute("aria-expanded", String(!expanded));
+      panel.hidden = expanded;
+      toggle.textContent = expanded ? "Mi ez?" : "Elrejtés";
+    });
+    const header = document.createElement("div");
+    header.className = "bot-setting-card-header";
+    const heading = document.createElement("p");
+    heading.className = "bot-setting-card-title";
+    heading.textContent = title;
+    header.append(heading, toggle);
+    return { header, panel };
+  }
+
+  function enhanceBotSettingCards() {
+    const form = document.getElementById("botConfigForm");
+    if (!form || form.dataset.cardsEnhanced) return;
+    form.dataset.cardsEnhanced = "1";
+
+    const controlIds = [
+      ...CONFIG_FIELDS.map((field) => field.id),
+      ...CHECKBOX_FIELDS.map((field) => field.id),
+      "botCurrency",
+    ];
+
+    controlIds.forEach((controlId) => {
+      const control = document.getElementById(controlId);
+      if (!control) return;
+      const host =
+        control.closest("label.control-slider, label.toggle-switch, label") ||
+        control.parentElement;
+      if (!host || host.closest(".bot-setting-card") || host.classList.contains("bot-asset-fieldset")) {
+        return;
+      }
+
+      const title = getSettingTitle(host);
+      const parts = buildSettingHelpPanel(controlId, title);
+      if (!parts) return;
+
+      const card = document.createElement("div");
+      card.className = "bot-setting-card";
+      card.dataset.settingId = controlId;
+      host.parentNode.insertBefore(card, host);
+      card.append(parts.header, host, parts.panel);
+    });
+
+    const proInfo = form.querySelector(".bot-pro-info");
+    if (proInfo && !proInfo.closest(".bot-setting-card")) {
+      const card = document.createElement("div");
+      card.className = "bot-setting-card bot-setting-card-info";
+      proInfo.parentNode.insertBefore(card, proInfo);
+      card.append(proInfo);
+    }
+
+    const syncPanel = document.getElementById("botCloudSyncPanel");
+    if (syncPanel && !syncPanel.closest(".bot-setting-card")) {
+      const card = document.createElement("div");
+      card.className = "bot-setting-card bot-setting-card-sync";
+      syncPanel.parentNode.insertBefore(card, syncPanel);
+      card.append(syncPanel);
+    }
+  }
+
+  function renderCloudSyncStatus() {
+    const panel = document.getElementById("botCloudSyncPanel");
+    if (!panel || !Bot.getCloudSyncStatus) return;
+    const sync = Bot.getCloudSyncStatus();
+    const statusEl = panel.querySelector("[data-sync-status]");
+    const detailEl = panel.querySelector("[data-sync-detail]");
+    const userEl = panel.querySelector("[data-sync-user]");
+    if (!statusEl || !detailEl || !userEl) return;
+
+    const labels = {
+      idle: "Várakozás",
+      syncing: "Szinkronizálás…",
+      synced: "Szinkronban",
+      offline: "Offline / helyi",
+      conflict: "Ütközés",
+    };
+    statusEl.textContent = labels[sync.status] || sync.status;
+    panel.dataset.syncState = sync.status;
+
+    if (sync.status === "synced" && sync.lastSyncedAt) {
+      detailEl.textContent = `Utolsó szinkron: ${new Date(sync.lastSyncedAt).toLocaleString("hu-HU")}`;
+    } else if (sync.error) {
+      detailEl.textContent = sync.error;
+    } else if (sync.status === "offline") {
+      detailEl.textContent = "Helyi mentés aktív – online állapotban automatikusan szinkronizál.";
+    } else {
+      detailEl.textContent = "Ügyletek, tanulási napló és beállítások eszközök között megosztva.";
+    }
+
+    const shortId = sync.userId ? `${sync.userId.slice(0, 8)}…` : "–";
+    userEl.textContent = shortId;
+    userEl.title = sync.userId || "";
   }
 
   function logToggleChange(key, from, to, source, reason) {
@@ -276,6 +576,16 @@
 
     document.getElementById("botSaveConfig")?.addEventListener("click", saveConfig);
     document.getElementById("botResetButton")?.addEventListener("click", resetAccount);
+    document.getElementById("botCopyUserId")?.addEventListener("click", async () => {
+      const userId = Bot.getOrCreateBotUserId?.();
+      if (!userId) return;
+      try {
+        await navigator.clipboard.writeText(userId);
+        bridge?.showToast?.("Bot azonosító vágólapra másolva.");
+      } catch {
+        bridge?.showToast?.("Nem sikerült másolni – másold ki kézzel az azonosítót.");
+      }
+    });
     document.getElementById("botRunLearnButton")?.addEventListener("click", runLearnPreview);
     document.getElementById("botApplyLearnButton")?.addEventListener("click", applyLearnPreview);
 
@@ -911,6 +1221,7 @@
     renderMarketScan(formatNumber);
     renderLearnPanel();
     renderConfigChangeLog();
+    renderCloudSyncStatus();
   }
 
   function renderPositions(appendEmptyTableRow, formatNumber, valueClass, currency) {
@@ -1396,10 +1707,12 @@
 
   function init(appBridge) {
     bridge = appBridge;
+    enhanceBotSettingCards();
     bindEvents();
     syncConfigForm();
     switchConfigTab("general");
     switchSection(appBridge?.initialBotSection || "summary", false);
+    renderCloudSyncStatus();
     render();
   }
 
@@ -1410,5 +1723,6 @@
     resize,
     switchSection,
     getActiveSection,
+    renderCloudSyncStatus,
   };
 })();

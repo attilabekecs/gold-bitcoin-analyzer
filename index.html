@@ -36,13 +36,13 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=20260712-22" />
+    <link rel="stylesheet" href="styles.css?v=20260713-01" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
     <script src="assets-catalog.js?v=20260712-22" defer></script>
-    <script src="virtual-bot.js?v=20260712-23" defer></script>
-    <script src="bot-lab.js?v=20260712-23" defer></script>
+    <script src="virtual-bot.js?v=20260713-01" defer></script>
+    <script src="bot-lab.js?v=20260713-01" defer></script>
     <script src="practice-lab.js?v=20260712-22" defer></script>
-    <script src="app.js?v=20260712-22" defer></script>
+    <script src="app.js?v=20260713-01" defer></script>
     <script src="strategy-engine.js?v=20260712-22" defer></script>
     <script src="strategy-lab.js?v=20260712-22" defer></script>
   </head>
@@ -537,6 +537,17 @@
             </div>
             <form id="botConfigForm" class="form-grid bot-config-form">
               <div id="botConfigPanelGeneral" class="bot-config-panel-group" data-bot-config-panel="general" role="tabpanel">
+                <div id="botCloudSyncPanel" class="bot-cloud-sync panel-inset" data-sync-state="idle">
+                  <div class="bot-cloud-sync-header">
+                    <div>
+                      <p class="eyebrow">ESZKÖZÖK KÖZÖTTI SZINKRON</p>
+                      <p class="helper-text">Ügyletek, tanulási napló és beállítások automatikus mentése a felhőbe. Nincs regisztráció – névtelen azonosítóval.</p>
+                    </div>
+                    <span class="local-badge" data-sync-status>Várakozás</span>
+                  </div>
+                  <p class="helper-text" data-sync-detail>Ügyletek, tanulási napló és beállítások eszközök között megosztva.</p>
+                  <p class="helper-text bot-sync-user-line">Azonosító: <code data-sync-user>–</code> <button id="botCopyUserId" class="text-button bot-copy-id" type="button">Másolás</button> <span class="inline-helper">(másik gépen illeszd be a böngésző konzoljába: localStorage.setItem('aurum-bot-user-id','…'))</span></p>
+                </div>
                 <label>Pénznem
                   <select id="botCurrency">
                     <option value="sync">Szinkron (globális beállítás)</option>
@@ -604,9 +615,9 @@
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Pro: magas pontszám küszöb (azonnali belépés)</span>
-                    <output for="botProHighScore" id="botProHighScoreOut">85</output>
+                    <output for="botProHighScore" id="botProHighScoreOut">75</output>
                   </span>
-                  <input id="botProHighScore" type="range" min="60" max="95" step="5" value="85" />
+                  <input id="botProHighScore" type="range" min="60" max="95" step="5" value="75" />
                 </label>
                 <label class="control-slider">
                   <span class="control-header">
@@ -662,44 +673,65 @@
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Momentum küszöb (%)</span>
-                    <output for="botMomentumThreshold" id="botMomentumThresholdOut">0.18</output>
+                    <output for="botMomentumThreshold" id="botMomentumThresholdOut">0.12</output>
                   </span>
-                  <input id="botMomentumThreshold" type="range" min="0.03" max="0.5" step="0.01" value="0.18" />
+                  <input id="botMomentumThreshold" type="range" min="0.03" max="0.5" step="0.01" value="0.12" />
                 </label>
                 <label class="control-slider">
                   <span class="control-header">
                     <span>LONG momentum min (%)</span>
-                    <output for="botLongMomentumMin" id="botLongMomentumMinOut">0.15</output>
+                    <output for="botLongMomentumMin" id="botLongMomentumMinOut">0.10</output>
                   </span>
-                  <input id="botLongMomentumMin" type="range" min="0.03" max="0.5" step="0.01" value="0.15" />
+                  <input id="botLongMomentumMin" type="range" min="0.03" max="0.5" step="0.01" value="0.10" />
                 </label>
                 <label class="control-slider">
                   <span class="control-header">
                     <span>SHORT momentum min (%)</span>
-                    <output for="botShortMomentumMin" id="botShortMomentumMinOut">0.15</output>
+                    <output for="botShortMomentumMin" id="botShortMomentumMinOut">0.10</output>
                   </span>
-                  <input id="botShortMomentumMin" type="range" min="0.03" max="0.5" step="0.01" value="0.15" />
+                  <input id="botShortMomentumMin" type="range" min="0.03" max="0.5" step="0.01" value="0.10" />
                 </label>
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Jelzésküszöb (pont)</span>
-                    <output for="botSignalScore" id="botSignalScoreOut">3</output>
+                    <output for="botSignalScore" id="botSignalScoreOut">2.75</output>
                   </span>
-                  <input id="botSignalScore" type="range" min="1.5" max="4" step="0.25" value="3" />
+                  <input id="botSignalScore" type="range" min="1.5" max="4" step="0.25" value="2.75" />
                 </label>
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Min. megbízhatóság (%)</span>
-                    <output for="botMinConfidence" id="botMinConfidenceOut">65</output>
+                    <output for="botMinConfidence" id="botMinConfidenceOut">58</output>
                   </span>
-                  <input id="botMinConfidence" type="range" min="40" max="90" step="1" value="65" />
+                  <input id="botMinConfidence" type="range" min="40" max="90" step="1" value="58" />
                 </label>
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Min. lehetőség pontszám</span>
-                    <output for="botMinOpportunityScore" id="botMinOpportunityScoreOut">85</output>
+                    <output for="botMinOpportunityScore" id="botMinOpportunityScoreOut">65</output>
                   </span>
-                  <input id="botMinOpportunityScore" type="range" min="60" max="120" step="5" value="85" />
+                  <input id="botMinOpportunityScore" type="range" min="60" max="120" step="5" value="65" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Min. belépési minőség</span>
+                    <output for="botMinEntryQualityScore" id="botMinEntryQualityScoreOut">62</output>
+                  </span>
+                  <input id="botMinEntryQualityScore" type="range" min="50" max="95" step="5" value="62" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Belépés KÉSZ küszöb</span>
+                    <output for="botEntryQualityReady" id="botEntryQualityReadyOut">62</output>
+                  </span>
+                  <input id="botEntryQualityReady" type="range" min="60" max="90" step="5" value="62" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Belépés VÁR küszöb</span>
+                    <output for="botEntryQualityWait" id="botEntryQualityWaitOut">42</output>
+                  </span>
+                  <input id="botEntryQualityWait" type="range" min="35" max="70" step="5" value="42" />
                 </label>
                 <label class="toggle-switch">
                   <span class="toggle-label">MACD megerősítés</span>
@@ -727,9 +759,9 @@
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Min. egyezési arány (%)</span>
-                    <output for="botMinAlignmentRatio" id="botMinAlignmentRatioOut">80</output>
+                    <output for="botMinAlignmentRatio" id="botMinAlignmentRatioOut">70</output>
                   </span>
-                  <input id="botMinAlignmentRatio" type="range" min="0.5" max="1" step="0.05" value="0.8" data-display-scale="100" />
+                  <input id="botMinAlignmentRatio" type="range" min="0.5" max="1" step="0.05" value="0.7" data-display-scale="100" />
                 </label>
               </div>
 

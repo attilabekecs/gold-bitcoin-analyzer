@@ -60,6 +60,44 @@ A `.dev.vars` helyi teszteléshez használható. Ezt a fájlt a `.gitignore` kiz
 ### `GET /health`
 
 Visszaadja a szolgáltatás állapotát, de nem teszi közzé a titkos kulcsokat.
+A válasz tartalmazza a `botSync` mezőt is (KV binding elérhető-e).
+
+### `GET /bot-state?userId=<azonosító>`
+
+Virtuális bot állapot letöltése eszközök közötti szinkronhoz. **Nem igényel Bearer tokent.**
+Anonim `userId` (localStorage-ből) alapján tárolja az ügyleteket, tanulási naplót és beállításokat.
+
+### `PUT /bot-state`
+
+Bot állapot mentése felhőbe. Kérés:
+
+```json
+{
+  "userId": "abc123...",
+  "updatedAt": 1710000000000,
+  "state": {
+    "config": {},
+    "trades": [],
+    "positions": [],
+    "equityHistory": [],
+    "learningHistory": [],
+    "configChangeLog": [],
+    "initialCapital": 10000,
+    "cash": 10000
+  }
+}
+```
+
+### Bot szinkron KV telepítés
+
+A Workerhez Cloudflare KV namespace kell:
+
+```bash
+cd ai-backend
+npx wrangler kv namespace create BOT_STATE_KV
+```
+
+A kapott `id` értéket írd be a `wrangler.jsonc` fájl `kv_namespaces` részébe, majd deploy.
 
 ### `POST /analyze`
 

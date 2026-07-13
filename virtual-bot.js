@@ -4,6 +4,18 @@
   const STORAGE_KEY = "aurum-virtual-bot";
   const STORAGE_KEY_TRADES_BACKUP = "aurum-virtual-bot-trades-backup";
   const STORAGE_KEY_LEARNING_BACKUP = "aurum-virtual-bot-learning-backup";
+  const BOT_USER_ID_KEY = "aurum-bot-user-id";
+  const BOT_LOCAL_UPDATED_KEY = "aurum-bot-local-updated";
+  const CLOUD_SYNC_DEBOUNCE_MS = 2500;
+
+  let cloudSyncRuntime = {
+    endpoint: "",
+    pushTimer: null,
+    status: "idle",
+    lastError: "",
+    lastSyncedAt: null,
+    onStatusChange: null,
+  };
 
   const PARAM_BOUNDS = {
     minConfidence: { min: 40, max: 90, step: 5 },
@@ -46,7 +58,7 @@
     maxPositions: 2,
     cooldownMinutes: 30,
     proMinConfidenceFloor: 55,
-    proHighScoreThreshold: 85,
+    proHighScoreThreshold: 75,
     proWinCooldownMinutes: 5,
     primaryInterval: 5,
     direction: "both",
@@ -61,15 +73,15 @@
     rsiOversold: 30,
     useMacd: true,
     momentumLookback: 15,
-    momentumThreshold: 0.18,
-    longMomentumMin: 0.15,
-    shortMomentumMin: 0.15,
+    momentumThreshold: 0.12,
+    longMomentumMin: 0.1,
+    shortMomentumMin: 0.1,
     useVolume: true,
     volumeMultiplier: 1.4,
-    signalScoreThreshold: 3,
-    minConfidence: 65,
+    signalScoreThreshold: 2.75,
+    minConfidence: 58,
     requireAlignment: true,
-    minAlignmentRatio: 0.8,
+    minAlignmentRatio: 0.7,
     minAlignedTimeframes: 2,
     blockAgainstDailyTrend: true,
     atrPeriod: 14,
@@ -88,10 +100,10 @@
     reversalMinScore: 3,
     maxPositionAgeMinutes: 120,
     maxDailyLossPercent: 5,
-    minOpportunityScore: 85,
-    minEntryQualityScore: 72,
-    entryQualityReadyThreshold: 72,
-    entryQualityWaitThreshold: 50,
+    minOpportunityScore: 65,
+    minEntryQualityScore: 62,
+    entryQualityReadyThreshold: 62,
+    entryQualityWaitThreshold: 42,
     minHoldMinutes: 15,
     minSellUrgencyScore: 55,
     minRegimeAtrPercentile: 12,
@@ -236,6 +248,246 @@
         ? Math.round(value / bounds.step) * bounds.step
         : value;
     return Math.min(bounds.max, Math.max(bounds.min, stepped));
+  }
+
+  function createBotUserId() {
+    if (window.crypto?.randomUUID) return window.crypto.randomUUID().replace(/-/g, "");
+    return `bot${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+  }
+
+  function getOrCreateBotUserId() {
+    try {
+      const existing = localStorage.getItem(BOT_USER_ID_KEY);
+      if (existing && /^[a-z0-9-]{16,64}$/i.test(existing)) return existing;
+      const created = createBotUserId();
+      localStorage.setItem(BOT_USER_ID_KEY, created);
+      return created;
+    } catch {
+      return createBotUserId();
+    }
+  }
+
+  function getLocalUpdatedAt() {
+    try {
+      const value = Number(localStorage.getItem(BOT_LOCAL_UPDATED_KEY));
+      return Number.isFinite(value) && value > 0 ? value : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  function setLocalUpdatedAt(timestamp = Date.now()) {
+    try {
+      localStorage.setItem(BOT_LOCAL_UPDATED_KEY, String(timestamp));
+    } catch {
+      // Ignore storage failures.
+    }
+  }
+
+  function setCloudSyncStatus(status, error = "") {
+    cloudSyncRuntime.status = status;
+    cloudSyncRuntime.lastError = error || "";
+    if (status === "synced") cloudSyncRuntime.lastSyncedAt = Date.now();
+    cloudSyncRuntime.onStatusChange?.({
+      status: cloudSyncRuntime.status,
+      error: cloudSyncRuntime.lastError,
+      lastSyncedAt: cloudSyncRuntime.lastSyncedAt,
+      userId: getOrCreateBotUserId(),
+    });
+  }
+
+  function buildSyncPayload(botState) {
+    if (!botState) return null;
+    return {
+      updatedAt: Date.now(),
+      state: {
+        config: botState.config,
+        trades: botState.trades || [],
+        positions: botState.positions || [],
+        equityHistory: botState.equityHistory || [],
+        learningHistory: botState.learningHistory || [],
+        configChangeLog: botState.configChangeLog || [],
+        activityLog: botState.activityLog || [],
+        performanceStats: botState.performanceStats || {
+          eligibleTicks: 0,
+          capturedCount: 0,
+          missedLog: [],
+        },
+        initialCapital: botState.initialCapital,
+        cash: botState.cash,
+        lastActionAt: botState.lastActionAt || {},
+        lastActionOutcome: botState.lastActionOutcome || {},
+      },
+    };
+  }
+
+  function applySyncPayload(botState, payload, fxContext = null) {
+    if (!botState || !payload?.state) return botState;
+    const incoming = payload.state;
+    botState.config = { ...DEFAULT_CONFIG, ...incoming.config };
+    botState.trades = Array.isArray(incoming.trades) ? incoming.trades : [];
+    botState.positions = Array.isArray(incoming.positions) ? incoming.positions : [];
+    botState.equityHistory = Array.isArray(incoming.equityHistory) ? incoming.equityHistory : [];
+    botState.learningHistory = Array.isArray(incoming.learningHistory) ? incoming.learningHistory : [];
+    botState.configChangeLog = Array.isArray(incoming.configChangeLog) ? incoming.configChangeLog : [];
+    botState.activityLog = Array.isArray(incoming.activityLog) ? incoming.activityLog : [];
+    botState.performanceStats = incoming.performanceStats || botState.performanceStats;
+    botState.initialCapital = incoming.initialCapital;
+    botState.cash = incoming.cash;
+    botState.lastActionAt = incoming.lastActionAt || {};
+    botState.lastActionOutcome = incoming.lastActionOutcome || {};
+    return reconcileBalanceOnLoad(botState, fxContext);
+  }
+
+  function mergeBotStateWithCloud(localState, cloudPayload, fxContext = null) {
+    const localUpdatedAt = getLocalUpdatedAt();
+    const cloudUpdatedAt = Number(cloudPayload?.updatedAt) || 0;
+    if (!cloudPayload?.state) {
+      return { state: localState, source: "local", updatedAt: localUpdatedAt };
+    }
+    if (cloudUpdatedAt > localUpdatedAt) {
+      return {
+        state: applySyncPayload({ ...localState }, cloudPayload, fxContext),
+        source: "cloud",
+        updatedAt: cloudUpdatedAt,
+      };
+    }
+    if (localUpdatedAt > cloudUpdatedAt) {
+      return { state: localState, source: "local", updatedAt: localUpdatedAt, shouldPush: true };
+    }
+    const localTradeCount = localState.trades?.length || 0;
+    const cloudTradeCount = cloudPayload.state.trades?.length || 0;
+    if (cloudTradeCount > localTradeCount) {
+      return {
+        state: applySyncPayload({ ...localState }, cloudPayload, fxContext),
+        source: "cloud",
+        updatedAt: cloudUpdatedAt,
+      };
+    }
+    return { state: localState, source: "local", updatedAt: localUpdatedAt, shouldPush: true };
+  }
+
+  async function fetchCloudBotState(endpoint, userId) {
+    if (!endpoint || !userId) return null;
+    try {
+      const url = new URL(endpoint);
+      url.searchParams.set("userId", userId);
+      const response = await fetch(url.toString(), {
+        method: "GET",
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+      });
+      if (!response.ok) return null;
+      const data = await response.json();
+      if (!data?.found) return null;
+      return data;
+    } catch {
+      return null;
+    }
+  }
+
+  async function pushCloudBotState(endpoint, userId, botState) {
+    if (!endpoint || !userId || !botState) return { ok: false };
+    const payload = buildSyncPayload(botState);
+    if (!payload) return { ok: false };
+    try {
+      const response = await fetch(endpoint, {
+        method: "PUT",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ userId, ...payload }),
+      });
+      if (response.status === 409) {
+        const conflict = await response.json().catch(() => ({}));
+        return { ok: false, conflict: true, updatedAt: conflict.updatedAt };
+      }
+      if (!response.ok) return { ok: false };
+      const data = await response.json();
+      setLocalUpdatedAt(payload.updatedAt);
+      return { ok: true, updatedAt: data.updatedAt || payload.updatedAt };
+    } catch {
+      return { ok: false };
+    }
+  }
+
+  function scheduleCloudPush(endpoint, botState) {
+    if (!endpoint || !botState) return;
+    cloudSyncRuntime.endpoint = endpoint;
+    if (cloudSyncRuntime.pushTimer) clearTimeout(cloudSyncRuntime.pushTimer);
+    cloudSyncRuntime.pushTimer = setTimeout(async () => {
+      cloudSyncRuntime.pushTimer = null;
+      setCloudSyncStatus("syncing");
+      const userId = getOrCreateBotUserId();
+      const result = await pushCloudBotState(endpoint, userId, botState);
+      if (result.ok) {
+        setCloudSyncStatus("synced");
+        return;
+      }
+      if (result.conflict) {
+        setCloudSyncStatus("conflict", "A felhőben újabb állapot van.");
+        return;
+      }
+      setCloudSyncStatus("offline", "Nincs kapcsolat – helyi mentés aktív.");
+    }, CLOUD_SYNC_DEBOUNCE_MS);
+  }
+
+  async function initCloudSync(options = {}) {
+    const endpoint = options.endpoint || "";
+    const fxContext = options.fxContext || null;
+    const onMerged = options.onMerged;
+    cloudSyncRuntime.endpoint = endpoint;
+    cloudSyncRuntime.onStatusChange = options.onStatusChange || null;
+
+    if (!endpoint || !navigator.onLine) {
+      setCloudSyncStatus("offline");
+      return { merged: false, source: "local" };
+    }
+
+    const userId = getOrCreateBotUserId();
+    setCloudSyncStatus("syncing");
+    const cloudPayload = await fetchCloudBotState(endpoint, userId);
+    const localRaw = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+    const localState =
+      localRaw && typeof localRaw === "object"
+        ? restorePersistentDataFallback(localRaw)
+        : createBotState();
+
+    const mergeResult = mergeBotStateWithCloud(localState, cloudPayload, fxContext);
+    saveBotState(mergeResult.state, { skipCloudPush: true });
+    setLocalUpdatedAt(mergeResult.updatedAt || Date.now());
+
+    if (mergeResult.shouldPush || mergeResult.source === "local") {
+      const pushResult = await pushCloudBotState(endpoint, userId, mergeResult.state);
+      if (pushResult.ok) {
+        setCloudSyncStatus("synced");
+      } else if (pushResult.conflict) {
+        setCloudSyncStatus("conflict", "A felhőben újabb állapot van.");
+      } else {
+        setCloudSyncStatus("offline", "Nem sikerült feltölteni – helyi mentés aktív.");
+      }
+    } else {
+      setCloudSyncStatus("synced");
+    }
+
+    onMerged?.(mergeResult.state, mergeResult);
+    return mergeResult;
+  }
+
+  function resolveBotSyncEndpoint(aiEndpoint) {
+    if (!aiEndpoint || typeof aiEndpoint !== "string") {
+      return "https://aurum-satoshi-ai.attila-bekecs.workers.dev/bot-state";
+    }
+    try {
+      const url = new URL(aiEndpoint);
+      url.pathname = "/bot-state";
+      url.search = "";
+      url.hash = "";
+      return url.toString();
+    } catch {
+      return "https://aurum-satoshi-ai.attila-bekecs.workers.dev/bot-state";
+    }
   }
 
   function createBotState(config = DEFAULT_CONFIG) {
@@ -664,10 +916,14 @@
     return Math.max(0, maxTotalExposure - usedExposure);
   }
 
-  function saveBotState(botState) {
+  function saveBotState(botState, options = {}) {
     try {
       backupPersistentData(botState);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(botState));
+      setLocalUpdatedAt(Date.now());
+      if (!options.skipCloudPush && cloudSyncRuntime.endpoint) {
+        scheduleCloudPush(cloudSyncRuntime.endpoint, botState);
+      }
     } catch {
       // Ignore storage failures.
     }
@@ -1016,11 +1272,50 @@
   }
 
   function resolveEntryReadiness(score, config) {
-    const ready = config.entryQualityReadyThreshold ?? 72;
-    const wait = config.entryQualityWaitThreshold ?? 50;
+    const ready = config.entryQualityReadyThreshold ?? 62;
+    const wait = config.entryQualityWaitThreshold ?? 42;
     if (score >= ready) return "KÉSZ";
     if (score >= wait) return "VÁR";
     return "ROSSZ";
+  }
+
+  function passesEntryQualityGate(entryQuality, direction, config, opportunityScore = 0) {
+    if (!entryQuality) return { pass: false, reason: "Nincs belépési minőség elemzés" };
+    const minQuality = config.minEntryQualityScore ?? 62;
+    const minOpportunity = config.minOpportunityScore || 65;
+    const activeReadiness =
+      direction === "short" ? entryQuality.shortReadiness : entryQuality.longReadiness;
+    const activeScore = direction === "short" ? entryQuality.shortScore : entryQuality.longScore;
+    const blocks = entryQuality.blocks?.[direction] || [];
+
+    if (blocks.length) {
+      return { pass: false, reason: blocks[0] };
+    }
+    if (activeScore < minQuality) {
+      return {
+        pass: false,
+        reason: `Belépési minőség alacsony (${activeScore} < ${minQuality})`,
+      };
+    }
+    if (activeReadiness === "KÉSZ") {
+      return { pass: true, readiness: activeReadiness, score: activeScore };
+    }
+    if (activeReadiness === "VÁR") {
+      const strongWait =
+        activeScore >= minQuality + 3 &&
+        opportunityScore >= minOpportunity + 8 &&
+        blocks.length === 0;
+      if (strongWait) {
+        return {
+          pass: true,
+          readiness: activeReadiness,
+          score: activeScore,
+          waitOverride: true,
+        };
+      }
+      return { pass: false, reason: `Setup kialakul – várakozás (${activeScore} pt)` };
+    }
+    return { pass: false, reason: `Belépési minőség rossz (${activeScore} pt)` };
   }
 
   function analyzeEntryQuality(assetKey, direction, decision, config, context, botState = null) {
@@ -1782,9 +2077,9 @@
       filterReasons.push(
         `Jelzéserősség alacsony (${Math.abs(decision.score || 0).toFixed(2)} < ${thresholds.signalScoreThreshold})`,
       );
-    } else if (scoreBreakdown.total < (config.minOpportunityScore || 85)) {
+    } else if (scoreBreakdown.total < (config.minOpportunityScore || 65)) {
       filterReasons.push(
-        `Lehetőség pontszám alacsony (${scoreBreakdown.total.toFixed(0)} < ${config.minOpportunityScore || 85})`,
+        `Lehetőség pontszám alacsony (${scoreBreakdown.total.toFixed(0)} < ${config.minOpportunityScore || 65})`,
       );
     }
 
@@ -1810,21 +2105,14 @@
         filterReasons.push("Korábbi vesztes minták – eszköz büntetve");
       }
       if (entryQuality) {
-        const minQuality = config.minEntryQualityScore ?? 72;
-        const activeReadiness =
-          direction === "long" ? entryQuality.longReadiness : entryQuality.shortReadiness;
-        const activeScore = direction === "long" ? entryQuality.longScore : entryQuality.shortScore;
-        const blocks = entryQuality.blocks?.[direction] || [];
-        if (blocks.length) {
-          filterReasons.push(blocks[0]);
-        } else if (activeReadiness === "ROSSZ") {
-          filterReasons.push(`Belépési minőség rossz (${activeScore} pt)`);
-        } else if (activeReadiness === "VÁR") {
-          filterReasons.push(`Setup kialakul – várakozás (${activeScore} pt)`);
-        } else if (activeScore < minQuality) {
-          filterReasons.push(
-            `Belépési minőség alacsony (${activeScore} < ${minQuality})`,
-          );
+        const qualityGate = passesEntryQualityGate(
+          entryQuality,
+          direction,
+          config,
+          scoreBreakdown.total,
+        );
+        if (!qualityGate.pass) {
+          filterReasons.push(qualityGate.reason);
         }
       }
       if (!(decision.stop > 0) || !(decision.target > 0) || !(decision.currentPrice > 0)) {
@@ -2227,7 +2515,7 @@
     if (!decision || decision.className === "neutral") return null;
     if (decision.confidence < thresholds.minConfidence) return null;
     if (Math.abs(decision.score || 0) < thresholds.signalScoreThreshold) return null;
-    if (opportunityScore < (config.minOpportunityScore || 85)) return null;
+    if (opportunityScore < (config.minOpportunityScore || 65)) return null;
     if (!canOpen(assetKey, botState, now, opportunityScore)) return null;
     if (!(decision.stop > 0) || !(decision.target > 0) || !(decision.currentPrice > 0)) return null;
 
@@ -2245,14 +2533,17 @@
       context,
       botState,
     );
-    const minQuality = config.minEntryQualityScore ?? 72;
+    const qualityGate = passesEntryQualityGate(
+      entryQuality,
+      direction,
+      config,
+      opportunityScore,
+    );
+    if (!qualityGate.pass) return null;
+
     const activeReadiness =
       direction === "long" ? entryQuality.longReadiness : entryQuality.shortReadiness;
     const activeScore = direction === "long" ? entryQuality.longScore : entryQuality.shortScore;
-    const blocks = entryQuality.blocks?.[direction] || [];
-    if (blocks.length) return null;
-    if (activeReadiness !== "KÉSZ") return null;
-    if (activeScore < minQuality) return null;
 
     const rawEntry = decision.currentPrice;
     const entry = applySlippage(rawEntry, direction, true, config);
@@ -2302,7 +2593,7 @@
           : "";
     logActivity(
       botState,
-      `${assetName} ${direction.toUpperCase()} nyitva @ ${formatPrice(entry, context)} · ${decision.signal} (${decision.confidence}%, ${opportunityScore.toFixed(0)} pont, belépés ${activeScore} KÉSZ)${proNote}`,
+      `${assetName} ${direction.toUpperCase()} nyitva @ ${formatPrice(entry, context)} · ${decision.signal} (${decision.confidence}%, ${opportunityScore.toFixed(0)} pont, belépés ${activeScore} ${qualityGate.waitOverride ? "VÁR→" : ""}${activeReadiness})${proNote}`,
     );
     return position;
   }
@@ -2703,7 +2994,7 @@
       );
       propose(
         "minOpportunityScore",
-        (next.minOpportunityScore || 85) + 5,
+        (next.minOpportunityScore || 65) + 5,
         "Magasabb lehetőség-pontszám – kevesebb, de jobb belépés.",
       );
     }
@@ -2944,6 +3235,18 @@
     loadBotState,
     saveBotState,
     createBotState,
+    getOrCreateBotUserId,
+    buildSyncPayload,
+    mergeBotStateWithCloud,
+    initCloudSync,
+    resolveBotSyncEndpoint,
+    getCloudSyncStatus: () => ({
+      status: cloudSyncRuntime.status,
+      error: cloudSyncRuntime.lastError,
+      lastSyncedAt: cloudSyncRuntime.lastSyncedAt,
+      userId: getOrCreateBotUserId(),
+    }),
+    passesEntryQualityGate,
     getMetrics,
     getPerformanceMetrics,
     getEffectiveThresholds,

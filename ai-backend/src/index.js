@@ -8,6 +8,16 @@ const JSON_HEADERS = {
 let cachedDiscoveredModel = "";
 let cachedModelExpiresAt = 0;
 let strategyRequestTimes = [];
+const botSyncRequestTimes = new Map();
+
+const BOT_STATE_MAX_BYTES = 512000;
+const BOT_SYNC_RATE_WINDOW_MS = 60 * 1000;
+const BOT_SYNC_RATE_LIMIT = 30;
+const botSyncRequestTimes = new Map();
+
+const BOT_STATE_MAX_BYTES = 512000;
+const BOT_SYNC_RATE_WINDOW_MS = 60 * 1000;
+const BOT_SYNC_RATE_LIMIT = 30;
 
 const SYSTEM_INSTRUCTION = `Te az Aurum & Satoshi oktatási célú piaci elemzője vagy.
 Magyarul válaszolj, tömören és jól tagoltan.
@@ -115,10 +125,23 @@ export default {
           ok: true,
           service: "aurum-satoshi-ai",
           model: env.GEMINI_MODEL || "gemini-2.5-flash",
+          botSync: Boolean(env.BOT_STATE_KV),
         },
         200,
         corsHeaders,
       );
+    }
+
+    const isBotStateGet = request.method === "GET" && url.pathname === "/bot-state";
+    const isBotStatePut = request.method === "PUT" && url.pathname === "/bot-state";
+    if (isBotStateGet || isBotStatePut) {
+      if (!isAllowedOrigin(origin, env)) {
+        return jsonResponse({ error: "Nem engedélyezett eredet." }, 403, corsHeaders);
+      }
+      if (isBotStateGet) {
+        return handleBotStateGet(url, env, corsHeaders);
+      }
+      return handleBotStatePut(request, env, corsHeaders);
     }
 
     const isAnalysisRequest = request.method === "POST" && url.pathname === "/analyze";
@@ -461,7 +484,7 @@ function isAllowedOrigin(origin, env) {
 function buildCorsHeaders(origin, env) {
   const headers = {
     ...JSON_HEADERS,
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, PUT, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
     "Access-Control-Max-Age": "86400",
     Vary: "Origin",
@@ -584,4 +607,180 @@ function modelPreference(name, preferred) {
   const stableBonus = /(preview|exp|\d{2}-\d{2})/i.test(name) ? 20 : 0;
   const litePenalty = /lite/i.test(name) ? 5 : 0;
   return 100 + stableBonus + litePenalty;
+}
+
+function isValidBotUserId(value) {
+  return typeof value === "string" && /^[a-z0-9-]{16,64}$/i.test(value);
+}
+
+function isBotSyncRateLimited(userId) {
+  const now = Date.now();
+  const recent = (botSyncRequestTimes.get(userId) || []).filter(
+    (time) => now - time < BOT_SYNC_RATE_WINDOW_MS,
+  );
+  if (recent.length >= BOT_SYNC_RATE_LIMIT) return true;
+  recent.push(now);
+  botSyncRequestTimes.set(userId, recent);
+  return false;
+}
+
+function sanitizeBotStatePayload(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return null;
+  const updatedAt = Number(input.updatedAt);
+  if (!Number.isFinite(updatedAt) || updatedAt <= 0) return null;
+
+  const state = input.state;
+  if (!state || typeof state !== "object" || Array.isArray(state)) return null;
+
+  const config =
+    state.config && typeof state.config === "object" && !Array.isArray(state.config)
+      ? state.config
+      : {};
+  const trades = Array.isArray(state.trades) ? state.trades.slice(0, 500) : [];
+  const positions = Array.isArray(state.positions) ? state.positions.slice(0, 20) : [];
+  const equityHistory = Array.isArray(state.equityHistory)
+    ? state.equityHistory.slice(-500)
+    : [];
+  const learningHistory = Array.isArray(state.learningHistory)
+    ? state.learningHistory.slice(0, 200)
+    : [];
+  const configChangeLog = Array.isArray(state.configChangeLog)
+    ? state.configChangeLog.slice(0, 200)
+    : [];
+  const activityLog = Array.isArray(state.activityLog) ? state.activityLog.slice(0, 80) : [];
+  const performanceStats =
+    state.performanceStats && typeof state.performanceStats === "object"
+      ? {
+          eligibleTicks: Number(state.performanceStats.eligibleTicks) || 0,
+          capturedCount: Number(state.performanceStats.capturedCount) || 0,
+          missedLog: Array.isArray(state.performanceStats.missedLog)
+            ? state.performanceStats.missedLog.slice(0, 50)
+            : [],
+        }
+      : { eligibleTicks: 0, capturedCount: 0, missedLog: [] };
+
+  const initialCapital = Number(state.initialCapital);
+  const cash = Number(state.cash);
+  if (!Number.isFinite(initialCapital) || initialCapital < 100) return null;
+  if (!Number.isFinite(cash) || cash < 0) return null;
+
+  return {
+    updatedAt,
+    state: {
+      config,
+      trades,
+      positions,
+      equityHistory,
+      learningHistory,
+      configChangeLog,
+      activityLog,
+      performanceStats,
+      initialCapital,
+      cash,
+      lastActionAt:
+        state.lastActionAt && typeof state.lastActionAt === "object" ? state.lastActionAt : {},
+      lastActionOutcome:
+        state.lastActionOutcome && typeof state.lastActionOutcome === "object"
+          ? state.lastActionOutcome
+          : {},
+    },
+  };
+}
+
+async function handleBotStateGet(url, env, corsHeaders) {
+  if (!env.BOT_STATE_KV) {
+    return jsonResponse({ error: "A bot szinkron nincs konfigurálva." }, 503, corsHeaders);
+  }
+  const userId = url.searchParams.get("userId") || "";
+  if (!isValidBotUserId(userId)) {
+    return jsonResponse({ error: "Érvénytelen felhasználó-azonosító." }, 400, corsHeaders);
+  }
+  if (isBotSyncRateLimited(userId)) {
+    return jsonResponse({ error: "Túl sok szinkron kérés. Próbáld újra később." }, 429, corsHeaders);
+  }
+
+  const stored = await env.BOT_STATE_KV.get(`bot:${userId}`);
+  if (!stored) {
+    return jsonResponse({ found: false, userId }, 200, corsHeaders);
+  }
+
+  try {
+    const parsed = JSON.parse(stored);
+    const sanitized = sanitizeBotStatePayload(parsed);
+    if (!sanitized) {
+      return jsonResponse({ error: "A tárolt bot állapot sérült." }, 500, corsHeaders);
+    }
+    return jsonResponse({ found: true, userId, ...sanitized }, 200, corsHeaders);
+  } catch {
+    return jsonResponse({ error: "A tárolt bot állapot nem olvasható." }, 500, corsHeaders);
+  }
+}
+
+async function handleBotStatePut(request, env, corsHeaders) {
+  if (!env.BOT_STATE_KV) {
+    return jsonResponse({ error: "A bot szinkron nincs konfigurálva." }, 503, corsHeaders);
+  }
+
+  const contentLength = Number(request.headers.get("Content-Length") || 0);
+  if (contentLength > BOT_STATE_MAX_BYTES) {
+    return jsonResponse({ error: "A bot állapot túl nagy." }, 413, corsHeaders);
+  }
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return jsonResponse({ error: "Érvénytelen JSON-kérés." }, 400, corsHeaders);
+  }
+
+  const userId = typeof body?.userId === "string" ? body.userId : "";
+  if (!isValidBotUserId(userId)) {
+    return jsonResponse({ error: "Érvénytelen felhasználó-azonosító." }, 400, corsHeaders);
+  }
+  if (isBotSyncRateLimited(userId)) {
+    return jsonResponse({ error: "Túl sok szinkron kérés. Próbáld újra később." }, 429, corsHeaders);
+  }
+
+  const sanitized = sanitizeBotStatePayload(body);
+  if (!sanitized) {
+    return jsonResponse({ error: "Érvénytelen bot állapot." }, 400, corsHeaders);
+  }
+
+  const serialized = JSON.stringify({ userId, ...sanitized });
+  if (serialized.length > BOT_STATE_MAX_BYTES) {
+    return jsonResponse({ error: "A bot állapot túl nagy." }, 413, corsHeaders);
+  }
+
+  const existingRaw = await env.BOT_STATE_KV.get(`bot:${userId}`);
+  if (existingRaw) {
+    try {
+      const existing = JSON.parse(existingRaw);
+      if (Number(existing?.updatedAt) > sanitized.updatedAt) {
+        return jsonResponse(
+          {
+            ok: false,
+            conflict: true,
+            updatedAt: existing.updatedAt,
+            message: "A felhőben újabb állapot van – előbb töltsd le.",
+          },
+          409,
+          corsHeaders,
+        );
+      }
+    } catch {
+      // Overwrite corrupted records.
+    }
+  }
+
+  await env.BOT_STATE_KV.put(`bot:${userId}`, serialized);
+  return jsonResponse(
+    {
+      ok: true,
+      userId,
+      updatedAt: sanitized.updatedAt,
+      savedAt: new Date().toISOString(),
+    },
+    200,
+    corsHeaders,
+  );
 }
