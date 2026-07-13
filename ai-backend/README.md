@@ -97,7 +97,15 @@ cd ai-backend
 npx wrangler kv namespace create BOT_STATE_KV
 ```
 
-A kapott `id` értéket írd be a `wrangler.jsonc` fájl `kv_namespaces` részébe, majd deploy.
+A kapott `id` értéket add hozzá a `wrangler.jsonc` fájlhoz:
+
+```jsonc
+"kv_namespaces": [
+  { "binding": "BOT_STATE_KV", "id": "<a-kapott-id>" }
+]
+```
+
+Majd deploy újra. KV nélkül a `/bot-state` végpontok 503-at adnak, a frontend helyi mentéssel továbbra is működik.
 
 ### `POST /analyze`
 
