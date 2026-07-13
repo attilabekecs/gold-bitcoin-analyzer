@@ -55,12 +55,22 @@
     { id: "botReversalMinConfidence", key: "reversalMinConfidence", type: "range", decimals: 0 },
     { id: "botReversalMinScore", key: "reversalMinScore", type: "range", decimals: 2 },
     { id: "botMaxPositionAge", key: "maxPositionAgeMinutes", type: "range", decimals: 0 },
+    { id: "botMinHoldMinutes", key: "minHoldMinutes", type: "range", decimals: 0 },
+    { id: "botMinSellUrgency", key: "minSellUrgencyScore", type: "range", decimals: 0 },
+    { id: "botVolumeMultiplier", key: "volumeMultiplier", type: "range", decimals: 1 },
+    { id: "botMaxTradesPerDay", key: "maxTradesPerDay", type: "range", decimals: 0 },
+    { id: "botMaxTradesPerHour", key: "maxTradesPerHour", type: "range", decimals: 0 },
+    { id: "botMinEntryGap", key: "minEntryGapMinutes", type: "range", decimals: 0 },
     { id: "botMaxDailyLoss", key: "maxDailyLossPercent", type: "range", decimals: 1 },
     { id: "botFeePercent", key: "feePercent", type: "number" },
     { id: "botSpreadPercent", key: "spreadPercent", type: "number" },
     { id: "botSlippagePercent", key: "slippagePercent", type: "number" },
     { id: "botTradingHoursStart", key: "tradingHoursStart", type: "number" },
     { id: "botTradingHoursEnd", key: "tradingHoursEnd", type: "number" },
+    { id: "botEntryMode", key: "entryMode", type: "select" },
+    { id: "botRegimeFilter", key: "regimeFilter", type: "select" },
+    { id: "botHtfTrendStrength", key: "htfTrendFilterStrength", type: "select" },
+    { id: "botScannerPriority", key: "scannerRefreshPriority", type: "select" },
   ];
 
   const CHECKBOX_FIELDS = [
@@ -243,6 +253,56 @@
       what: "Szimulált kereskedési díj oldalanként (%). Realisztikusabb eredmény.",
       raise: "Magasabb díj = konzervatívabb nettó PnL becslés.",
       lower: "Alacsonyabb díj, ha alacsony költségű brókert modellezel.",
+    },
+    botMinHoldMinutes: {
+      what: "Minimum perc, amíg a bot nem zár csak jelzés vagy időlimit miatt – csökkenti a túl korai kilépést.",
+      raise: "20–30 perc: hagyja futni a setupot.",
+      lower: "5–10 perc scalp stílusban.",
+    },
+    botMinSellUrgency: {
+      what: "Tartás vs eladás döntésnél: ennyi pont kell az eladáshoz. Magasabb = nehezebb korai zárás.",
+      raise: "65+: csak erős ellenjel zár.",
+      lower: "45–50: érzékenyebb profitvédelem.",
+    },
+    botVolumeMultiplier: {
+      what: "Hány szorosa kell legyen a forgalom az átlagnak a volumen-megerősítéshez.",
+      raise: "1.8–2.5×: csak erős volumen-spike.",
+      lower: "1.2–1.4: több setup átmegy.",
+    },
+    botMaxTradesPerDay: {
+      what: "Napi maximum nyitott ügyletek száma – overtrading védelem.",
+      raise: "15+: aktívabb napokhoz.",
+      lower: "5–8: konzervatív profil.",
+    },
+    botMaxTradesPerHour: {
+      what: "Óránkénti ügylet limit – burst védelem.",
+      raise: "6–8: scalp mód.",
+      lower: "2–3: lassabb kereskedés.",
+    },
+    botMinEntryGap: {
+      what: "Globális minimum várakozás két belépés között (függetlenül az eszköztől).",
+      raise: "20–30 perc: kevesebb egymás utáni belépés.",
+      lower: "0–5 perc: aktívabb kereskedés.",
+    },
+    botEntryMode: {
+      what: "Breakout = erős momentum + volumen; pullback = visszahúzódás RSI zónában.",
+      raise: "Válaszd ki az egyik módot, ha túl sok zajos belépés van.",
+      lower: "Both, ha mindkét setup típust használnád.",
+    },
+    botRegimeFilter: {
+      what: "Milyen piaci rezsimben kereskedhet: trendelő, oldalazó vagy mindkettő.",
+      raise: "Trendelő: kevesebb, de irányultságú setup.",
+      lower: "Both: több lehetőség, de zajosabb piacokon is.",
+    },
+    botHtfTrendStrength: {
+      what: "Magasabb idősíkok (15p, 1ó) trend-egyezésének szigorúsága belépés előtt.",
+      raise: "Szigorú: minden HTF egyezés kell.",
+      lower: "Laza: nincs HTF tiltás.",
+    },
+    botScannerPriority: {
+      what: "Milyen gyakran frissítse a piaci szkennert pro módban.",
+      raise: "Minőség: ritkább, de stabilabb scan.",
+      lower: "Gyors: több scan, reaktívabb bot.",
     },
   };
 
@@ -600,6 +660,10 @@
     document.getElementById("botClearChangeLog")?.addEventListener("click", clearChangeLog);
     document.getElementById("botExportChangeLog")?.addEventListener("click", exportChangeLog);
 
+    document.querySelectorAll("[data-bot-preset]").forEach((button) => {
+      button.addEventListener("click", () => applyPreset(button.dataset.botPreset));
+    });
+
     document.getElementById("botCurrency")?.addEventListener("change", () => {
       const botState = getBotState();
       if (!botState) return;
@@ -718,7 +782,7 @@
   }
 
   function switchConfigTab(tab) {
-    const validTabs = ["general", "signals", "risk", "execution"];
+    const validTabs = ["general", "entry", "exit", "signals", "risk", "execution", "pro", "sync"];
     if (!validTabs.includes(tab)) tab = "general";
 
     document.querySelectorAll("[data-bot-config-tab]").forEach((button) => {
@@ -1215,6 +1279,7 @@
     renderPositions(appendEmptyTableRow, formatNumber, valueClass, currency);
     renderTrades(appendEmptyTableRow, formatNumber, valueClass, currency);
     renderMissedOpportunities(formatNumber);
+    renderNoTradeDiagnostics();
     renderSuggestions();
     renderActivity();
     renderEquityChart();
@@ -1326,6 +1391,99 @@
       });
       table.append(row);
     });
+  }
+
+  function applyPreset(presetKey) {
+    const botState = getBotState();
+    if (!botState) return;
+    const preset = Bot.CONFIG_PRESETS?.[presetKey];
+    if (!preset) return;
+    const confirmed = window.confirm(
+      `Alkalmazod a „${preset.label}” előbeállítást?\n\n${preset.description}\n\nA jelenlegi paraméterek felülírásra kerülnek (eszközlista megmarad).`,
+    );
+    if (!confirmed) return;
+    Bot.applyConfigPreset(botState, presetKey, { source: "beállítás" });
+    syncConfigForm();
+    render();
+    bridge?.scheduleBotTick?.();
+    bridge?.showToast?.(`${preset.label} profil alkalmazva – ellenőrizd a beállításokat.`);
+    if (botState.config.enabled) bridge?.runTick?.();
+  }
+
+  function renderNoTradeDiagnostics() {
+    const botState = getBotState();
+    const panel = document.getElementById("botNoTradeDiagnostics");
+    if (!panel || !botState) return;
+
+    const diag = Bot.getTradeDiagnostics?.(botState, getContext());
+    if (!diag || !diag.enabled) {
+      panel.hidden = true;
+      return;
+    }
+
+    const showPanel = diag.isStale || diag.blockers.length > 0;
+    panel.hidden = !showPanel;
+    if (!showPanel) return;
+
+    panel.classList.toggle("is-stale", Boolean(diag.isStale));
+
+    const title = document.getElementById("botNoTradeTitle");
+    if (title) {
+      title.textContent = diag.isStale
+        ? `${diag.hoursSinceOpenLabel} nem nyitott ügyletet`
+        : "Aktuális belépési akadályok";
+    }
+
+    const badge = document.getElementById("botNoTradeBadge");
+    if (badge) {
+      badge.textContent = diag.isStale ? "Figyelem" : "Info";
+      badge.className = `local-badge ${diag.isStale ? "warn-active" : ""}`;
+    }
+
+    const summary = document.getElementById("botNoTradeSummary");
+    if (summary) {
+      summary.textContent = diag.isStale
+        ? `A bot aktív, de ${diag.hoursSinceOpenLabel} nem nyitott sikeres ügyletet. ${diag.eligibleAssets}/${diag.scannedAssets} eszköz most is megfelelne a szűrőknek.`
+        : `Jelenleg ${diag.blockers.length} aktív akadály blokkolja az új belépéseket.`;
+    }
+
+    const blockersEl = document.getElementById("botNoTradeBlockers");
+    if (blockersEl) {
+      blockersEl.replaceChildren();
+      diag.blockers.forEach((text) => {
+        const chip = document.createElement("span");
+        chip.className = "bot-diag-chip";
+        chip.textContent = text;
+        blockersEl.append(chip);
+      });
+    }
+
+    const reasonsEl = document.getElementById("botNoTradeReasons");
+    if (reasonsEl) {
+      reasonsEl.replaceChildren();
+      if (!diag.topReasons.length) {
+        const empty = document.createElement("li");
+        empty.className = "helper-text";
+        empty.textContent = "Még nincs összegyűjtött elutasítási statisztika – várj néhány szkenner ciklust.";
+        reasonsEl.append(empty);
+      } else {
+        diag.topReasons.forEach((entry, index) => {
+          const li = document.createElement("li");
+          li.innerHTML = `<strong>${index + 1}.</strong> ${entry.label} <span>(${entry.count}×)</span>`;
+          reasonsEl.append(li);
+        });
+      }
+    }
+
+    const hintsEl = document.getElementById("botNoTradeHints");
+    if (hintsEl) {
+      hintsEl.replaceChildren();
+      diag.suggestions.forEach((hint) => {
+        const li = document.createElement("li");
+        li.textContent = hint.detail;
+        hintsEl.append(li);
+      });
+    }
   }
 
   function renderSuggestions() {

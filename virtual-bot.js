@@ -44,6 +44,144 @@
     entryQualityWaitThreshold: { min: 35, max: 70, step: 5 },
     minHoldMinutes: { min: 5, max: 120, step: 5 },
     minSellUrgencyScore: { min: 40, max: 90, step: 5 },
+    maxTradesPerDay: { min: 1, max: 30, step: 1 },
+    maxTradesPerHour: { min: 1, max: 10, step: 1 },
+    minEntryGapMinutes: { min: 0, max: 60, step: 5 },
+    volumeMultiplier: { min: 1, max: 3, step: 0.1 },
+  };
+
+  const CONFIG_PRESETS = {
+    conservative: {
+      label: "Konzervatív",
+      description: "Szigorú szűrők, kevesebb ügylet, trend-követő belépés.",
+      config: {
+        minConfidence: 68,
+        signalScoreThreshold: 3,
+        minOpportunityScore: 82,
+        minEntryQualityScore: 72,
+        entryQualityReadyThreshold: 70,
+        riskPercent: 1,
+        maxPositions: 1,
+        cooldownMinutes: 45,
+        minEntryGapMinutes: 20,
+        requireAlignment: true,
+        minAlignmentRatio: 0.8,
+        maxDailyLossPercent: 3,
+        regimeFilter: "trending",
+        htfTrendFilterStrength: "strict",
+        entryMode: "pullback",
+        maxTradesPerDay: 5,
+        maxTradesPerHour: 2,
+        scannerRefreshPriority: "quality",
+      },
+    },
+    balanced: {
+      label: "Kiegyensúlyozott",
+      description: "Alapértelmezett Winso profil – mérsékelt kockázat és aktivitás.",
+      config: {
+        minConfidence: 58,
+        signalScoreThreshold: 2.75,
+        minOpportunityScore: 65,
+        minEntryQualityScore: 62,
+        riskPercent: 1.5,
+        maxPositions: 2,
+        cooldownMinutes: 30,
+        minEntryGapMinutes: 10,
+        requireAlignment: true,
+        minAlignmentRatio: 0.7,
+        maxDailyLossPercent: 5,
+        regimeFilter: "both",
+        htfTrendFilterStrength: "medium",
+        entryMode: "both",
+        maxTradesPerDay: 10,
+        maxTradesPerHour: 4,
+        scannerRefreshPriority: "balanced",
+      },
+    },
+    aggressive: {
+      label: "Agresszív",
+      description: "Lazább küszöbök, több belépés – aktívabb piacokhoz.",
+      config: {
+        minConfidence: 52,
+        signalScoreThreshold: 2.25,
+        minOpportunityScore: 58,
+        minEntryQualityScore: 55,
+        entryQualityReadyThreshold: 58,
+        entryQualityWaitThreshold: 38,
+        riskPercent: 2.5,
+        maxPositions: 3,
+        cooldownMinutes: 15,
+        minEntryGapMinutes: 5,
+        requireAlignment: false,
+        minAlignmentRatio: 0.6,
+        maxDailyLossPercent: 8,
+        regimeFilter: "both",
+        htfTrendFilterStrength: "loose",
+        entryMode: "breakout",
+        maxTradesPerDay: 16,
+        maxTradesPerHour: 6,
+        scannerRefreshPriority: "fast",
+      },
+    },
+    proScalp: {
+      label: "Pro scalp",
+      description: "Gyors szkennelés, rövid tartás, magas aktivitás pro módban.",
+      config: {
+        professionalMode: true,
+        marketWideMode: true,
+        primaryInterval: 1,
+        minConfidence: 55,
+        signalScoreThreshold: 2.5,
+        minOpportunityScore: 62,
+        minEntryQualityScore: 58,
+        riskPercent: 1.25,
+        maxPositions: 2,
+        cooldownMinutes: 10,
+        proWinCooldownMinutes: 2,
+        proHighScoreThreshold: 70,
+        minHoldMinutes: 8,
+        maxPositionAgeMinutes: 45,
+        minEntryGapMinutes: 5,
+        entryMode: "breakout",
+        regimeFilter: "trending",
+        htfTrendFilterStrength: "medium",
+        maxTradesPerDay: 20,
+        maxTradesPerHour: 8,
+        scannerRefreshPriority: "fast",
+        trailingActivationR: 0.5,
+        partialTakeProfitR: 0.75,
+        partialTakeProfitPercent: 60,
+      },
+    },
+    proSwing: {
+      label: "Pro swing",
+      description: "Hosszabb idősík, nagyobb R cél, kevesebb de minőségibb ügylet.",
+      config: {
+        professionalMode: true,
+        marketWideMode: true,
+        primaryInterval: 15,
+        minConfidence: 62,
+        signalScoreThreshold: 3,
+        minOpportunityScore: 72,
+        minEntryQualityScore: 68,
+        riskPercent: 1.5,
+        maxPositions: 2,
+        cooldownMinutes: 60,
+        rewardRatio: 3,
+        minHoldMinutes: 30,
+        maxPositionAgeMinutes: 360,
+        minEntryGapMinutes: 30,
+        entryMode: "pullback",
+        regimeFilter: "trending",
+        htfTrendFilterStrength: "strict",
+        maxTradesPerDay: 6,
+        maxTradesPerHour: 2,
+        scannerRefreshPriority: "quality",
+        trailingActivationR: 1,
+        partialTakeProfitR: 1.5,
+        partialTakeProfitPercent: 40,
+      },
+    },
   };
 
   const DEFAULT_CONFIG = {
@@ -118,7 +256,42 @@
     useTradingHours: false,
     tradingHoursStart: 8,
     tradingHoursEnd: 20,
+    maxTradesPerDay: 10,
+    maxTradesPerHour: 4,
+    minEntryGapMinutes: 10,
+    regimeFilter: "both",
+    htfTrendFilterStrength: "medium",
+    entryMode: "both",
+    scannerRefreshPriority: "balanced",
   };
+
+  const DIAGNOSTIC_STALE_HOURS = 4;
+  const DIAGNOSTIC_LOG_COOLDOWN_MS = 3600000;
+
+  const FILTER_REASON_CATEGORIES = [
+    { match: /Bot kikapcsolva/i, key: "bot-disabled", label: "Bot kikapcsolva" },
+    { match: /Alacsony bizalom/i, key: "low-confidence", label: "Alacsony bizalom" },
+    { match: /Jelzéserősség/i, key: "low-signal", label: "Gyenge jelzés" },
+    { match: /Lehetőség pontszám/i, key: "low-opportunity", label: "Alacsony lehetőség-pont" },
+    { match: /Belépési minőség|Setup kialakul|Belépési minőség rossz/i, key: "entry-quality", label: "Belépési minőség nem elég" },
+    { match: /Idősík-egyezés/i, key: "alignment", label: "Idősík-egyezés hiányzik" },
+    { match: /Napi trend ellen/i, key: "daily-trend", label: "Napi trend ellen" },
+    { match: /LONG szűrők|SHORT szűrők/i, key: "direction-filters", label: "Irány-specifikus szűrők" },
+    { match: /Irány szűrő/i, key: "direction-mode", label: "Kereskedési irány szűrő" },
+    { match: /Halott piac|Extrém zajos|Rezsím-szűrő/i, key: "regime", label: "Piaci rezsím / volatilitás" },
+    { match: /Magasabb idősík|HTF trend/i, key: "htf-trend", label: "HTF trend szűrő" },
+    { match: /Belépési mód/i, key: "entry-mode", label: "Belépési mód (breakout/pullback)" },
+    { match: /Cooldown|pihenő|Minimális várakozás/i, key: "cooldown", label: "Cooldown / pihenő" },
+    { match: /Belépési szünet|belépések között/i, key: "entry-gap", label: "Min. idő belépések között" },
+    { match: /Napi ügylet limit|Óránkénti ügylet limit/i, key: "trade-rate", label: "Ügylet-limit (nap/óra)" },
+    { match: /Napi veszteség limit/i, key: "daily-loss", label: "Napi veszteség limit" },
+    { match: /Max\. pozíció|Már van nyitott/i, key: "max-positions", label: "Max. pozíció / duplikált eszköz" },
+    { match: /Kereskedési ablakon/i, key: "trading-hours", label: "Kereskedési óra" },
+    { match: /Semleges jelzés/i, key: "neutral-signal", label: "Semleges jelzés" },
+    { match: /Nincs elérhető|Hiányzó stop|Nincs szkennelhető/i, key: "data", label: "Adat / árkép hiány" },
+    { match: /FX|árfolyam/i, key: "fx-pending", label: "FX / deviza nem kész" },
+    { match: /Korábbi vesztes|eszköz büntetve/i, key: "learning-penalty", label: "Eszköz tanulási büntetés" },
+  ];
 
   const LEARNABLE_KEYS = [
     "minConfidence",
@@ -206,6 +379,38 @@
     useTradingHours: "Kereskedési óra szűrő",
     tradingHoursStart: "Kezdő óra",
     tradingHoursEnd: "Záró óra",
+    maxTradesPerDay: "Max. ügylet / nap",
+    maxTradesPerHour: "Max. ügylet / óra",
+    minEntryGapMinutes: "Min. idő belépések között (perc)",
+    regimeFilter: "Rezsím szűrő",
+    htfTrendFilterStrength: "HTF trend szűrő erősség",
+    entryMode: "Belépési mód",
+    scannerRefreshPriority: "Szkenner frissítés prioritás",
+    volumeMultiplier: "Volumen spike szorzó",
+  };
+
+  const REGIME_FILTER_LABELS = {
+    both: "Trend és oldalazó is",
+    trending: "Csak trendelő piac",
+    ranging: "Csak oldalazó piac",
+  };
+
+  const HTF_STRENGTH_LABELS = {
+    strict: "Szigorú (minden HTF egyezés)",
+    medium: "Közepes (≥50% HTF)",
+    loose: "Laza (nincs HTF tiltás)",
+  };
+
+  const ENTRY_MODE_LABELS = {
+    both: "Breakout és pullback is",
+    breakout: "Csak breakout (erős momentum)",
+    pullback: "Csak pullback (visszahúzódás)",
+  };
+
+  const SCANNER_PRIORITY_LABELS = {
+    balanced: "Kiegyensúlyozott",
+    fast: "Gyors (több scan)",
+    quality: "Minőség (ritkább scan)",
   };
 
   const DIRECTION_LABELS = {
@@ -313,6 +518,7 @@
           capturedCount: 0,
           missedLog: [],
         },
+        tradeDiagnostics: botState.tradeDiagnostics || createEmptyTradeDiagnostics(),
         initialCapital: botState.initialCapital,
         cash: botState.cash,
         lastActionAt: botState.lastActionAt || {},
@@ -332,6 +538,10 @@
     botState.configChangeLog = Array.isArray(incoming.configChangeLog) ? incoming.configChangeLog : [];
     botState.activityLog = Array.isArray(incoming.activityLog) ? incoming.activityLog : [];
     botState.performanceStats = incoming.performanceStats || botState.performanceStats;
+    botState.tradeDiagnostics = {
+      ...createEmptyTradeDiagnostics(),
+      ...(incoming.tradeDiagnostics || botState.tradeDiagnostics || {}),
+    };
     botState.initialCapital = incoming.initialCapital;
     botState.cash = incoming.cash;
     botState.lastActionAt = incoming.lastActionAt || {};
@@ -512,6 +722,27 @@
         capturedCount: 0,
         missedLog: [],
       },
+      tradeDiagnostics: {
+        lastOpenSuccessAt: null,
+        lastOpenAttemptAt: null,
+        lastScanAt: null,
+        rejectionCounts: {},
+        lastTopReasons: [],
+        lastStaleLogAt: 0,
+        lastSuggestionLogAt: 0,
+      },
+    };
+  }
+
+  function createEmptyTradeDiagnostics() {
+    return {
+      lastOpenSuccessAt: null,
+      lastOpenAttemptAt: null,
+      lastScanAt: null,
+      rejectionCounts: {},
+      lastTopReasons: [],
+      lastStaleLogAt: 0,
+      lastSuggestionLogAt: 0,
     };
   }
 
@@ -595,6 +826,10 @@
         eligibleTicks: 0,
         capturedCount: 0,
         missedLog: [],
+      };
+      saved.tradeDiagnostics = {
+        ...createEmptyTradeDiagnostics(),
+        ...(saved.tradeDiagnostics || {}),
       };
       return reconcileBalanceOnLoad(saved, fxContext);
     } catch {
@@ -1237,7 +1472,7 @@
     let available = 0;
     const indicators = context.indicators || {};
     const emaFn = indicators.ema;
-    if (!emaFn) return { aligned: false, ratio: 0, bonus: 0 };
+    if (!emaFn) return { aligned: false, ratio: 0, bonus: 0, available: 0, blockMisaligned: false };
 
     higherIntervals.forEach((interval) => {
       const series = getSeries(context, assetKey, interval);
@@ -1254,8 +1489,16 @@
     });
 
     const ratio = available ? aligned / available : 0;
-    const bonus = ratio >= 1 ? 12 : ratio >= 0.5 ? 5 : -10;
-    return { aligned: ratio >= 0.5, ratio, bonus, available };
+    const strengthCfg = getHtfStrengthConfig(config);
+    const alignedOk = ratio >= strengthCfg.minRatio;
+    const bonus = ratio >= 1 ? 12 : ratio >= 0.5 ? 5 : strengthCfg.blockMisaligned ? -10 : 0;
+    return {
+      aligned: alignedOk,
+      ratio,
+      bonus,
+      available,
+      blockMisaligned: strengthCfg.blockMisaligned && !alignedOk && available > 0,
+    };
   }
 
   function getDirectionLearningAdjustment(botState, assetKey, direction) {
@@ -1369,14 +1612,27 @@
       blocks.short.push("Extrém zajos piac");
     }
 
+    const regimeGateLong = passesRegimeFilter(regime.regime, config);
+    const regimeGateShort = passesRegimeFilter(regime.regime, config);
+    if (!regimeGateLong.pass) blocks.long.push(regimeGateLong.reason);
+    if (!regimeGateShort.pass) blocks.short.push(regimeGateShort.reason);
+
     const longHtf = getHigherTimeframeBias(assetKey, "long", context, config);
     const shortHtf = getHigherTimeframeBias(assetKey, "short", context, config);
     longScore += longHtf.bonus;
     shortScore += shortHtf.bonus;
     if (longHtf.aligned) reasons.long.push("Magasabb idősíkok LONG irányban");
-    else if (longHtf.available) blocks.long.push("Magasabb idősík ellen LONG-nak");
+    else if (longHtf.blockMisaligned) {
+      blocks.long.push("HTF trend szűrő – LONG ellen");
+    } else if (longHtf.available) {
+      blocks.long.push("Magasabb idősík ellen LONG-nak");
+    }
     if (shortHtf.aligned) reasons.short.push("Magasabb idősíkok SHORT irányban");
-    else if (shortHtf.available) blocks.short.push("Magasabb idősík ellen SHORT-nak");
+    else if (shortHtf.blockMisaligned) {
+      blocks.short.push("HTF trend szűrő – SHORT ellen");
+    } else if (shortHtf.available) {
+      blocks.short.push("Magasabb idősík ellen SHORT-nak");
+    }
 
     if (decision.alignment?.available >= config.minAlignedTimeframes) {
       if (decision.alignment.bullishRatio >= config.minAlignmentRatio) {
@@ -1798,6 +2054,13 @@
 
   function getBotTickIntervalMs(config) {
     if (!config.enabled) return 60000;
+    const priority = config.scannerRefreshPriority || "balanced";
+    if (priority === "fast") {
+      return config.professionalMode ? 10000 : 20000;
+    }
+    if (priority === "quality") {
+      return config.professionalMode ? 45000 : 90000;
+    }
     if (!config.professionalMode) return 60000;
     if (config.marketWideMode) return 15000;
     return 30000;
@@ -2039,6 +2302,363 @@
     };
   }
 
+  function getHtfStrengthConfig(config) {
+    const strength = config.htfTrendFilterStrength || "medium";
+    if (strength === "strict") {
+      return { minRatio: 1, blockMisaligned: true };
+    }
+    if (strength === "loose") {
+      return { minRatio: 0, blockMisaligned: false };
+    }
+    return { minRatio: 0.5, blockMisaligned: true };
+  }
+
+  function passesRegimeFilter(regime, config) {
+    const filter = config.regimeFilter || "both";
+    if (filter === "both") return { pass: true };
+    if (filter === "trending") {
+      return regime === "trending"
+        ? { pass: true }
+        : { pass: false, reason: `Rezsím-szűrő: csak trendelő piac (jelenleg: ${regime})` };
+    }
+    if (filter === "ranging") {
+      return regime === "ranging"
+        ? { pass: true }
+        : { pass: false, reason: `Rezsím-szűrő: csak oldalazó piac (jelenleg: ${regime})` };
+    }
+    return { pass: true };
+  }
+
+  function passesEntryMode(direction, decision, config) {
+    const mode = config.entryMode || "both";
+    if (mode === "both" || !decision) return { pass: true };
+    const volumeOk =
+      !config.useVolume ||
+      decision.volumeRatio === null ||
+      decision.volumeRatio >= (config.volumeMultiplier ?? 1.4);
+    const longMomMin = config.longMomentumMin ?? config.momentumThreshold;
+    const shortMomMin = config.shortMomentumMin ?? config.momentumThreshold;
+    const momentum = decision.momentum15;
+
+    if (mode === "breakout") {
+      if (direction === "long") {
+        return momentum !== null && momentum >= longMomMin * 1.15 && volumeOk
+          ? { pass: true }
+          : {
+              pass: false,
+              reason: "Belépési mód: breakout – erős LONG momentum és volumen kell",
+            };
+      }
+      return momentum !== null && momentum <= -shortMomMin * 1.15 && volumeOk
+        ? { pass: true }
+        : {
+            pass: false,
+            reason: "Belépési mód: breakout – erős SHORT momentum és volumen kell",
+          };
+    }
+
+    if (direction === "long") {
+      const pullbackOk =
+        momentum !== null &&
+        momentum >= 0 &&
+        momentum < longMomMin &&
+        decision.rsi !== null &&
+        decision.rsi >= config.rsiLongMin &&
+        decision.rsi <= config.rsiLongMax;
+      return pullbackOk
+        ? { pass: true }
+        : {
+            pass: false,
+            reason: "Belépési mód: pullback – mérsékelt momentum és RSI zóna kell LONG-hoz",
+          };
+    }
+    const pullbackOk =
+      momentum !== null &&
+      momentum <= 0 &&
+      momentum > -shortMomMin &&
+      decision.rsi !== null &&
+      decision.rsi >= config.rsiShortMin &&
+      decision.rsi <= config.rsiShortMax;
+    return pullbackOk
+      ? { pass: true }
+      : {
+          pass: false,
+          reason: "Belépési mód: pullback – mérsékelt momentum és RSI zóna kell SHORT-hoz",
+        };
+  }
+
+  function countRecentOpens(botState, windowMs, now) {
+    const since = now - windowMs;
+    const fromPositions = botState.positions.filter((position) => position.openedAt > since).length;
+    const fromTrades = botState.trades.filter((trade) => (trade.openedAt || 0) > since).length;
+    return fromPositions + fromTrades;
+  }
+
+  function getTradeRateLimitStatus(botState, config, now) {
+    const dayLimit = config.maxTradesPerDay ?? 10;
+    const hourLimit = config.maxTradesPerHour ?? 4;
+    const opensDay = countRecentOpens(botState, 86400000, now);
+    const opensHour = countRecentOpens(botState, 3600000, now);
+    if (opensDay >= dayLimit) {
+      return {
+        blocked: true,
+        reason: `Napi ügylet limit (${opensDay}/${dayLimit})`,
+      };
+    }
+    if (opensHour >= hourLimit) {
+      return {
+        blocked: true,
+        reason: `Óránkénti ügylet limit (${opensHour}/${hourLimit})`,
+      };
+    }
+    return { blocked: false };
+  }
+
+  function getGlobalEntryGapStatus(config, botState, now) {
+    const gapMinutes = config.minEntryGapMinutes ?? 0;
+    if (!(gapMinutes > 0)) return { blocked: false };
+    const diagnostics = botState.tradeDiagnostics || createEmptyTradeDiagnostics();
+    const lastOpen =
+      diagnostics.lastOpenSuccessAt ||
+      botState.positions.reduce((max, position) => Math.max(max, position.openedAt || 0), 0) ||
+      botState.trades.reduce((max, trade) => Math.max(max, trade.openedAt || 0), 0) ||
+      0;
+    if (!lastOpen) return { blocked: false };
+    const gapMs = gapMinutes * 60000;
+    const remaining = gapMs - (now - lastOpen);
+    if (remaining > 0) {
+      return {
+        blocked: true,
+        reason: `Belépések között min. ${gapMinutes} perc (${Math.ceil(remaining / 60000)} perc hátra)`,
+      };
+    }
+    return { blocked: false };
+  }
+
+  function categorizeFilterReason(reason) {
+    if (!reason) return { key: "other", label: "Egyéb szűrő" };
+    const found = FILTER_REASON_CATEGORIES.find((entry) => entry.match.test(reason));
+    return found || { key: "other", label: reason.slice(0, 48) };
+  }
+
+  function ensureTradeDiagnostics(botState) {
+    if (!botState.tradeDiagnostics) {
+      botState.tradeDiagnostics = createEmptyTradeDiagnostics();
+    }
+    return botState.tradeDiagnostics;
+  }
+
+  function recordDiagnosticRejections(botState, scanResults) {
+    const diagnostics = ensureTradeDiagnostics(botState);
+    diagnostics.lastScanAt = Date.now();
+    const tallies = { ...(diagnostics.rejectionCounts || {}) };
+
+    (scanResults || []).forEach((result) => {
+      if (result.eligible) return;
+      (result.filterReasons || []).forEach((reason) => {
+        const category = categorizeFilterReason(reason);
+        tallies[category.key] = (tallies[category.key] || 0) + 1;
+      });
+      if (!result.filterReasons?.length && result.decision?.className === "neutral") {
+        tallies["neutral-signal"] = (tallies["neutral-signal"] || 0) + 1;
+      }
+    });
+
+    diagnostics.rejectionCounts = tallies;
+    diagnostics.lastTopReasons = Object.entries(tallies)
+      .sort((left, right) => right[1] - left[1])
+      .slice(0, 8)
+      .map(([key, count]) => {
+        const label =
+          FILTER_REASON_CATEGORIES.find((entry) => entry.key === key)?.label || key;
+        return { key, label, count };
+      });
+  }
+
+  function buildLooseningSuggestions(botState, topReasons) {
+    const config = botState.config;
+    const suggestions = [];
+    const add = (key, direction, detail) => {
+      suggestions.push({ key, direction, detail });
+    };
+
+    topReasons.forEach(({ key }) => {
+      if (key === "low-confidence" && config.minConfidence > 45) {
+        add("minConfidence", "lower", `Csökkentsd a min. bizalmat (${config.minConfidence}% → ${config.minConfidence - 5}%)`);
+      }
+      if (key === "low-opportunity" && config.minOpportunityScore > 55) {
+        add(
+          "minOpportunityScore",
+          "lower",
+          `Engedd le a min. lehetőség pontot (${config.minOpportunityScore} → ${config.minOpportunityScore - 5})`,
+        );
+      }
+      if (key === "entry-quality" && config.minEntryQualityScore > 50) {
+        add(
+          "minEntryQualityScore",
+          "lower",
+          `Lazítsd a belépési minőséget (${config.minEntryQualityScore} → ${config.minEntryQualityScore - 5})`,
+        );
+      }
+      if (key === "alignment" && config.requireAlignment) {
+        add("requireAlignment", "toggle", "Kapcsold ki az idősík-egyezés kötelezőt, vagy csökkentsd az arányt");
+      }
+      if (key === "regime" && config.regimeFilter !== "both") {
+        add("regimeFilter", "both", 'Állítsd a rezsím szűrőt "Mindkettő"-re');
+      }
+      if (key === "htf-trend" && config.htfTrendFilterStrength === "strict") {
+        add("htfTrendFilterStrength", "medium", "Lazítsd a HTF trend szűrőt közepesre");
+      }
+      if (key === "entry-mode" && config.entryMode !== "both") {
+        add("entryMode", "both", "Engedélyezd mindkét belépési módot (breakout + pullback)");
+      }
+      if (key === "cooldown" && config.cooldownMinutes > 10) {
+        add("cooldownMinutes", "lower", `Rövidítsd a cooldown-t (${config.cooldownMinutes} → ${Math.max(5, config.cooldownMinutes - 10)} perc)`);
+      }
+      if (key === "entry-gap" && config.minEntryGapMinutes > 0) {
+        add(
+          "minEntryGapMinutes",
+          "lower",
+          `Csökkentsd a belépések közti minimumot (${config.minEntryGapMinutes} perc)`,
+        );
+      }
+      if (key === "trade-rate") {
+        add("maxTradesPerDay", "raise", "Emeld a napi/óránkénti ügylet limitet, ha szándékosan aktívabb kereskedést akarsz");
+      }
+    });
+
+    const unique = [];
+    const seen = new Set();
+    suggestions.forEach((item) => {
+      if (seen.has(item.key)) return;
+      seen.add(item.key);
+      unique.push(item);
+    });
+    return unique.slice(0, 4);
+  }
+
+  function maybeLogStaleTradeDiagnostics(botState, context) {
+    if (!botState.config.enabled) return;
+    const diagnostics = ensureTradeDiagnostics(botState);
+    const now = Date.now();
+    const lastOpen = diagnostics.lastOpenSuccessAt || 0;
+    const staleMs = DIAGNOSTIC_STALE_HOURS * 3600000;
+    if (lastOpen && now - lastOpen < staleMs) return;
+    if (now - (diagnostics.lastStaleLogAt || 0) < DIAGNOSTIC_LOG_COOLDOWN_MS) return;
+
+    const hoursSince = lastOpen
+      ? Math.round((now - lastOpen) / 3600000)
+      : null;
+    const topReasons = diagnostics.lastTopReasons || [];
+    const reasonSummary =
+      topReasons.length > 0
+        ? topReasons.map((entry) => `${entry.label} (${entry.count}×)`).join(", ")
+        : "Nincs friss szkenner-adat – ellenőrizd az adatforrást és a bot kapcsolót";
+
+    logActivity(
+      botState,
+      hoursSince === null
+        ? `Diagnosztika: még nem nyitott ügyletet – fő okok: ${reasonSummary}`
+        : `Diagnosztika: ${hoursSince} órája nem nyitott ügyletet – fő okok: ${reasonSummary}`,
+    );
+
+    const suggestions = buildLooseningSuggestions(botState, topReasons);
+    if (
+      suggestions.length &&
+      now - (diagnostics.lastSuggestionLogAt || 0) >= DIAGNOSTIC_LOG_COOLDOWN_MS
+    ) {
+      diagnostics.lastSuggestionLogAt = now;
+      logConfigChanges(botState, "pro mód", [
+        {
+          key: "tradeDiagnostics",
+          from: "—",
+          to: "Javaslat",
+          reason: `Hosszú ügylet-szünet – finomhangolási tippek: ${suggestions.map((item) => item.detail).join(" · ")}`,
+        },
+      ]);
+    }
+
+    diagnostics.lastStaleLogAt = now;
+  }
+
+  function getTradeDiagnostics(botState, context = null) {
+    const diagnostics = ensureTradeDiagnostics(botState);
+    const now = Date.now();
+    const config = botState.config;
+    const lastOpen = diagnostics.lastOpenSuccessAt || 0;
+    const hoursSinceOpen = lastOpen ? (now - lastOpen) / 3600000 : null;
+    const isStale =
+      config.enabled &&
+      (hoursSinceOpen === null || hoursSinceOpen >= DIAGNOSTIC_STALE_HOURS);
+    const topReasons = diagnostics.lastTopReasons || [];
+    const suggestions = isStale ? buildLooseningSuggestions(botState, topReasons) : [];
+
+    const blockers = [];
+    if (!config.enabled) blockers.push("Bot kikapcsolva");
+    const currency =
+      context?.fxContext?.resolveCurrency?.(config) ?? context?.botCurrency ?? "USD";
+    if (context && !isFxReadyForCurrency(context.fxContext || null, currency)) {
+      blockers.push("Devizaárfolyam (FX) még nem kész");
+    }
+    if (isDailyLossLimitHit(botState, config)) {
+      blockers.push(`Napi veszteség limit (${config.maxDailyLossPercent}%)`);
+    }
+    if (!isWithinTradingHours(config) && config.useTradingHours) {
+      blockers.push("Kereskedési ablakon kívül");
+    }
+    const rateStatus = getTradeRateLimitStatus(botState, config, now);
+    if (rateStatus.blocked) blockers.push(rateStatus.reason);
+    const gapStatus = getGlobalEntryGapStatus(config, botState, now);
+    if (gapStatus.blocked) blockers.push(gapStatus.reason);
+    if (botState.positions.length >= config.maxPositions) {
+      blockers.push("Max. pozíció elérve");
+    }
+
+    return {
+      enabled: config.enabled,
+      isStale,
+      hoursSinceOpen,
+      hoursSinceOpenLabel:
+        hoursSinceOpen === null
+          ? "Még nem nyitott ügyletet"
+          : hoursSinceOpen < 1
+            ? `${Math.round(hoursSinceOpen * 60)} perce`
+            : `${hoursSinceOpen.toFixed(1)} órája`,
+      lastOpenSuccessAt: lastOpen || null,
+      lastOpenAttemptAt: diagnostics.lastOpenAttemptAt || null,
+      lastScanAt: diagnostics.lastScanAt || botState.lastScan?.time || null,
+      topReasons,
+      blockers,
+      suggestions,
+      eligibleAssets:
+        botState.lastScan?.results?.filter((result) => result.eligible).length ?? 0,
+      scannedAssets: botState.lastScan?.results?.length ?? 0,
+    };
+  }
+
+  function applyConfigPreset(botState, presetKey, options = {}) {
+    const preset = CONFIG_PRESETS[presetKey];
+    if (!preset || !botState) return null;
+    const before = { ...botState.config, assets: [...(botState.config.assets || [])] };
+    const next = { ...botState.config, ...preset.config, assets: before.assets };
+    const changes = diffConfigs(before, next);
+    botState.config = next;
+    if (!options.skipLog && changes.length) {
+      logConfigChanges(
+        botState,
+        options.source || "beállítás",
+        changes.map((change) => ({
+          ...change,
+          reason: options.reason || `Előbeállítás alkalmazva: ${preset.label}`,
+        })),
+      );
+      logActivity(botState, `Előbeállítás: ${preset.label} – ${changes.length} paraméter módosítva.`);
+    } else {
+      saveBotState(botState);
+    }
+    return { preset, changes, config: botState.config };
+  }
+
   function evaluateOpportunity(assetKey, decision, config, botState, now, context = null) {
     const assetName = window.AssetCatalog?.getName(assetKey) || assetKey;
     const scoreBreakdown = computeOpportunityScore(decision, config, botState, assetKey);
@@ -2101,6 +2721,10 @@
             : "SHORT szűrők nem teljesülnek (RSI/momentum/MACD/volumen)",
         );
       }
+      const entryModeGate = passesEntryMode(direction, decision, config);
+      if (!entryModeGate.pass) {
+        filterReasons.push(entryModeGate.reason);
+      }
       if (scoreBreakdown.learningPenalty >= 12) {
         filterReasons.push("Korábbi vesztes minták – eszköz büntetve");
       }
@@ -2125,6 +2749,10 @@
     if (isDailyLossLimitHit(botState, config)) {
       filterReasons.push(`Napi veszteség limit (${config.maxDailyLossPercent}%) elérve`);
     }
+    const rateStatus = getTradeRateLimitStatus(botState, config, now);
+    if (rateStatus.blocked) filterReasons.push(rateStatus.reason);
+    const gapStatus = getGlobalEntryGapStatus(config, botState, now);
+    if (gapStatus.blocked) filterReasons.push(gapStatus.reason);
     const cooldownStatus = getCooldownStatus(
       config,
       botState,
@@ -2506,10 +3134,18 @@
 
   function maybeOpenPosition(botState, assetKey, decision, context, now, options = {}) {
     const config = botState.config;
+    const diagnostics = ensureTradeDiagnostics(botState);
     const thresholds = getEffectiveThresholds(config);
     const opportunityScore = options.opportunityScore ?? computeOpportunityScore(decision, config, botState, assetKey).total;
     if (!config.enabled) return null;
+    if (decision && decision.className !== "neutral") {
+      diagnostics.lastOpenAttemptAt = now;
+    }
     if (isDailyLossLimitHit(botState, config)) return null;
+    const rateStatus = getTradeRateLimitStatus(botState, config, now);
+    if (rateStatus.blocked) return null;
+    const gapStatus = getGlobalEntryGapStatus(config, botState, now);
+    if (gapStatus.blocked) return null;
     if (!options.skipAssetCheck && !getTradeableAssetKeys(config).includes(assetKey)) return null;
     if (!isWithinTradingHours(config)) return null;
     if (!decision || decision.className === "neutral") return null;
@@ -2524,6 +3160,8 @@
     if (!passesAlignment(direction, decision, config)) return null;
     if (!passesDailyTrendFilter(direction, decision.dailyClass, config)) return null;
     if (!passesDirectionalEntryFilters(direction, decision, config)) return null;
+    const entryModeGate = passesEntryMode(direction, decision, config);
+    if (!entryModeGate.pass) return null;
 
     const entryQuality = analyzeEntryQuality(
       assetKey,
@@ -2584,6 +3222,8 @@
     };
     botState.positions.push(position);
     botState.lastActionAt[assetKey] = now;
+    diagnostics.lastOpenSuccessAt = now;
+    diagnostics.lastOpenAttemptAt = now;
     const assetName = window.AssetCatalog?.getName(assetKey) || assetKey;
     const proNote =
       config.professionalMode && cooldownStatus.reason === "pro-immediate"
@@ -2791,6 +3431,8 @@
     };
 
     const closed = botState.trades.length - beforeTrades;
+    recordDiagnosticRejections(botState, scanResults);
+    maybeLogStaleTradeDiagnostics(botState, context);
     recordEquity(botState, context, now);
     botState.lastTickAt = now;
     saveBotState(botState);
@@ -2806,6 +3448,10 @@
     if (key === "direction") return DIRECTION_LABELS[value] || String(value);
     if (key === "primaryInterval") return INTERVAL_LABELS[value] || `${value} perc`;
     if (key === "currency") return CURRENCY_LABELS[value] || String(value);
+    if (key === "regimeFilter") return REGIME_FILTER_LABELS[value] || String(value);
+    if (key === "htfTrendFilterStrength") return HTF_STRENGTH_LABELS[value] || String(value);
+    if (key === "entryMode") return ENTRY_MODE_LABELS[value] || String(value);
+    if (key === "scannerRefreshPriority") return SCANNER_PRIORITY_LABELS[value] || String(value);
     if (key === "minAlignmentRatio") return `${Math.round(value * 100)}%`;
     if (key === "initialCapital" || key === "accountReset") {
       return `$${Number(value).toLocaleString("hu-HU", { maximumFractionDigits: 0 })} (belső USD)`;
@@ -3158,6 +3804,28 @@
       }
     }
 
+    const tradeDiag = getTradeDiagnostics(botState, context);
+    if (tradeDiag.isStale) {
+      suggestions.push({
+        severity: "warning",
+        title: "Hosszú ideje nincs új ügylet",
+        detail:
+          tradeDiag.topReasons.length > 0
+            ? `${tradeDiag.hoursSinceOpenLabel} – fő okok: ${tradeDiag.topReasons
+                .slice(0, 3)
+                .map((entry) => entry.label)
+                .join(", ")}`
+            : `${tradeDiag.hoursSinceOpenLabel} nem nyitott ügyletet – ellenőrizd a szűrőket és az adatokat.`,
+      });
+      tradeDiag.suggestions.slice(0, 2).forEach((item) => {
+        suggestions.push({
+          severity: "info",
+          title: "Finomhangolási tipp",
+          detail: item.detail,
+        });
+      });
+    }
+
     const intervalStats = {};
     botState.trades.forEach((trade) => {
       const key = trade.interval ? `${trade.interval}p` : "ismeretlen";
@@ -3223,6 +3891,7 @@
   window.VirtualBot = {
     STORAGE_KEY,
     DEFAULT_CONFIG,
+    CONFIG_PRESETS,
     PARAM_BOUNDS,
     LEARNABLE_KEYS,
     CONFIG_LABELS,
@@ -3249,6 +3918,8 @@
     passesEntryQualityGate,
     getMetrics,
     getPerformanceMetrics,
+    getTradeDiagnostics,
+    applyConfigPreset,
     getEffectiveThresholds,
     getBotTickIntervalMs,
     tick,

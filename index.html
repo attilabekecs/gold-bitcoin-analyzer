@@ -497,6 +497,20 @@
 
           <p id="botStatus" class="bot-status">Bot kikapcsolva.</p>
 
+          <article id="botNoTradeDiagnostics" class="panel bot-no-trade-diagnostics" hidden>
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">DIAGNOSZTIKA</p>
+                <h3 id="botNoTradeTitle">Ügylet-szünet elemzés</h3>
+              </div>
+              <span id="botNoTradeBadge" class="local-badge">–</span>
+            </div>
+            <p id="botNoTradeSummary" class="helper-text">A bot aktívan figyeli, miért nem nyit új ügyletet.</p>
+            <div id="botNoTradeBlockers" class="bot-diag-blockers"></div>
+            <ol id="botNoTradeReasons" class="bot-diag-reasons"></ol>
+            <ul id="botNoTradeHints" class="bot-diag-hints"></ul>
+          </article>
+
           <article class="panel bot-dashboard-performance">
             <div class="section-heading compact-heading">
               <div><p class="eyebrow">TELJESÍTMÉNY</p><h3>Egyenleggörbe</h3></div>
@@ -531,23 +545,16 @@
             </div>
             <div class="bot-config-tabs" role="tablist" aria-label="Bot beállítás csoportok">
               <button class="active" data-bot-config-tab="general" type="button" role="tab" aria-selected="true" aria-controls="botConfigPanelGeneral">Általános</button>
+              <button data-bot-config-tab="entry" type="button" role="tab" aria-selected="false" aria-controls="botConfigPanelEntry">Belépés</button>
+              <button data-bot-config-tab="exit" type="button" role="tab" aria-selected="false" aria-controls="botConfigPanelExit">Kilépés</button>
               <button data-bot-config-tab="signals" type="button" role="tab" aria-selected="false" aria-controls="botConfigPanelSignals">Jelzések</button>
               <button data-bot-config-tab="risk" type="button" role="tab" aria-selected="false" aria-controls="botConfigPanelRisk">Kockázat</button>
               <button data-bot-config-tab="execution" type="button" role="tab" aria-selected="false" aria-controls="botConfigPanelExecution">Végrehajtás</button>
+              <button data-bot-config-tab="pro" type="button" role="tab" aria-selected="false" aria-controls="botConfigPanelPro">Pro / Haladó</button>
+              <button data-bot-config-tab="sync" type="button" role="tab" aria-selected="false" aria-controls="botConfigPanelSync">Szinkron</button>
             </div>
             <form id="botConfigForm" class="form-grid bot-config-form">
               <div id="botConfigPanelGeneral" class="bot-config-panel-group" data-bot-config-panel="general" role="tabpanel">
-                <div id="botCloudSyncPanel" class="bot-cloud-sync panel-inset" data-sync-state="idle">
-                  <div class="bot-cloud-sync-header">
-                    <div>
-                      <p class="eyebrow">ESZKÖZÖK KÖZÖTTI SZINKRON</p>
-                      <p class="helper-text">Ügyletek, tanulási napló és beállítások automatikus mentése a felhőbe. Nincs regisztráció – névtelen azonosítóval.</p>
-                    </div>
-                    <span class="local-badge" data-sync-status>Várakozás</span>
-                  </div>
-                  <p class="helper-text" data-sync-detail>Ügyletek, tanulási napló és beállítások eszközök között megosztva.</p>
-                  <p class="helper-text bot-sync-user-line">Azonosító: <code data-sync-user>–</code> <button id="botCopyUserId" class="text-button bot-copy-id" type="button">Másolás</button> <span class="inline-helper">(másik gépen illeszd be a böngésző konzoljába: localStorage.setItem('aurum-bot-user-id','…'))</span></p>
-                </div>
                 <label>Pénznem
                   <select id="botCurrency">
                     <option value="sync">Szinkron (globális beállítás)</option>
@@ -573,7 +580,7 @@
                 </label>
                 <label class="control-slider">
                   <span class="control-header">
-                    <span>Cooldown (perc)</span>
+                    <span>Cooldown veszteség után (perc)</span>
                     <output for="botCooldown" id="botCooldownOut">30</output>
                   </span>
                   <input id="botCooldown" type="range" min="5" max="120" step="5" value="30" />
@@ -593,50 +600,189 @@
                     <option value="short">Csak SHORT</option>
                   </select>
                 </label>
-                <label class="toggle-switch wide-check">
-                  <span class="toggle-label">Zárás ellentétes jelzésnél</span>
-                  <input id="botAutoClose" type="checkbox" checked />
-                  <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
-                </label>
                 <label class="toggle-switch wide-check market-wide-toggle">
                   <span class="toggle-label">Összes eszköz – piaci mód (a legjobb lehetőséget választja)</span>
                   <input id="botMarketWideMode" type="checkbox" checked />
                   <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
                 </label>
-                <div class="bot-pro-info panel-inset">
-                  <p class="eyebrow">PROFESSZIONÁLIS MÓD</p>
-                  <p class="helper-text">
-                    Bekapcsolva a bot nem pihen feleslegesen: nyertes ügylet után magas pontszámú
-                    lehetőségnél azonnal belép, vesztes ügylet után tartja a cooldown-t. Gyorsabb
-                    szkennelés piaci módban (15 mp). A kockázati limitek (max. pozíció, stop-loss,
-                    pozícióméret) változatlanok maradnak.
-                  </p>
-                </div>
-                <label class="control-slider">
-                  <span class="control-header">
-                    <span>Pro: magas pontszám küszöb (azonnali belépés)</span>
-                    <output for="botProHighScore" id="botProHighScoreOut">75</output>
-                  </span>
-                  <input id="botProHighScore" type="range" min="60" max="95" step="5" value="75" />
-                </label>
-                <label class="control-slider">
-                  <span class="control-header">
-                    <span>Pro: rövid pihenő nyertes után (perc)</span>
-                    <output for="botProWinCooldown" id="botProWinCooldownOut">5</output>
-                  </span>
-                  <input id="botProWinCooldown" type="range" min="0" max="10" step="1" value="5" />
-                </label>
-                <label class="control-slider">
-                  <span class="control-header">
-                    <span>Pro: min. bizalom padló (%)</span>
-                    <output for="botProConfidenceFloor" id="botProConfidenceFloorOut">55</output>
-                  </span>
-                  <input id="botProConfidenceFloor" type="range" min="40" max="60" step="5" value="55" />
-                </label>
                 <fieldset class="bot-asset-fieldset">
                   <legend>Követett eszközök <span class="helper-text inline-helper">(piaci módban inaktív)</span></legend>
                   <div id="botAssetChecks" class="bot-asset-checks"></div>
                 </fieldset>
+              </div>
+
+              <div id="botConfigPanelEntry" class="bot-config-panel-group" data-bot-config-panel="entry" role="tabpanel" hidden>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Min. megbízhatóság (%)</span>
+                    <output for="botMinConfidence" id="botMinConfidenceOut">58</output>
+                  </span>
+                  <input id="botMinConfidence" type="range" min="40" max="90" step="1" value="58" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Jelzésküszöb (pont)</span>
+                    <output for="botSignalScore" id="botSignalScoreOut">2.75</output>
+                  </span>
+                  <input id="botSignalScore" type="range" min="1.5" max="4" step="0.25" value="2.75" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Min. lehetőség pontszám</span>
+                    <output for="botMinOpportunityScore" id="botMinOpportunityScoreOut">65</output>
+                  </span>
+                  <input id="botMinOpportunityScore" type="range" min="60" max="120" step="5" value="65" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Min. belépési minőség</span>
+                    <output for="botMinEntryQualityScore" id="botMinEntryQualityScoreOut">62</output>
+                  </span>
+                  <input id="botMinEntryQualityScore" type="range" min="50" max="95" step="5" value="62" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Belépés KÉSZ küszöb</span>
+                    <output for="botEntryQualityReady" id="botEntryQualityReadyOut">62</output>
+                  </span>
+                  <input id="botEntryQualityReady" type="range" min="60" max="90" step="5" value="62" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Belépés VÁR küszöb</span>
+                    <output for="botEntryQualityWait" id="botEntryQualityWaitOut">42</output>
+                  </span>
+                  <input id="botEntryQualityWait" type="range" min="35" max="70" step="5" value="42" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Momentum küszöb (%)</span>
+                    <output for="botMomentumThreshold" id="botMomentumThresholdOut">0.12</output>
+                  </span>
+                  <input id="botMomentumThreshold" type="range" min="0.03" max="0.5" step="0.01" value="0.12" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>LONG momentum min (%)</span>
+                    <output for="botLongMomentumMin" id="botLongMomentumMinOut">0.10</output>
+                  </span>
+                  <input id="botLongMomentumMin" type="range" min="0.03" max="0.5" step="0.01" value="0.10" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>SHORT momentum min (%)</span>
+                    <output for="botShortMomentumMin" id="botShortMomentumMinOut">0.10</output>
+                  </span>
+                  <input id="botShortMomentumMin" type="range" min="0.03" max="0.5" step="0.01" value="0.10" />
+                </label>
+                <label class="toggle-switch wide-check">
+                  <span class="toggle-label">Idősík-egyezés kötelező</span>
+                  <input id="botRequireAlignment" type="checkbox" checked />
+                  <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                </label>
+                <label>Min. egyező idősíkok
+                  <input id="botMinAlignedTimeframes" type="number" min="2" max="4" step="1" value="2" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Min. egyezési arány (%)</span>
+                    <output for="botMinAlignmentRatio" id="botMinAlignmentRatioOut">70</output>
+                  </span>
+                  <input id="botMinAlignmentRatio" type="range" min="0.5" max="1" step="0.05" value="0.7" data-display-scale="100" />
+                </label>
+                <label class="toggle-switch wide-check">
+                  <span class="toggle-label">Napi trend ellen tiltás</span>
+                  <input id="botBlockAgainstDailyTrend" type="checkbox" checked />
+                  <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                </label>
+                <label>Belépési mód
+                  <select id="botEntryMode">
+                    <option value="both">Breakout és pullback</option>
+                    <option value="breakout">Csak breakout</option>
+                    <option value="pullback">Csak pullback</option>
+                  </select>
+                </label>
+              </div>
+
+              <div id="botConfigPanelExit" class="bot-config-panel-group" data-bot-config-panel="exit" role="tabpanel" hidden>
+                <label class="toggle-switch wide-check">
+                  <span class="toggle-label">Zárás ellentétes jelzésnél</span>
+                  <input id="botAutoClose" type="checkbox" checked />
+                  <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Fordulás min. bizalom (%)</span>
+                    <output for="botReversalMinConfidence" id="botReversalMinConfidenceOut">72</output>
+                  </span>
+                  <input id="botReversalMinConfidence" type="range" min="55" max="90" step="5" value="72" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Fordulás min. pontszám</span>
+                    <output for="botReversalMinScore" id="botReversalMinScoreOut">3</output>
+                  </span>
+                  <input id="botReversalMinScore" type="range" min="2" max="4" step="0.25" value="3" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Min. tartási idő kilépés előtt (perc)</span>
+                    <output for="botMinHoldMinutes" id="botMinHoldMinutesOut">15</output>
+                  </span>
+                  <input id="botMinHoldMinutes" type="range" min="5" max="120" step="5" value="15" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Min. eladási sürgősség</span>
+                    <output for="botMinSellUrgency" id="botMinSellUrgencyOut">55</output>
+                  </span>
+                  <input id="botMinSellUrgency" type="range" min="40" max="90" step="5" value="55" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Max. pozíció életkor / stale limit (perc)</span>
+                    <output for="botMaxPositionAge" id="botMaxPositionAgeOut">120</output>
+                  </span>
+                  <input id="botMaxPositionAge" type="range" min="30" max="480" step="15" value="120" />
+                </label>
+                <label class="toggle-switch wide-check">
+                  <span class="toggle-label">Követő stop (trailing)</span>
+                  <input id="botUseTrailingStop" type="checkbox" checked />
+                  <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Követő aktiválás (R)</span>
+                    <output for="botTrailingActivationR" id="botTrailingActivationROut">0.75</output>
+                  </span>
+                  <input id="botTrailingActivationR" type="range" min="0.25" max="2" step="0.25" value="0.75" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Követő ATR szorzó</span>
+                    <output for="botTrailingAtrMultiplier" id="botTrailingAtrMultiplierOut">1.5</output>
+                  </span>
+                  <input id="botTrailingAtrMultiplier" type="range" min="0.5" max="4" step="0.25" value="1.5" />
+                </label>
+                <label class="toggle-switch wide-check">
+                  <span class="toggle-label">Részleges profitvétel</span>
+                  <input id="botPartialTakeProfit" type="checkbox" checked />
+                  <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Részleges TP (R)</span>
+                    <output for="botPartialTakeProfitR" id="botPartialTakeProfitROut">1</output>
+                  </span>
+                  <input id="botPartialTakeProfitR" type="range" min="0.5" max="3" step="0.25" value="1" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Részleges TP (%)</span>
+                    <output for="botPartialTakeProfitPercent" id="botPartialTakeProfitPercentOut">50</output>
+                  </span>
+                  <input id="botPartialTakeProfitPercent" type="range" min="25" max="75" step="5" value="50" />
+                </label>
               </div>
 
               <div id="botConfigPanelSignals" class="bot-config-panel-group" data-bot-config-panel="signals" role="tabpanel" hidden>
@@ -670,69 +816,6 @@
                 <label>Momentum ablak (perc)
                   <input id="botMomentumLookback" type="number" min="3" max="60" step="1" value="15" />
                 </label>
-                <label class="control-slider">
-                  <span class="control-header">
-                    <span>Momentum küszöb (%)</span>
-                    <output for="botMomentumThreshold" id="botMomentumThresholdOut">0.12</output>
-                  </span>
-                  <input id="botMomentumThreshold" type="range" min="0.03" max="0.5" step="0.01" value="0.12" />
-                </label>
-                <label class="control-slider">
-                  <span class="control-header">
-                    <span>LONG momentum min (%)</span>
-                    <output for="botLongMomentumMin" id="botLongMomentumMinOut">0.10</output>
-                  </span>
-                  <input id="botLongMomentumMin" type="range" min="0.03" max="0.5" step="0.01" value="0.10" />
-                </label>
-                <label class="control-slider">
-                  <span class="control-header">
-                    <span>SHORT momentum min (%)</span>
-                    <output for="botShortMomentumMin" id="botShortMomentumMinOut">0.10</output>
-                  </span>
-                  <input id="botShortMomentumMin" type="range" min="0.03" max="0.5" step="0.01" value="0.10" />
-                </label>
-                <label class="control-slider">
-                  <span class="control-header">
-                    <span>Jelzésküszöb (pont)</span>
-                    <output for="botSignalScore" id="botSignalScoreOut">2.75</output>
-                  </span>
-                  <input id="botSignalScore" type="range" min="1.5" max="4" step="0.25" value="2.75" />
-                </label>
-                <label class="control-slider">
-                  <span class="control-header">
-                    <span>Min. megbízhatóság (%)</span>
-                    <output for="botMinConfidence" id="botMinConfidenceOut">58</output>
-                  </span>
-                  <input id="botMinConfidence" type="range" min="40" max="90" step="1" value="58" />
-                </label>
-                <label class="control-slider">
-                  <span class="control-header">
-                    <span>Min. lehetőség pontszám</span>
-                    <output for="botMinOpportunityScore" id="botMinOpportunityScoreOut">65</output>
-                  </span>
-                  <input id="botMinOpportunityScore" type="range" min="60" max="120" step="5" value="65" />
-                </label>
-                <label class="control-slider">
-                  <span class="control-header">
-                    <span>Min. belépési minőség</span>
-                    <output for="botMinEntryQualityScore" id="botMinEntryQualityScoreOut">62</output>
-                  </span>
-                  <input id="botMinEntryQualityScore" type="range" min="50" max="95" step="5" value="62" />
-                </label>
-                <label class="control-slider">
-                  <span class="control-header">
-                    <span>Belépés KÉSZ küszöb</span>
-                    <output for="botEntryQualityReady" id="botEntryQualityReadyOut">62</output>
-                  </span>
-                  <input id="botEntryQualityReady" type="range" min="60" max="90" step="5" value="62" />
-                </label>
-                <label class="control-slider">
-                  <span class="control-header">
-                    <span>Belépés VÁR küszöb</span>
-                    <output for="botEntryQualityWait" id="botEntryQualityWaitOut">42</output>
-                  </span>
-                  <input id="botEntryQualityWait" type="range" min="35" max="70" step="5" value="42" />
-                </label>
                 <label class="toggle-switch">
                   <span class="toggle-label">MACD megerősítés</span>
                   <input id="botUseMacd" type="checkbox" checked />
@@ -743,25 +826,12 @@
                   <input id="botUseVolume" type="checkbox" checked />
                   <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
                 </label>
-                <label class="toggle-switch wide-check">
-                  <span class="toggle-label">Idősík-egyezés kötelező</span>
-                  <input id="botRequireAlignment" type="checkbox" checked />
-                  <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
-                </label>
-                <label class="toggle-switch wide-check">
-                  <span class="toggle-label">Napi trend ellen tiltás</span>
-                  <input id="botBlockAgainstDailyTrend" type="checkbox" checked />
-                  <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
-                </label>
-                <label>Min. egyező idősíkok
-                  <input id="botMinAlignedTimeframes" type="number" min="2" max="4" step="1" value="2" />
-                </label>
                 <label class="control-slider">
                   <span class="control-header">
-                    <span>Min. egyezési arány (%)</span>
-                    <output for="botMinAlignmentRatio" id="botMinAlignmentRatioOut">70</output>
+                    <span>Volumen spike szorzó (× átlag)</span>
+                    <output for="botVolumeMultiplier" id="botVolumeMultiplierOut">1.4</output>
                   </span>
-                  <input id="botMinAlignmentRatio" type="range" min="0.5" max="1" step="0.05" value="0.7" data-display-scale="100" />
+                  <input id="botVolumeMultiplier" type="range" min="1" max="3" step="0.1" value="1.4" />
                 </label>
               </div>
 
@@ -811,50 +881,6 @@
                   </span>
                   <input id="botMaxDailyLoss" type="range" min="1" max="15" step="0.5" value="5" />
                 </label>
-                <label class="toggle-switch wide-check">
-                  <span class="toggle-label">Követő stop (trailing)</span>
-                  <input id="botUseTrailingStop" type="checkbox" checked />
-                  <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
-                </label>
-                <label class="control-slider">
-                  <span class="control-header">
-                    <span>Követő ATR szorzó</span>
-                    <output for="botTrailingAtrMultiplier" id="botTrailingAtrMultiplierOut">1.5</output>
-                  </span>
-                  <input id="botTrailingAtrMultiplier" type="range" min="0.5" max="4" step="0.25" value="1.5" />
-                </label>
-                <label class="control-slider">
-                  <span class="control-header">
-                    <span>Követő aktiválás (R)</span>
-                    <output for="botTrailingActivationR" id="botTrailingActivationROut">0.75</output>
-                  </span>
-                  <input id="botTrailingActivationR" type="range" min="0.25" max="2" step="0.25" value="0.75" />
-                </label>
-                <label class="toggle-switch wide-check">
-                  <span class="toggle-label">Részleges profitvétel</span>
-                  <input id="botPartialTakeProfit" type="checkbox" checked />
-                  <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
-                </label>
-                <label class="control-slider">
-                  <span class="control-header">
-                    <span>Részleges TP (R)</span>
-                    <output for="botPartialTakeProfitR" id="botPartialTakeProfitROut">1</output>
-                  </span>
-                  <input id="botPartialTakeProfitR" type="range" min="0.5" max="3" step="0.25" value="1" />
-                </label>
-                <label class="control-slider">
-                  <span class="control-header">
-                    <span>Részleges TP (%)</span>
-                    <output for="botPartialTakeProfitPercent" id="botPartialTakeProfitPercentOut">50</output>
-                  </span>
-                  <input id="botPartialTakeProfitPercent" type="range" min="25" max="75" step="5" value="50" />
-                </label>
-                <label class="control-slider">
-                  <span class="control-header">
-                    <span>Max. pozíció életkor (perc)</span>
-                    <output for="botMaxPositionAge" id="botMaxPositionAgeOut">120</output>
-                  </span>
-                  <input id="botMaxPositionAge" type="range" min="30" max="480" step="15" value="120" />
               </div>
 
               <div id="botConfigPanelExecution" class="bot-config-panel-group" data-bot-config-panel="execution" role="tabpanel" hidden>
@@ -872,26 +898,111 @@
                   <input id="botUseTradingHours" type="checkbox" />
                   <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
                 </label>
-                <label class="control-slider">
-                  <span class="control-header">
-                    <span>Fordulás min. bizalom (%)</span>
-                    <output for="botReversalMinConfidence" id="botReversalMinConfidenceOut">72</output>
-                  </span>
-                  <input id="botReversalMinConfidence" type="range" min="55" max="90" step="5" value="72" />
-                </label>
-                <label class="control-slider">
-                  <span class="control-header">
-                    <span>Fordulás min. pontszám</span>
-                    <output for="botReversalMinScore" id="botReversalMinScoreOut">3</output>
-                  </span>
-                  <input id="botReversalMinScore" type="range" min="2" max="4" step="0.25" value="3" />
-                </label>
                 <label>Kezdő óra (helyi)
                   <input id="botTradingHoursStart" type="number" min="0" max="23" step="1" value="8" />
                 </label>
                 <label>Záró óra (helyi)
                   <input id="botTradingHoursEnd" type="number" min="0" max="23" step="1" value="20" />
                 </label>
+              </div>
+
+              <div id="botConfigPanelPro" class="bot-config-panel-group" data-bot-config-panel="pro" role="tabpanel" hidden>
+                <div class="bot-preset-bar panel-inset">
+                  <p class="eyebrow">ELŐBEÁLLÍTÁSOK</p>
+                  <p class="helper-text">Egy kattintással alkalmazhatsz profilokat – mentés előtt ellenőrizd az értékeket.</p>
+                  <div class="bot-preset-buttons">
+                    <button class="secondary-button" type="button" data-bot-preset="conservative">Konzervatív</button>
+                    <button class="secondary-button" type="button" data-bot-preset="balanced">Kiegyensúlyozott</button>
+                    <button class="secondary-button" type="button" data-bot-preset="aggressive">Agresszív</button>
+                    <button class="secondary-button" type="button" data-bot-preset="proScalp">Pro scalp</button>
+                    <button class="secondary-button" type="button" data-bot-preset="proSwing">Pro swing</button>
+                  </div>
+                </div>
+                <div class="bot-pro-info panel-inset">
+                  <p class="eyebrow">PROFESSZIONÁLIS MÓD</p>
+                  <p class="helper-text">
+                    Bekapcsolva a bot nem pihen feleslegesen: nyertes ügylet után magas pontszámú
+                    lehetőségnél azonnal belép, vesztes ügylet után tartja a cooldown-t. A szkenner
+                    prioritástól függően 10–45 mp-enként frissít piaci módban.
+                  </p>
+                </div>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Pro: magas pontszám küszöb (azonnali belépés)</span>
+                    <output for="botProHighScore" id="botProHighScoreOut">75</output>
+                  </span>
+                  <input id="botProHighScore" type="range" min="60" max="95" step="5" value="75" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Pro: rövid pihenő nyertes után (perc)</span>
+                    <output for="botProWinCooldown" id="botProWinCooldownOut">5</output>
+                  </span>
+                  <input id="botProWinCooldown" type="range" min="0" max="10" step="1" value="5" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Pro: min. bizalom padló (%)</span>
+                    <output for="botProConfidenceFloor" id="botProConfidenceFloorOut">55</output>
+                  </span>
+                  <input id="botProConfidenceFloor" type="range" min="40" max="60" step="5" value="55" />
+                </label>
+                <label>Rezsím szűrő
+                  <select id="botRegimeFilter">
+                    <option value="both">Trend és oldalazó is</option>
+                    <option value="trending">Csak trendelő piac</option>
+                    <option value="ranging">Csak oldalazó piac</option>
+                  </select>
+                </label>
+                <label>HTF trend szűrő erősség
+                  <select id="botHtfTrendStrength">
+                    <option value="strict">Szigorú</option>
+                    <option value="medium" selected>Közepes</option>
+                    <option value="loose">Laza</option>
+                  </select>
+                </label>
+                <label>Szkenner frissítés prioritás
+                  <select id="botScannerPriority">
+                    <option value="balanced" selected>Kiegyensúlyozott</option>
+                    <option value="fast">Gyors</option>
+                    <option value="quality">Minőség</option>
+                  </select>
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Max. ügylet / nap</span>
+                    <output for="botMaxTradesPerDay" id="botMaxTradesPerDayOut">10</output>
+                  </span>
+                  <input id="botMaxTradesPerDay" type="range" min="1" max="30" step="1" value="10" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Max. ügylet / óra</span>
+                    <output for="botMaxTradesPerHour" id="botMaxTradesPerHourOut">4</output>
+                  </span>
+                  <input id="botMaxTradesPerHour" type="range" min="1" max="10" step="1" value="4" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Min. idő belépések között (perc)</span>
+                    <output for="botMinEntryGap" id="botMinEntryGapOut">10</output>
+                  </span>
+                  <input id="botMinEntryGap" type="range" min="0" max="60" step="5" value="10" />
+                </label>
+              </div>
+
+              <div id="botConfigPanelSync" class="bot-config-panel-group" data-bot-config-panel="sync" role="tabpanel" hidden>
+                <div id="botCloudSyncPanel" class="bot-cloud-sync panel-inset" data-sync-state="idle">
+                  <div class="bot-cloud-sync-header">
+                    <div>
+                      <p class="eyebrow">ESZKÖZÖK KÖZÖTTI SZINKRON</p>
+                      <p class="helper-text">Ügyletek, tanulási napló és beállítások automatikus mentése a felhőbe. Nincs regisztráció – névtelen azonosítóval.</p>
+                    </div>
+                    <span class="local-badge" data-sync-status>Várakozás</span>
+                  </div>
+                  <p class="helper-text" data-sync-detail>Ügyletek, tanulási napló és beállítások eszközök között megosztva.</p>
+                  <p class="helper-text bot-sync-user-line">Azonosító: <code data-sync-user>–</code> <button id="botCopyUserId" class="text-button bot-copy-id" type="button">Másolás</button> <span class="inline-helper">(másik gépen illeszd be a böngésző konzoljába: localStorage.setItem('aurum-bot-user-id','…'))</span></p>
+                </div>
               </div>
 
               <div class="bot-form-actions">
