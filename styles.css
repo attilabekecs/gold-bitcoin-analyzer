@@ -2114,7 +2114,7 @@ h2 {
   align-items: center;
   display: grid;
   gap: 8px 12px;
-  grid-template-columns: 36px minmax(88px, 1.2fr) minmax(72px, 1fr) minmax(96px, 1fr) 72px 72px minmax(88px, 1.1fr) minmax(120px, 1.3fr);
+  grid-template-columns: 36px minmax(88px, 1.2fr) minmax(72px, 1fr) 56px minmax(96px, 1fr) 72px 72px minmax(88px, 1.1fr) minmax(120px, 1.3fr);
   padding: 10px 12px;
 }
 
@@ -2191,6 +2191,31 @@ h2 {
 .bot-scan-signal.positive { color: #2f5d50; }
 .bot-scan-signal.negative { color: #c45c4a; }
 .bot-scan-signal.neutral { color: var(--muted); }
+
+.bot-scan-entry {
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 3px 8px;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.bot-scan-entry.ready {
+  background: rgba(47, 93, 80, 0.14);
+  color: #2f5d50;
+}
+
+.bot-scan-entry.wait {
+  background: rgba(201, 162, 39, 0.18);
+  color: #8a6d12;
+}
+
+.bot-scan-entry.bad {
+  background: rgba(196, 92, 74, 0.12);
+  color: #9a4a3a;
+}
 
 .bot-scan-price,
 .bot-scan-change,
@@ -3800,11 +3825,11 @@ footer {
   .bot-scan-list-header,
   .bot-scan-row {
     gap: 6px 8px;
-    grid-template-columns: 28px minmax(72px, 1fr) minmax(64px, 0.9fr);
+    grid-template-columns: 28px minmax(72px, 1fr) minmax(64px, 0.9fr) auto;
     grid-template-areas:
-      "rank name signal"
-      "price price change"
-      "trend sentiment details";
+      "rank name signal entry"
+      "price price change change"
+      "trend sentiment details details";
   }
 
   .bot-scan-list-header {
@@ -3814,6 +3839,7 @@ footer {
   .bot-scan-row .bot-scan-rank { grid-area: rank; }
   .bot-scan-row .bot-scan-name { grid-area: name; }
   .bot-scan-row .bot-scan-signal { grid-area: signal; justify-self: end; }
+  .bot-scan-row .bot-scan-entry { grid-area: entry; justify-self: end; }
   .bot-scan-row .bot-scan-price { grid-area: price; }
   .bot-scan-row .bot-scan-change { grid-area: change; justify-self: end; }
   .bot-scan-row .bot-scan-trend { grid-area: trend; }

@@ -27,6 +27,11 @@
     trailingActivationR: { min: 0.25, max: 2, step: 0.25 },
     partialTakeProfitR: { min: 0.5, max: 3, step: 0.25 },
     partialTakeProfitPercent: { min: 25, max: 75, step: 5 },
+    minEntryQualityScore: { min: 50, max: 95, step: 5 },
+    entryQualityReadyThreshold: { min: 60, max: 90, step: 5 },
+    entryQualityWaitThreshold: { min: 35, max: 70, step: 5 },
+    minHoldMinutes: { min: 5, max: 120, step: 5 },
+    minSellUrgencyScore: { min: 40, max: 90, step: 5 },
   };
 
   const DEFAULT_CONFIG = {
@@ -84,6 +89,16 @@
     maxPositionAgeMinutes: 120,
     maxDailyLossPercent: 5,
     minOpportunityScore: 85,
+    minEntryQualityScore: 72,
+    entryQualityReadyThreshold: 72,
+    entryQualityWaitThreshold: 50,
+    minHoldMinutes: 15,
+    minSellUrgencyScore: 55,
+    minRegimeAtrPercentile: 12,
+    maxRegimeAtrPercentile: 90,
+    srProximityBlockPercent: 0.35,
+    breakevenAfterR: 1,
+    staleExitRequiresTrendBreak: true,
     marketWideTopN: 1,
     feePercent: 0.1,
     spreadPercent: 0.02,
@@ -166,6 +181,12 @@
     maxPositionAgeMinutes: "Max. pozíció életkor (perc)",
     maxDailyLossPercent: "Max. napi veszteség %",
     minOpportunityScore: "Min. lehetőség pontszám",
+    minEntryQualityScore: "Min. belépési minőség",
+    entryQualityReadyThreshold: "Belépés KÉSZ küszöb",
+    entryQualityWaitThreshold: "Belépés VÁR küszöb",
+    minHoldMinutes: "Min. tartási idő (perc)",
+    minSellUrgencyScore: "Min. eladási sürgősség",
+    staleExitRequiresTrendBreak: "Elavult zárás trendtörésnél",
     marketWideTopN: "Piaci mód top N",
     feePercent: "Díj oldalanként",
     spreadPercent: "Spread",
@@ -843,6 +864,475 @@
     };
   }
 
+  function detectMarketStructure(candles, lookback = 24) {
+    const slice = candles.slice(-lookback);
+    if (slice.length < 10) return { structure: "neutral", longBonus: 0, shortBonus: 0 };
+
+    const swingHighs = [];
+    const swingLows = [];
+    for (let index = 2; index < slice.length - 2; index += 1) {
+      const candle = slice[index];
+      if (
+        candle.high >= slice[index - 1].high &&
+        candle.high >= slice[index + 1].high &&
+        candle.high >= slice[index - 2].high
+      ) {
+        swingHighs.push(candle.high);
+      }
+      if (
+        candle.low <= slice[index - 1].low &&
+        candle.low <= slice[index + 1].low &&
+        candle.low <= slice[index - 2].low
+      ) {
+        swingLows.push(candle.low);
+      }
+    }
+
+    if (swingHighs.length < 2 || swingLows.length < 2) {
+      return { structure: "neutral", longBonus: 0, shortBonus: 0 };
+    }
+
+    const higherHigh = swingHighs.at(-1) > swingHighs.at(-2);
+    const higherLow = swingLows.at(-1) > swingLows.at(-2);
+    const lowerHigh = swingHighs.at(-1) < swingHighs.at(-2);
+    const lowerLow = swingLows.at(-1) < swingLows.at(-2);
+
+    if (higherHigh && higherLow) {
+      return { structure: "bullish", longBonus: 14, shortBonus: -8 };
+    }
+    if (lowerHigh && lowerLow) {
+      return { structure: "bearish", longBonus: -8, shortBonus: 14 };
+    }
+    if (higherHigh || higherLow) {
+      return { structure: "bullish-weak", longBonus: 7, shortBonus: -3 };
+    }
+    if (lowerHigh || lowerLow) {
+      return { structure: "bearish-weak", longBonus: -3, shortBonus: 7 };
+    }
+    return { structure: "neutral", longBonus: 0, shortBonus: 0 };
+  }
+
+  function computeAtrPercentile(candles, atr, period, context) {
+    if (!candles?.length || !(atr > 0)) return null;
+    const atrFn = context?.indicators?.atr;
+    if (!atrFn) return null;
+    const values = [];
+    for (let index = period + 5; index <= candles.length; index += 1) {
+      const slice = candles.slice(0, index);
+      const value = atrFn(slice, period);
+      if (value > 0) values.push(value);
+    }
+    if (!values.length) return 50;
+    const sorted = [...values].sort((a, b) => a - b);
+    const rank = sorted.findIndex((value) => value >= atr);
+    const percentile = rank < 0 ? 100 : (rank / sorted.length) * 100;
+    return Math.round(percentile);
+  }
+
+  function findNearestSupportResistance(candles, currentPrice, lookback = 40) {
+    const slice = candles.slice(-lookback);
+    if (!slice.length || !(currentPrice > 0)) {
+      return { support: null, resistance: null, supportDist: null, resistanceDist: null };
+    }
+    const highs = slice.map((candle) => candle.high);
+    const lows = slice.map((candle) => candle.low);
+    const resistance = Math.max(...highs);
+    const support = Math.min(...lows);
+    return {
+      support,
+      resistance,
+      supportDist: ((currentPrice - support) / currentPrice) * 100,
+      resistanceDist: ((resistance - currentPrice) / currentPrice) * 100,
+    };
+  }
+
+  function detectRegime(candles, atr, config, context) {
+    if (!candles?.length || !(atr > 0)) return { regime: "unknown", longAdjust: 0, shortAdjust: 0 };
+    const closes = candles.map((candle) => candle.close);
+    const emaFn = context?.indicators?.ema;
+    const fast = emaFn ? emaFn(closes, 9) : null;
+    const slow = emaFn ? emaFn(closes, 21) : null;
+    const atrPercentile = computeAtrPercentile(candles, atr, config.atrPeriod || 14, context);
+    const emaSpread =
+      fast !== null && slow !== null && closes.at(-1) > 0
+        ? (Math.abs(fast - slow) / closes.at(-1)) * 100
+        : 0;
+
+    const deadMarket =
+      atrPercentile !== null && atrPercentile < (config.minRegimeAtrPercentile ?? 12);
+    const extremeChop =
+      atrPercentile !== null && atrPercentile > (config.maxRegimeAtrPercentile ?? 90);
+
+    if (deadMarket) {
+      return { regime: "dead", longAdjust: -18, shortAdjust: -18, atrPercentile, emaSpread };
+    }
+    if (extremeChop) {
+      return { regime: "choppy", longAdjust: -10, shortAdjust: -10, atrPercentile, emaSpread };
+    }
+    if (emaSpread >= 0.35) {
+      return { regime: "trending", longAdjust: 6, shortAdjust: 6, atrPercentile, emaSpread };
+    }
+    return { regime: "ranging", longAdjust: -4, shortAdjust: -4, atrPercentile, emaSpread };
+  }
+
+  function getHigherTimeframeBias(assetKey, direction, context, config) {
+    const higherIntervals = [15, 60];
+    let aligned = 0;
+    let available = 0;
+    const indicators = context.indicators || {};
+    const emaFn = indicators.ema;
+    if (!emaFn) return { aligned: false, ratio: 0, bonus: 0 };
+
+    higherIntervals.forEach((interval) => {
+      const series = getSeries(context, assetKey, interval);
+      if (!series?.candles?.length) return;
+      const closes = series.candles.map((candle) => candle.close);
+      const fast = emaFn(closes, config.fastEma);
+      const slow = emaFn(closes, config.slowEma);
+      if (fast === null || slow === null) return;
+      available += 1;
+      const bullish = fast > slow;
+      if ((direction === "long" && bullish) || (direction === "short" && !bullish)) {
+        aligned += 1;
+      }
+    });
+
+    const ratio = available ? aligned / available : 0;
+    const bonus = ratio >= 1 ? 12 : ratio >= 0.5 ? 5 : -10;
+    return { aligned: ratio >= 0.5, ratio, bonus, available };
+  }
+
+  function getDirectionLearningAdjustment(botState, assetKey, direction) {
+    if (!botState?.trades?.length) return 0;
+    const recent = botState.trades
+      .filter((trade) => trade.asset === assetKey && trade.direction === direction)
+      .slice(0, 6);
+    if (recent.length < 2) return 0;
+    const wins = recent.filter((trade) => trade.pnl > 0).length;
+    const winRate = wins / recent.length;
+    if (winRate >= 0.67) return 6;
+    if (winRate <= 0.33) return -10;
+    return 0;
+  }
+
+  function resolveEntryReadiness(score, config) {
+    const ready = config.entryQualityReadyThreshold ?? 72;
+    const wait = config.entryQualityWaitThreshold ?? 50;
+    if (score >= ready) return "KÉSZ";
+    if (score >= wait) return "VÁR";
+    return "ROSSZ";
+  }
+
+  function analyzeEntryQuality(assetKey, direction, decision, config, context, botState = null) {
+    const interval = config.primaryInterval || 5;
+    let intraday = getSeries(context, assetKey, interval);
+    if (!intraday?.candles?.length && interval !== 1) {
+      intraday = getSeries(context, assetKey, 1);
+    }
+    const candles = intraday?.candles?.slice(-120) || [];
+    const currentPrice = decision?.currentPrice ?? candles.at(-1)?.close ?? null;
+    const reasons = { long: [], short: [] };
+    const blocks = { long: [], short: [] };
+
+    let longScore = 50;
+    let shortScore = 50;
+
+    if (!decision || !candles.length || !(currentPrice > 0)) {
+      return {
+        longScore: 0,
+        shortScore: 0,
+        readiness: "ROSSZ",
+        longReadiness: "ROSSZ",
+        shortReadiness: "ROSSZ",
+        regime: "unknown",
+        reasons: { long: ["Nincs elég adat"], short: ["Nincs elég adat"] },
+        blocks: { long: [], short: [] },
+        direction,
+      };
+    }
+
+    const structure = detectMarketStructure(candles);
+    longScore += structure.longBonus;
+    shortScore += structure.shortBonus;
+    if (structure.structure === "bullish") reasons.long.push("Emelkedő piaci struktúra (HH/HL)");
+    if (structure.structure === "bearish") reasons.short.push("Csökkenő piaci struktúra (LH/LL)");
+
+    const regime = detectRegime(candles, decision.atr, config, context);
+    longScore += regime.longAdjust;
+    shortScore += regime.shortAdjust;
+    if (regime.regime === "trending") {
+      reasons.long.push("Trendelő piac");
+      reasons.short.push("Trendelő piac");
+    } else if (regime.regime === "ranging") {
+      reasons.long.push("Oldalazó piac – óvatosabb belépés");
+      reasons.short.push("Oldalazó piac – óvatosabb belépés");
+    } else if (regime.regime === "dead") {
+      blocks.long.push("Halott piac – alacsony volatilitás");
+      blocks.short.push("Halott piac – alacsony volatilitás");
+    } else if (regime.regime === "choppy") {
+      blocks.long.push("Extrém zajos piac");
+      blocks.short.push("Extrém zajos piac");
+    }
+
+    const longHtf = getHigherTimeframeBias(assetKey, "long", context, config);
+    const shortHtf = getHigherTimeframeBias(assetKey, "short", context, config);
+    longScore += longHtf.bonus;
+    shortScore += shortHtf.bonus;
+    if (longHtf.aligned) reasons.long.push("Magasabb idősíkok LONG irányban");
+    else if (longHtf.available) blocks.long.push("Magasabb idősík ellen LONG-nak");
+    if (shortHtf.aligned) reasons.short.push("Magasabb idősíkok SHORT irányban");
+    else if (shortHtf.available) blocks.short.push("Magasabb idősík ellen SHORT-nak");
+
+    if (decision.alignment?.available >= config.minAlignedTimeframes) {
+      if (decision.alignment.bullishRatio >= config.minAlignmentRatio) {
+        longScore += 10;
+        reasons.long.push(`${decision.alignment.bullish} idősík emelkedő`);
+      }
+      if (decision.alignment.bearishRatio >= config.minAlignmentRatio) {
+        shortScore += 10;
+        reasons.short.push(`${decision.alignment.bearish} idősík csökkenő`);
+      }
+    }
+
+    if (config.useVolume && decision.volumeRatio !== null) {
+      if (decision.volumeRatio >= config.volumeMultiplier) {
+        if (decision.momentum15 > 0) {
+          longScore += 8;
+          reasons.long.push(`Átlag feletti volumen (${decision.volumeRatio.toFixed(2)}×)`);
+        }
+        if (decision.momentum15 < 0) {
+          shortScore += 8;
+          reasons.short.push(`Átlag feletti volumen (${decision.volumeRatio.toFixed(2)}×)`);
+        }
+      } else if (decision.volumeRatio < 0.85) {
+        longScore -= 6;
+        shortScore -= 6;
+        reasons.long.push("Gyenge volumen");
+        reasons.short.push("Gyenge volumen");
+      }
+    }
+
+    if (decision.rsi !== null) {
+      if (decision.rsi >= config.rsiLongMin && decision.rsi <= config.rsiLongMax) {
+        longScore += 8;
+        reasons.long.push(`RSI lendület zóna (${decision.rsi.toFixed(0)})`);
+      } else if (decision.rsi > config.rsiOverbought) {
+        longScore -= 14;
+        blocks.long.push("RSI túlvett – kifulladt LONG momentum");
+      } else if (decision.rsi < config.rsiOversold) {
+        shortScore -= 14;
+        blocks.short.push("RSI túladott – kifulladt SHORT momentum");
+      }
+      if (decision.rsi >= config.rsiShortMin && decision.rsi <= config.rsiShortMax) {
+        shortScore += 8;
+        reasons.short.push(`RSI lendület zóna (${decision.rsi.toFixed(0)})`);
+      }
+    }
+
+    const sr = findNearestSupportResistance(candles, currentPrice);
+    const srBlock = (config.srProximityBlockPercent ?? 0.35) / 100 * currentPrice;
+    if (sr.resistance !== null && sr.resistance - currentPrice < srBlock) {
+      longScore -= 12;
+      blocks.long.push("Ellenállás közelében – LONG kockázatos");
+    } else if (sr.resistanceDist !== null && sr.resistanceDist > 0.8) {
+      longScore += 4;
+      reasons.long.push("Távol az ellenállástól");
+    }
+    if (sr.support !== null && currentPrice - sr.support < srBlock) {
+      shortScore -= 12;
+      blocks.short.push("Támasz közelében – SHORT kockázatos");
+    } else if (sr.supportDist !== null && sr.supportDist > 0.8) {
+      shortScore += 4;
+      reasons.short.push("Távol a támasztól");
+    }
+
+    if (decision.momentum15 !== null) {
+      const longMomMin = config.longMomentumMin ?? config.momentumThreshold;
+      const shortMomMin = config.shortMomentumMin ?? config.momentumThreshold;
+      if (decision.momentum15 >= longMomMin) {
+        longScore += 6;
+        reasons.long.push(`Pozitív momentum (${formatPercent(decision.momentum15)})`);
+      } else if (decision.momentum15 < longMomMin * 0.5) {
+        longScore -= 5;
+      }
+      if (decision.momentum15 <= -shortMomMin) {
+        shortScore += 6;
+        reasons.short.push(`Negatív momentum (${formatPercent(decision.momentum15)})`);
+      } else if (decision.momentum15 > -shortMomMin * 0.5) {
+        shortScore -= 5;
+      }
+    }
+
+    if (botState) {
+      const longLearn = getDirectionLearningAdjustment(botState, assetKey, "long");
+      const shortLearn = getDirectionLearningAdjustment(botState, assetKey, "short");
+      longScore += longLearn;
+      shortScore += shortLearn;
+      if (longLearn < 0) blocks.long.push("Korábbi LONG veszteségek az eszközön");
+      if (shortLearn < 0) blocks.short.push("Korábbi SHORT veszteségek az eszközön");
+      if (longLearn > 0) reasons.long.push("Jó LONG előzmények");
+      if (shortLearn > 0) reasons.short.push("Jó SHORT előzmények");
+    }
+
+    longScore = Math.round(Math.min(100, Math.max(0, longScore)));
+    shortScore = Math.round(Math.min(100, Math.max(0, shortScore)));
+
+    const longReadiness = resolveEntryReadiness(longScore, config);
+    const shortReadiness = resolveEntryReadiness(shortScore, config);
+    const activeScore = direction === "short" ? shortScore : longScore;
+    const readiness = direction === "short" ? shortReadiness : longReadiness;
+
+    return {
+      longScore,
+      shortScore,
+      readiness,
+      longReadiness,
+      shortReadiness,
+      regime: regime.regime,
+      atrPercentile: regime.atrPercentile,
+      structure: structure.structure,
+      reasons,
+      blocks,
+      direction,
+      activeScore,
+      sr,
+    };
+  }
+
+  function logHoldSellDecision(botState, position, analysis, trigger) {
+    if (!botState || !position || !analysis) return;
+    const assetName = window.AssetCatalog?.getName(position.asset) || position.asset;
+    const verdict = analysis.shouldClose ? "ELADÁS" : "TARTÁS";
+    const message = `${assetName} ${position.direction.toUpperCase()}: ${verdict} (${trigger}) – tartás ${analysis.holdScore} vs eladás ${analysis.sellScore}`;
+    logActivity(botState, message);
+    botState.configChangeLog = botState.configChangeLog || [];
+    botState.configChangeLog.unshift({
+      time: Date.now(),
+      source: "pro mód",
+      key: "holdVsExit",
+      label: "Tartás vs eladás",
+      from: analysis.holdScore,
+      to: analysis.sellScore,
+      reason: `${verdict}: ${message} · ${[...(analysis.holdReasons || []), ...(analysis.sellReasons || [])].slice(0, 4).join(" · ")}`,
+    });
+    botState.configChangeLog = botState.configChangeLog.slice(0, 200);
+  }
+
+  function analyzeHoldVsExit(position, decision, config, context, currentPrice, options = {}) {
+    const holdReasons = [];
+    const sellReasons = [];
+    let holdScore = 0;
+    let sellScore = 0;
+    const now = Date.now();
+    const minHoldMs = (config.minHoldMinutes ?? 15) * 60000;
+    const timeInTrade = now - (position.openedAt || now);
+    const riskUnit = getPositionRiskUnit(position);
+    const unrealizedR =
+      riskUnit > 0
+        ? position.direction === "long"
+          ? (currentPrice - position.entry) / riskUnit
+          : (position.entry - currentPrice) / riskUnit
+        : 0;
+    const rewardR = config.rewardRatio ?? 2.5;
+    const minSell = config.minSellUrgencyScore ?? 55;
+
+    if (timeInTrade < minHoldMs) {
+      holdScore += 22;
+      holdReasons.push(`Min. tartási idő (${Math.ceil((minHoldMs - timeInTrade) / 60000)} perc hátra)`);
+    }
+
+    const htfBias = getHigherTimeframeBias(
+      position.asset,
+      position.direction,
+      context,
+      config,
+    );
+    if (htfBias.aligned) {
+      holdScore += 18;
+      holdReasons.push("Magasabb idősík trend érintetlen");
+    } else if (htfBias.available) {
+      sellScore += 14;
+      sellReasons.push("Magasabb idősík trend megtört");
+    }
+
+    if (unrealizedR > 0 && unrealizedR < rewardR * 0.85) {
+      holdScore += 16;
+      holdReasons.push(`Cél R még nem teljesült (${unrealizedR.toFixed(2)}R / ${rewardR}R)`);
+    }
+    if (unrealizedR >= rewardR * 0.85) {
+      sellScore += 12;
+      sellReasons.push("Közel a cél R-hez – profitvédelem");
+    }
+
+    if (position.trailingActive) {
+      holdScore += 10;
+      holdReasons.push("Követő stop aktív – trend védve");
+    }
+
+    if (unrealizedR >= (config.breakevenAfterR ?? 1) && position.stop >= position.entry && position.direction === "long") {
+      holdScore += 8;
+      holdReasons.push("Breakeven stop – kockázat nullázva");
+    }
+    if (unrealizedR >= (config.breakevenAfterR ?? 1) && position.stop <= position.entry && position.direction === "short") {
+      holdScore += 8;
+      holdReasons.push("Breakeven stop – kockázat nullázva");
+    }
+
+    if (decision) {
+      const oppositeSignal =
+        (position.direction === "long" && decision.className === "negative") ||
+        (position.direction === "short" && decision.className === "positive");
+      if (oppositeSignal) {
+        const reversalConfidence = config.reversalMinConfidence ?? 72;
+        const reversalScore = config.reversalMinScore ?? 3;
+        const signalStrength = Math.abs(decision.score || 0);
+        if (decision.confidence >= reversalConfidence && signalStrength >= reversalScore) {
+          sellScore += 20;
+          sellReasons.push(`Erős ellentétes jel (${decision.confidence}%, ${signalStrength.toFixed(1)})`);
+        } else {
+          holdScore += 14;
+          holdReasons.push("Gyenge ellentétes jel – egy gyertya nem elég");
+        }
+      } else if (decision.className === (position.direction === "long" ? "positive" : "negative")) {
+        holdScore += 12;
+        holdReasons.push("Az irány továbbra is támogatott");
+      }
+    }
+
+    if (options.staleCheck) {
+      if (htfBias.aligned && unrealizedR >= 0) {
+        holdScore += 10;
+        holdReasons.push("Elavult pozíció, de trend él – várakozás");
+      } else if (!htfBias.aligned || unrealizedR < 0) {
+        sellScore += 18;
+        sellReasons.push("Elavult pozíció trendtöréssel");
+      }
+    }
+
+    if (unrealizedR < -0.5 && !position.trailingActive) {
+      sellScore += 8;
+      sellReasons.push("Mélyebb veszteség – stop közelít");
+    }
+
+    const shouldClose =
+      sellScore > holdScore && sellScore >= minSell && (options.forceClose || sellScore - holdScore >= 8);
+    let closeReason = "Jelzésfordulás";
+    if (options.staleCheck) closeReason = "Trend megszakadt (időlimit)";
+    if (unrealizedR >= rewardR) closeReason = "Cél R elérve (pro)";
+    if (sellReasons.some((reason) => reason.includes("Erős ellentétes"))) closeReason = "Jelzésfordulás (pro)";
+
+    return {
+      holdScore: Math.round(holdScore),
+      sellScore: Math.round(sellScore),
+      shouldClose,
+      holdReasons,
+      sellReasons,
+      unrealizedR,
+      closeReason,
+      timeInTradeMinutes: Math.round(timeInTrade / 60000),
+    };
+  }
+
   function formatPrice(value, context) {
     if (context?.formatBotPrice) return context.formatBotPrice(value);
     return `$${value.toFixed(2)}`;
@@ -1179,6 +1669,15 @@
     if (b.opportunityScore !== a.opportunityScore) {
       return b.opportunityScore - a.opportunityScore;
     }
+    const aEntry =
+      a.entryQuality?.activeScore ??
+      (a.direction === "long" ? a.entryQuality?.longScore : a.entryQuality?.shortScore) ??
+      0;
+    const bEntry =
+      b.entryQuality?.activeScore ??
+      (b.direction === "long" ? b.entryQuality?.longScore : b.entryQuality?.shortScore) ??
+      0;
+    if (bEntry !== aEntry) return bEntry - aEntry;
     if (a.eligible !== b.eligible) {
       return a.eligible ? -1 : 1;
     }
@@ -1245,11 +1744,28 @@
     };
   }
 
-  function evaluateOpportunity(assetKey, decision, config, botState, now) {
+  function evaluateOpportunity(assetKey, decision, config, botState, now, context = null) {
     const assetName = window.AssetCatalog?.getName(assetKey) || assetKey;
     const scoreBreakdown = computeOpportunityScore(decision, config, botState, assetKey);
     const thresholds = getEffectiveThresholds(config);
     const filterReasons = [];
+    const direction =
+      decision?.className === "positive"
+        ? "long"
+        : decision?.className === "negative"
+          ? "short"
+          : null;
+    const entryQuality =
+      decision && context
+        ? analyzeEntryQuality(
+            assetKey,
+            direction || "long",
+            decision,
+            config,
+            context,
+            botState,
+          )
+        : null;
 
     if (!decision) {
       filterReasons.push("Nincs elérhető piaci adat");
@@ -1293,6 +1809,24 @@
       if (scoreBreakdown.learningPenalty >= 12) {
         filterReasons.push("Korábbi vesztes minták – eszköz büntetve");
       }
+      if (entryQuality) {
+        const minQuality = config.minEntryQualityScore ?? 72;
+        const activeReadiness =
+          direction === "long" ? entryQuality.longReadiness : entryQuality.shortReadiness;
+        const activeScore = direction === "long" ? entryQuality.longScore : entryQuality.shortScore;
+        const blocks = entryQuality.blocks?.[direction] || [];
+        if (blocks.length) {
+          filterReasons.push(blocks[0]);
+        } else if (activeReadiness === "ROSSZ") {
+          filterReasons.push(`Belépési minőség rossz (${activeScore} pt)`);
+        } else if (activeReadiness === "VÁR") {
+          filterReasons.push(`Setup kialakul – várakozás (${activeScore} pt)`);
+        } else if (activeScore < minQuality) {
+          filterReasons.push(
+            `Belépési minőség alacsony (${activeScore} < ${minQuality})`,
+          );
+        }
+      }
       if (!(decision.stop > 0) || !(decision.target > 0) || !(decision.currentPrice > 0)) {
         filterReasons.push("Hiányzó stop/cél/ár adat");
       }
@@ -1321,7 +1855,6 @@
     }
 
     const eligible = filterReasons.length === 0 && decision && decision.className !== "neutral";
-    const direction = decision?.className === "positive" ? "long" : decision?.className === "negative" ? "short" : null;
 
     return {
       assetKey,
@@ -1334,9 +1867,25 @@
       score: decision?.score ?? null,
       opportunityScore: scoreBreakdown.total,
       scoreBreakdown,
+      entryQuality,
+      entryReadiness: entryQuality
+        ? direction
+          ? direction === "long"
+            ? entryQuality.longReadiness
+            : entryQuality.shortReadiness
+          : entryQuality.longScore >= entryQuality.shortScore
+            ? entryQuality.longReadiness
+            : entryQuality.shortReadiness
+        : "ROSSZ",
+      entryReadinessDetail: entryQuality
+        ? `L:${entryQuality.longReadiness} (${entryQuality.longScore}) · S:${entryQuality.shortReadiness} (${entryQuality.shortScore})`
+        : null,
       eligible,
       filterReasons,
       topReasons: (decision?.reasons || []).slice(0, 3),
+      entryReasons: entryQuality
+        ? (entryQuality.reasons?.[direction] || []).slice(0, 2)
+        : [],
     };
   }
 
@@ -1346,7 +1895,7 @@
     const scanKeys = getScanAssetKeys(config, botState);
     const results = scanKeys.map((assetKey) => {
       const decision = analyzeSignal(assetKey, config, context);
-      return evaluateOpportunity(assetKey, decision, config, botState, now);
+      return evaluateOpportunity(assetKey, decision, config, botState, now, context);
     });
     results.sort(compareOpportunityResults);
     return results;
@@ -1487,14 +2036,32 @@
   }
 
   function updateTrailingStop(position, candle, config, atr) {
-    if (!config.useTrailingStop || !(atr > 0)) return;
+    if (!(atr > 0)) return;
     const riskUnit = getPositionRiskUnit(position);
     if (!(riskUnit > 0)) return;
+    const breakevenR = config.breakevenAfterR ?? 1;
+
+    if (position.direction === "long") {
+      position.peakPrice = Math.max(position.peakPrice ?? position.entry, candle.high);
+      const profitR = (position.peakPrice - position.entry) / riskUnit;
+      if (profitR >= breakevenR && position.stop < position.entry && !position.partialTaken) {
+        position.stop = position.entry;
+        position.breakevenActive = true;
+      }
+    } else {
+      position.troughPrice = Math.min(position.troughPrice ?? position.entry, candle.low);
+      const profitR = (position.entry - position.troughPrice) / riskUnit;
+      if (profitR >= breakevenR && position.stop > position.entry && !position.partialTaken) {
+        position.stop = position.entry;
+        position.breakevenActive = true;
+      }
+    }
+
+    if (!config.useTrailingStop) return;
     const activationR = config.trailingActivationR ?? 0.75;
     const trailDistance = atr * (config.trailingAtrMultiplier ?? 1.5);
 
     if (position.direction === "long") {
-      position.peakPrice = Math.max(position.peakPrice ?? position.entry, candle.high);
       const profitR = (position.peakPrice - position.entry) / riskUnit;
       if (profitR >= activationR) {
         const newStop = position.peakPrice - trailDistance;
@@ -1504,7 +2071,6 @@
         }
       }
     } else {
-      position.troughPrice = Math.min(position.troughPrice ?? position.entry, candle.low);
       const profitR = (position.entry - position.troughPrice) / riskUnit;
       if (profitR >= activationR) {
         const newStop = position.troughPrice + trailDistance;
@@ -1533,12 +2099,35 @@
         if (!position.initialQuantity) position.initialQuantity = position.quantity;
 
         if (maxAgeMs > 0 && now - position.openedAt >= maxAgeMs) {
-          closures.push({
-            id: position.id,
-            price: currentPrice,
-            reason: "Időlimit",
-            time: now,
-          });
+          const decision = analyzeSignal(assetKey, config, context);
+          if (config.staleExitRequiresTrendBreak !== false) {
+            const holdExit = analyzeHoldVsExit(
+              position,
+              decision,
+              config,
+              context,
+              currentPrice,
+              { staleCheck: true },
+            );
+            if (holdExit.shouldClose) {
+              logHoldSellDecision(botState, position, holdExit, "elavult pozíció");
+              closures.push({
+                id: position.id,
+                price: currentPrice,
+                reason: holdExit.closeReason || "Trend megszakadt (időlimit)",
+                time: now,
+              });
+            } else {
+              logHoldSellDecision(botState, position, holdExit, "elavult – tartás");
+            }
+          } else {
+            closures.push({
+              id: position.id,
+              price: currentPrice,
+              reason: "Időlimit",
+              time: now,
+            });
+          }
           return;
         }
 
@@ -1648,6 +2237,23 @@
     if (!passesDailyTrendFilter(direction, decision.dailyClass, config)) return null;
     if (!passesDirectionalEntryFilters(direction, decision, config)) return null;
 
+    const entryQuality = analyzeEntryQuality(
+      assetKey,
+      direction,
+      decision,
+      config,
+      context,
+      botState,
+    );
+    const minQuality = config.minEntryQualityScore ?? 72;
+    const activeReadiness =
+      direction === "long" ? entryQuality.longReadiness : entryQuality.shortReadiness;
+    const activeScore = direction === "long" ? entryQuality.longScore : entryQuality.shortScore;
+    const blocks = entryQuality.blocks?.[direction] || [];
+    if (blocks.length) return null;
+    if (activeReadiness !== "KÉSZ") return null;
+    if (activeScore < minQuality) return null;
+
     const rawEntry = decision.currentPrice;
     const entry = applySlippage(rawEntry, direction, true, config);
     const quantity = calculatePositionSize(botState, entry, decision.stop, config, context);
@@ -1672,6 +2278,13 @@
       interval: decision.interval,
       signal: decision.signal,
       reasons: decision.reasons.slice(0, 4),
+      entryQuality: {
+        score: activeScore,
+        readiness: activeReadiness,
+        regime: entryQuality.regime,
+        structure: entryQuality.structure,
+        reasons: (entryQuality.reasons?.[direction] || []).slice(0, 3),
+      },
       openedAt: now,
       lastCheckedAt: now,
       initialStop: decision.stop,
@@ -1689,7 +2302,7 @@
           : "";
     logActivity(
       botState,
-      `${assetName} ${direction.toUpperCase()} nyitva @ ${formatPrice(entry, context)} · ${decision.signal} (${decision.confidence}%, ${opportunityScore.toFixed(0)} pont)${proNote}`,
+      `${assetName} ${direction.toUpperCase()} nyitva @ ${formatPrice(entry, context)} · ${decision.signal} (${decision.confidence}%, ${opportunityScore.toFixed(0)} pont, belépés ${activeScore} KÉSZ)${proNote}`,
     );
     return position;
   }
@@ -1699,8 +2312,6 @@
     if (!config.autoCloseOnReversal || !decision) return;
     const currentPrice = getCurrentPrice(assetKey, context);
     if (!Number.isFinite(currentPrice)) return;
-    const reversalConfidence = config.reversalMinConfidence ?? 72;
-    const reversalScore = config.reversalMinScore ?? 3;
     botState.positions
       .filter((position) => position.asset === assetKey)
       .forEach((position) => {
@@ -1708,19 +2319,26 @@
           (position.direction === "long" && decision.className === "negative") ||
           (position.direction === "short" && decision.className === "positive");
         if (!oppositeSignal) return;
-        if (decision.confidence < reversalConfidence) return;
-        if (Math.abs(decision.score || 0) < reversalScore) return;
 
-        const riskUnit = getPositionRiskUnit(position);
-        const unrealizedR =
-          riskUnit > 0
-            ? position.direction === "long"
-              ? (currentPrice - position.entry) / riskUnit
-              : (position.entry - currentPrice) / riskUnit
-            : 0;
-        if (unrealizedR >= (config.trailingActivationR ?? 0.75) && config.useTrailingStop) return;
+        const holdExit = analyzeHoldVsExit(
+          position,
+          decision,
+          config,
+          context,
+          currentPrice,
+          { reversalCheck: true },
+        );
+        logHoldSellDecision(botState, position, holdExit, "jelzésfordulás");
+        if (!holdExit.shouldClose) return;
 
-        closePosition(botState, position.id, currentPrice, "Jelzésfordulás", now, context);
+        closePosition(
+          botState,
+          position.id,
+          currentPrice,
+          holdExit.closeReason || "Jelzésfordulás",
+          now,
+          context,
+        );
       });
   }
 
@@ -1761,7 +2379,7 @@
     const scanResults = scanKeys.map((assetKey) => {
       const decision = analyzeSignal(assetKey, config, context);
       maybeCloseOnReversal(botState, assetKey, decision, context, now);
-      return evaluateOpportunity(assetKey, decision, config, botState, now);
+      return evaluateOpportunity(assetKey, decision, config, botState, now, context);
     });
     scanResults.sort(compareOpportunityResults);
 
@@ -1864,6 +2482,8 @@
             signal: chosen.signal,
             confidence: chosen.confidence,
             direction: chosen.direction,
+            entryReadiness: chosen.entryReadiness,
+            entryQuality: chosen.entryQuality,
             scoreBreakdown: chosen.scoreBreakdown,
             topReasons: chosen.topReasons,
             filterReasons: [],
@@ -2330,6 +2950,8 @@
     getBotTickIntervalMs,
     tick,
     analyzeSignal,
+    analyzeEntryQuality,
+    analyzeHoldVsExit,
     scanMarketOpportunities,
     evaluateOpportunity,
     getScanAssetKeys,

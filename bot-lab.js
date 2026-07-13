@@ -1115,6 +1115,9 @@
           opportunityScore: lastScanRow.opportunityScore,
           score: lastScanRow.score,
           scoreBreakdown: lastScanRow.scoreBreakdown,
+          entryReadiness: lastScanRow.entryReadiness,
+          entryReadinessDetail: lastScanRow.entryReadinessDetail,
+          entryQuality: lastScanRow.entryQuality,
         }
       : null);
     const refreshing = appState?.assetRefreshing?.[assetKey];
@@ -1139,6 +1142,11 @@
     const confidence = result.confidence ?? result.decision?.confidence ?? fallback?.confidence;
     const opportunityScore = result.opportunityScore ?? fallback?.opportunityScore;
     const score = result.score ?? result.decision?.score ?? fallback?.score;
+    const scoreBreakdown = result.scoreBreakdown || fallback?.scoreBreakdown;
+    const entryReadiness = result.entryReadiness ?? fallback?.entryReadiness ?? "ROSSZ";
+    const entryReadinessDetail =
+      result.entryReadinessDetail ?? fallback?.entryReadinessDetail ?? null;
+    const entryQuality = result.entryQuality ?? fallback?.entryQuality ?? null;
     const stale = Boolean(refreshing && fallback && !result.decision);
     const hasData = hasLiveData || Boolean(fallback);
 
@@ -1155,6 +1163,9 @@
           eligible: result.eligible,
           topReasons: result.topReasons,
           filterReasons: result.filterReasons,
+          entryReadiness,
+          entryReadinessDetail,
+          entryQuality,
         });
       }
     }
@@ -1167,7 +1178,10 @@
       confidence,
       opportunityScore,
       score,
-      scoreBreakdown: result.scoreBreakdown || fallback?.scoreBreakdown,
+      scoreBreakdown,
+      entryReadiness,
+      entryReadinessDetail,
+      entryQuality,
       hasData,
       stale,
       eligible: result.eligible,
@@ -1258,7 +1272,7 @@
       const header = document.createElement("div");
       header.className = "bot-scan-list-header";
       header.innerHTML =
-        "<span>#</span><span>Eszköz</span><span>Jel</span><span>Ár</span><span>Változás</span><span>Trend</span><span>Hangulat</span><span>Részletek</span>";
+        "<span>#</span><span>Eszköz</span><span>Jel</span><span>Belépés</span><span>Ár</span><span>Változás</span><span>Trend</span><span>Hangulat</span><span>Részletek</span>";
       grid.append(header);
 
       results.forEach((result, index) => {
@@ -1276,13 +1290,21 @@
           ? display.signal || result.signal || "KIVÁRÁS"
           : "Betöltés…";
         const detailsText = hasData
-          ? `${formatNumber(display.opportunityScore ?? 0, 0)} pt · ${display.confidence ?? "–"}% · jel ${display.score !== null && display.score !== undefined ? formatNumber(display.score, 2) : "–"}${display.stale ? " · frissítés" : ""}`
+          ? `${formatNumber(display.opportunityScore ?? 0, 0)} pt · ${display.confidence ?? "–"}% · jel ${display.score !== null && display.score !== undefined ? formatNumber(display.score, 2) : "–"}${display.entryQuality?.regime ? ` · ${display.entryQuality.regime}` : ""}${display.stale ? " · frissítés" : ""}`
           : "Várakozás adatra…";
+        const entryBadgeClass =
+          display.entryReadiness === "KÉSZ"
+            ? "ready"
+            : display.entryReadiness === "VÁR"
+              ? "wait"
+              : "bad";
+        const entryTitle = display.entryReadinessDetail || "Belépési minőség";
 
         row.innerHTML = `
           <span class="bot-scan-rank">#${index + 1}</span>
           <span class="bot-scan-name">${result.assetName}</span>
           <strong class="bot-scan-signal ${display.className}">${signalText}</strong>
+          <span class="bot-scan-entry ${entryBadgeClass}" title="${entryTitle}">${hasData ? display.entryReadiness : "–"}</span>
           <span class="bot-scan-price">${Number.isFinite(display.price) ? formatScanPrice(display.price, decimals) : "–"}</span>
           <span class="bot-scan-change ${bridge.valueClass(display.change || 0)}">${Number.isFinite(display.change) ? `${display.change >= 0 ? "+" : ""}${formatNumber(display.change, 2)}%` : "–"}</span>
           <span class="bot-scan-trend ${display.className}">${hasData ? trendLabel(display.className) : "–"}</span>
@@ -1293,7 +1315,11 @@
           const reasons = document.createElement("div");
           reasons.className = "bot-scan-row-reasons";
           if (result.eligible) {
-            reasons.textContent = (result.topReasons || []).join(" · ") || "Minden szűrő teljesül.";
+            const entryNote = result.entryQuality?.score
+              ? `Belépés ${result.entryQuality.score} pt · `
+              : "";
+            reasons.textContent =
+              entryNote + ((result.topReasons || []).join(" · ") || "Minden szűrő teljesül.");
           } else {
             reasons.textContent = result.filterReasons.join(" · ") || "Nem kereskedhető.";
           }
@@ -1333,9 +1359,9 @@
         const bd = chosen.scoreBreakdown || {};
         box.innerHTML = `
           <strong>Választott: ${chosen.assetName}</strong>
-          <span>${chosen.signal} · ${chosen.confidence}% bizalom · ${chosen.opportunityScore.toFixed(0)} pont · ${chosen.direction?.toUpperCase() || "–"}</span>
+          <span>${chosen.signal} · ${chosen.confidence}% bizalom · ${chosen.opportunityScore.toFixed(0)} pont · ${chosen.direction?.toUpperCase() || "–"} · belépés ${chosen.entryReadiness || "–"}</span>
           <small>${(chosen.topReasons || []).join(" · ")}</small>
-          <small class="bot-scan-breakdown">Pontszám: bizalom ${Math.round(bd.confidence || 0)} + jel ${(bd.signalStrength || 0).toFixed(1)} + egyezés ${(bd.alignmentBonus || 0).toFixed(1)} + momentum ${(bd.momentumBonus || 0).toFixed(1)} + RSI ${Math.round(bd.rsiBonus || 0)}</small>`;
+          <small class="bot-scan-breakdown">Pontszám: bizalom ${Math.round(bd.confidence || 0)} + jel ${(bd.signalStrength || 0).toFixed(1)} + egyezés ${(bd.alignmentBonus || 0).toFixed(1)} + momentum ${(bd.momentumBonus || 0).toFixed(1)} + RSI ${Math.round(bd.rsiBonus || 0)}${chosen.entryQuality?.score ? ` · belépés ${chosen.entryQuality.score} pt (${chosen.entryQuality.regime || "?"})` : ""}</small>`;
         summary.append(box);
       } else if (chosen?.reason) {
         summary.append(
