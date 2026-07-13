@@ -48,6 +48,12 @@
     maxTradesPerHour: { min: 1, max: 10, step: 1 },
     minEntryGapMinutes: { min: 0, max: 60, step: 5 },
     volumeMultiplier: { min: 1, max: 3, step: 0.1 },
+    autoLearnNoTradeHours: { min: 2, max: 8, step: 1 },
+    autoLearnMaxDailyAdjustments: { min: 5, max: 50, step: 1 },
+    autoLearnMinChangeMinutes: { min: 5, max: 60, step: 5 },
+    autoLearnTargetWinRate: { min: 30, max: 70, step: 5 },
+    autoLearnTargetTradesPer6h: { min: 1, max: 5, step: 1 },
+    autoLearnRollingWindow: { min: 10, max: 50, step: 5 },
   };
 
   const CONFIG_PRESETS = {
@@ -263,10 +269,74 @@
     htfTrendFilterStrength: "medium",
     entryMode: "both",
     scannerRefreshPriority: "balanced",
+    autoLearnNoTradeHours: 3,
+    autoLearnMaxDailyAdjustments: 20,
+    autoLearnMinChangeMinutes: 15,
+    autoLearnTargetWinRate: 40,
+    autoLearnTargetTradesPer6h: 1,
+    autoLearnRollingWindow: 20,
   };
 
   const DIAGNOSTIC_STALE_HOURS = 4;
   const DIAGNOSTIC_LOG_COOLDOWN_MS = 3600000;
+
+  const AUTO_LEARN_FINE_STEPS = {
+    minConfidence: 1,
+    minOpportunityScore: 1,
+    minEntryQualityScore: 1,
+    signalScoreThreshold: 0.25,
+    atrStopMultiplier: 0.1,
+    atrStopMultiplierLong: 0.1,
+    atrStopMultiplierShort: 0.1,
+    momentumThreshold: 0.02,
+    longMomentumMin: 0.02,
+    shortMomentumMin: 0.02,
+    cooldownMinutes: 5,
+    minEntryGapMinutes: 5,
+    rewardRatio: 0.25,
+    riskPercent: 0.25,
+    reversalMinConfidence: 2,
+    reversalMinScore: 0.25,
+    maxTradesPerDay: 1,
+    maxTradesPerHour: 1,
+  };
+
+  const AUTO_LEARN_DELTAS = {
+    minConfidence: 2,
+    minOpportunityScore: 2,
+    minEntryQualityScore: 2,
+    signalScoreThreshold: 0.25,
+    atrStopMultiplier: 0.1,
+    atrStopMultiplierLong: 0.1,
+    atrStopMultiplierShort: 0.1,
+    momentumThreshold: 0.02,
+    longMomentumMin: 0.02,
+    shortMomentumMin: 0.02,
+    cooldownMinutes: 5,
+    minEntryGapMinutes: 5,
+    rewardRatio: 0.25,
+    riskPercent: 0.25,
+    reversalMinConfidence: 2,
+    reversalMinScore: 0.25,
+    maxTradesPerDay: 2,
+    maxTradesPerHour: 1,
+  };
+
+  const LOOSEN_SAFETY_FLOORS = {
+    minConfidence: 45,
+    minOpportunityScore: 55,
+    minEntryQualityScore: 50,
+    signalScoreThreshold: 1.75,
+    momentumThreshold: 0.05,
+    longMomentumMin: 0.05,
+    shortMomentumMin: 0.05,
+    cooldownMinutes: 5,
+    minEntryGapMinutes: 0,
+    maxTradesPerDay: 3,
+    maxTradesPerHour: 1,
+    riskPercent: 0.5,
+    proMinConfidenceFloor: 40,
+  };
 
   const FILTER_REASON_CATEGORIES = [
     { match: /Bot kikapcsolva/i, key: "bot-disabled", label: "Bot kikapcsolva" },
@@ -387,6 +457,12 @@
     entryMode: "Belépési mód",
     scannerRefreshPriority: "Szkenner frissítés prioritás",
     volumeMultiplier: "Volumen spike szorzó",
+    autoLearnNoTradeHours: "Auto-tanulás: ügylet-szünet (óra)",
+    autoLearnMaxDailyAdjustments: "Auto-tanulás: max. módosítás / nap",
+    autoLearnMinChangeMinutes: "Auto-tanulás: min. idő módosítások között (perc)",
+    autoLearnTargetWinRate: "Auto-tanulás: cél win rate (%)",
+    autoLearnTargetTradesPer6h: "Auto-tanulás: cél ügylet / 6 óra",
+    autoLearnRollingWindow: "Auto-tanulás: gördülő ablak (ügylet)",
   };
 
   const REGIME_FILTER_LABELS = {
@@ -455,6 +531,14 @@
     return Math.min(bounds.max, Math.max(bounds.min, stepped));
   }
 
+  function clampLearnValue(key, value) {
+    const bounds = PARAM_BOUNDS[key];
+    if (!bounds) return value;
+    const step = AUTO_LEARN_FINE_STEPS[key] ?? bounds.step ?? 0;
+    const stepped = step > 0 ? Math.round(value / step) * step : value;
+    return Math.min(bounds.max, Math.max(bounds.min, stepped));
+  }
+
   function createBotUserId() {
     if (window.crypto?.randomUUID) return window.crypto.randomUUID().replace(/-/g, "");
     return `bot${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
@@ -519,6 +603,7 @@
           missedLog: [],
         },
         tradeDiagnostics: botState.tradeDiagnostics || createEmptyTradeDiagnostics(),
+        autoLearnRuntime: botState.autoLearnRuntime || createEmptyAutoLearnRuntime(),
         initialCapital: botState.initialCapital,
         cash: botState.cash,
         lastActionAt: botState.lastActionAt || {},
@@ -541,6 +626,10 @@
     botState.tradeDiagnostics = {
       ...createEmptyTradeDiagnostics(),
       ...(incoming.tradeDiagnostics || botState.tradeDiagnostics || {}),
+    };
+    botState.autoLearnRuntime = {
+      ...createEmptyAutoLearnRuntime(),
+      ...(incoming.autoLearnRuntime || botState.autoLearnRuntime || {}),
     };
     botState.initialCapital = incoming.initialCapital;
     botState.cash = incoming.cash;
@@ -730,7 +819,9 @@
         lastTopReasons: [],
         lastStaleLogAt: 0,
         lastSuggestionLogAt: 0,
+        lastNoTradeLearnAt: 0,
       },
+      autoLearnRuntime: createEmptyAutoLearnRuntime(),
     };
   }
 
@@ -743,6 +834,20 @@
       lastTopReasons: [],
       lastStaleLogAt: 0,
       lastSuggestionLogAt: 0,
+      lastNoTradeLearnAt: 0,
+    };
+  }
+
+  function createEmptyAutoLearnRuntime() {
+    return {
+      dailyCount: 0,
+      dayKey: "",
+      lastChangeAt: 0,
+      lastChangeSummary: "",
+      lastTrigger: "",
+      lastTradeId: null,
+      nextReviewAt: 0,
+      targetsMetAt: 0,
     };
   }
 
@@ -830,6 +935,10 @@
       saved.tradeDiagnostics = {
         ...createEmptyTradeDiagnostics(),
         ...(saved.tradeDiagnostics || {}),
+      };
+      saved.autoLearnRuntime = {
+        ...createEmptyAutoLearnRuntime(),
+        ...(saved.autoLearnRuntime || {}),
       };
       return reconcileBalanceOnLoad(saved, fxContext);
     } catch {
@@ -3433,6 +3542,7 @@
     const closed = botState.trades.length - beforeTrades;
     recordDiagnosticRejections(botState, scanResults);
     maybeLogStaleTradeDiagnostics(botState, context);
+    maybeRunNoTradeAutoLearn(botState, context);
     recordEquity(botState, context, now);
     botState.lastTickAt = now;
     saveBotState(botState);
@@ -3533,13 +3643,464 @@
     return picked;
   }
 
-  function runAutoLearn(botState, context, options = {}) {
-    const { dryRun = false, trigger = "manual" } = options;
-    if (!dryRun && !botState.config.autoLearnEnabled) return null;
+  function getAutoLearnDayKey(time = Date.now()) {
+    return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Budapest" }).format(time);
+  }
+
+  function ensureAutoLearnRuntime(botState) {
+    if (!botState.autoLearnRuntime) {
+      botState.autoLearnRuntime = createEmptyAutoLearnRuntime();
+    }
+    const runtime = botState.autoLearnRuntime;
+    const dayKey = getAutoLearnDayKey();
+    if (runtime.dayKey !== dayKey) {
+      runtime.dayKey = dayKey;
+      runtime.dailyCount = 0;
+    }
+    return runtime;
+  }
+
+  function getRollingLearningMetrics(botState, config) {
+    const windowSize = config.autoLearnRollingWindow || 20;
+    const recent = botState.trades.filter((trade) => !trade.partial).slice(0, windowSize);
+    const wins = recent.filter((trade) => trade.pnl > 0);
+    const rollingPnl = recent.reduce((sum, trade) => sum + (Number.isFinite(trade.pnl) ? trade.pnl : 0), 0);
+    const winRate = recent.length ? (wins.length / recent.length) * 100 : null;
+    const sixHoursAgo = Date.now() - 6 * 3600000;
+    const tradesLast6h = botState.trades.filter(
+      (trade) => !trade.partial && trade.closedAt > sixHoursAgo,
+    ).length;
+    const diagnostics = ensureTradeDiagnostics(botState);
+    const lastOpen = diagnostics.lastOpenSuccessAt || 0;
+    const hoursSinceOpen = lastOpen ? (Date.now() - lastOpen) / 3600000 : null;
+    return {
+      windowSize,
+      sampleSize: recent.length,
+      winRate,
+      rollingPnl,
+      tradesLast6h,
+      hoursSinceOpen,
+    };
+  }
+
+  function areLearningTargetsMet(botState, context) {
+    const config = botState.config;
+    if (!config.enabled) return true;
+    const rolling = getRollingLearningMetrics(botState, config);
+    const targetWinRate = config.autoLearnTargetWinRate ?? 40;
+    const targetTradesPer6h = config.autoLearnTargetTradesPer6h ?? 1;
+    const winRateOk =
+      rolling.sampleSize < 5 || rolling.winRate === null || rolling.winRate >= targetWinRate;
+    const tradesOk =
+      !config.enabled ||
+      rolling.tradesLast6h >= targetTradesPer6h ||
+      (rolling.hoursSinceOpen !== null && rolling.hoursSinceOpen < config.autoLearnNoTradeHours);
+    const pnlOk = rolling.sampleSize < 5 || rolling.rollingPnl >= 0;
+    return winRateOk && tradesOk && pnlOk;
+  }
+
+  function getPrimaryLearningGoal(botState, context) {
+    const config = botState.config;
+    const rolling = getRollingLearningMetrics(botState, config);
+    const targetWinRate = config.autoLearnTargetWinRate ?? 40;
+    const targetTradesPer6h = config.autoLearnTargetTradesPer6h ?? 1;
+    if (
+      config.enabled &&
+      (rolling.hoursSinceOpen === null || rolling.hoursSinceOpen >= (config.autoLearnNoTradeHours ?? 3))
+    ) {
+      return "több ügylet";
+    }
+    if (rolling.sampleSize >= 5 && rolling.winRate !== null && rolling.winRate < targetWinRate) {
+      return "jobb találati arány";
+    }
+    if (rolling.sampleSize >= 5 && rolling.rollingPnl < 0) {
+      return "pozitív gördülő PnL";
+    }
+    if (rolling.tradesLast6h < targetTradesPer6h) {
+      return "több ügylet";
+    }
+    return "célok teljesítve";
+  }
+
+  function canApplyAutoLearnChange(botState, config, options = {}) {
+    if (!config.autoLearnEnabled && !options.force) {
+      return { ok: false, reason: "Auto-tanulás kikapcsolva." };
+    }
+    if (!options.ignoreTargets && areLearningTargetsMet(botState, null)) {
+      return { ok: false, reason: "A tanulási célok teljesülnek – nincs szükség módosításra." };
+    }
+    const runtime = ensureAutoLearnRuntime(botState);
+    const maxDaily = config.autoLearnMaxDailyAdjustments ?? 20;
+    if (runtime.dailyCount >= maxDaily) {
+      return {
+        ok: false,
+        reason: `Napi auto-tanulási limit elérve (${maxDaily} módosítás).`,
+      };
+    }
+    const minIntervalMs = (config.autoLearnMinChangeMinutes ?? 15) * 60000;
+    if (
+      !options.ignoreInterval &&
+      runtime.lastChangeAt &&
+      Date.now() - runtime.lastChangeAt < minIntervalMs
+    ) {
+      const waitMin = Math.ceil((minIntervalMs - (Date.now() - runtime.lastChangeAt)) / 60000);
+      return {
+        ok: false,
+        reason: `Várakozás a következő auto-módosításig (${waitMin} perc).`,
+        nextReviewAt: runtime.lastChangeAt + minIntervalMs,
+      };
+    }
+    return { ok: true };
+  }
+
+  function proposeLearnChange(next, changes, key, newValue, reason, options = {}) {
+    const loosen = options.loosen === true;
+    if (typeof next[key] === "boolean") {
+      if (next[key] === newValue) return;
+      changes.push({ key, from: next[key], to: newValue, reason });
+      next[key] = newValue;
+      return;
+    }
+    if (typeof next[key] === "string") {
+      if (next[key] === newValue) return;
+      changes.push({ key, from: next[key], to: newValue, reason });
+      next[key] = newValue;
+      return;
+    }
+    let clamped = clampLearnValue(key, newValue);
+    if (loosen && LOOSEN_SAFETY_FLOORS[key] !== undefined) {
+      clamped = Math.max(clamped, LOOSEN_SAFETY_FLOORS[key]);
+      if (clamped >= next[key]) return;
+    }
+    if (clamped === next[key]) return;
+    changes.push({ key, from: next[key], to: clamped, reason });
+    next[key] = clamped;
+  }
+
+  function finalizeLearningChanges(changes, maxCount = 3) {
+    const unique = [];
+    const seen = new Set();
+    changes.forEach((change) => {
+      if (seen.has(change.key)) return;
+      seen.add(change.key);
+      unique.push(change);
+    });
+    return unique.slice(0, maxCount);
+  }
+
+  function applyLearningChanges(botState, changes, meta = {}) {
+    if (!changes?.length) return null;
+    const before = pickLearnable(botState.config);
+    const next = { ...botState.config };
+    changes.forEach((change) => {
+      next[change.key] = change.to;
+    });
+    botState.config = next;
+    const after = pickLearnable(next);
+    const runtime = ensureAutoLearnRuntime(botState);
+    const now = Date.now();
+    runtime.dailyCount += 1;
+    runtime.lastChangeAt = now;
+    runtime.lastTrigger = meta.trigger || "auto";
+    runtime.lastTradeId = meta.tradeId || null;
+    runtime.lastChangeSummary = changes
+      .map((change) => `${CONFIG_LABELS[change.key] || change.key}: ${formatConfigValue(change.key, change.from)} → ${formatConfigValue(change.key, change.to)}`)
+      .join(" · ");
+    runtime.nextReviewAt = now + (botState.config.autoLearnMinChangeMinutes ?? 15) * 60000;
+    if (areLearningTargetsMet(botState, null)) {
+      runtime.targetsMetAt = now;
+    }
+
+    const entry = {
+      time: now,
+      trigger: meta.trigger || "auto",
+      tradeId: meta.tradeId || null,
+      before,
+      after,
+      changes,
+    };
+    botState.learningHistory = [entry, ...(botState.learningHistory || [])].slice(0, 30);
+    logConfigChanges(botState, "auto-tanulás", changes);
+    logActivity(
+      botState,
+      meta.activityMessage ||
+        `Auto-tanulás: ${changes.length} paraméter módosítva (${changes.map((c) => c.key).join(", ")}).`,
+    );
+    saveBotState(botState);
+    return { applied: true, ...entry };
+  }
+
+  function buildTradeCloseLearningChanges(trade, config) {
+    if (!trade || trade.partial) return [];
+    const next = { ...config };
+    const pending = [];
+    const assetName = window.AssetCatalog?.getName(trade.asset) || trade.asset;
+    const tradeRef = trade.id ? `#${trade.id.slice(-8)}` : "ismeretlen";
+    const entryQuality = trade.entryQuality?.score ?? null;
+    const regime = trade.entryQuality?.regime || "unknown";
+    const direction = trade.direction || "long";
+    const delta = AUTO_LEARN_DELTAS;
+    const baseReason = `${assetName} ${direction.toUpperCase()} ${tradeRef} (${trade.reason || "zárás"})`;
+
+    function queue(key, newValue, detail, loosen = false) {
+      const reason = `${baseReason}: ${detail}`;
+      const scratch = { ...next };
+      const changes = [];
+      proposeLearnChange(scratch, changes, key, newValue, reason, { loosen });
+      if (changes.length) {
+        pending.push(changes[0]);
+        next[key] = changes[0].to;
+      }
+    }
+
+    if (trade.outcome === "win") {
+      if (trade.reason === "Célár") {
+        queue(
+          "minConfidence",
+          next.minConfidence - delta.minConfidence,
+          "célár elérve – enyhébb belépő küszöb",
+          true,
+        );
+        queue(
+          "minOpportunityScore",
+          next.minOpportunityScore - delta.minOpportunityScore,
+          "működő setup – alacsonyabb lehetőség-pont",
+          true,
+        );
+      } else if (trade.reason === "Követő stop") {
+        queue(
+          "signalScoreThreshold",
+          next.signalScoreThreshold - delta.signalScoreThreshold,
+          "követő stop védte a nyereséget – enyhébb jelzésküszöb",
+          true,
+        );
+      } else {
+        queue(
+          "rewardRatio",
+          next.rewardRatio + delta.rewardRatio,
+          "nyertes ügylet – magasabb cél R arány",
+        );
+      }
+      if (entryQuality !== null && entryQuality >= (config.entryQualityReadyThreshold ?? 62)) {
+        queue(
+          "minEntryQualityScore",
+          next.minEntryQualityScore - delta.minEntryQualityScore,
+          `jó belépési minőség (${entryQuality}) – finom lazítás`,
+          true,
+        );
+      }
+    } else {
+      if (trade.reason === "Stop-loss" || trade.reason === "Követő stop") {
+        const stopKey =
+          direction === "long" ? "atrStopMultiplierLong" : "atrStopMultiplierShort";
+        queue(
+          stopKey,
+          (next[stopKey] ?? next.atrStopMultiplier) + delta[stopKey],
+          "stop teljesült – szélesebb ATR stop",
+        );
+        queue(
+          "minConfidence",
+          next.minConfidence + delta.minConfidence,
+          "vesztes stop – szigorúbb bizalom küszöb",
+        );
+        queue(
+          "signalScoreThreshold",
+          next.signalScoreThreshold + delta.signalScoreThreshold,
+          "stop kifutás – erősebb jelzés kell",
+        );
+      } else if (trade.reason === "Jelzésfordulás") {
+        queue(
+          "reversalMinConfidence",
+          next.reversalMinConfidence + delta.reversalMinConfidence,
+          "jelzésfordulás miatti veszteség – magasabb fordulás-küszöb",
+        );
+      } else if (trade.reason === "Időlimit") {
+        queue(
+          "maxPositionAgeMinutes",
+          next.maxPositionAgeMinutes - 15,
+          "időlimit zárás – rövidebb max. tartási idő",
+        );
+      } else {
+        queue(
+          "minConfidence",
+          next.minConfidence + delta.minConfidence,
+          "vesztes ügylet – szigorúbb belépő",
+        );
+      }
+
+      if (entryQuality !== null && entryQuality < (config.minEntryQualityScore ?? 62)) {
+        queue(
+          "minEntryQualityScore",
+          next.minEntryQualityScore + delta.minEntryQualityScore,
+          `gyenge belépési minőség (${entryQuality}) – szigorítás`,
+        );
+      }
+      if ((trade.confidence || 0) < 60) {
+        queue(
+          "momentumThreshold",
+          next.momentumThreshold + delta.momentumThreshold,
+          "alacsony bizalmú veszteség – magasabb momentum küszöb",
+        );
+      }
+      if (regime === "ranging" || regime === "choppy") {
+        queue(
+          "minOpportunityScore",
+          next.minOpportunityScore + delta.minOpportunityScore,
+          `${regime} rezsím – magasabb lehetőség-pont`,
+        );
+      }
+    }
+
+    return finalizeLearningChanges(pending, 3);
+  }
+
+  function buildNoTradeLooseningChange(botState) {
+    const config = botState.config;
+    const diagnostics = ensureTradeDiagnostics(botState);
+    const topReasons = diagnostics.lastTopReasons || [];
+    if (!topReasons.length) return null;
+
+    const next = { ...config };
+    const pending = [];
+    const hours =
+      diagnostics.lastOpenSuccessAt
+        ? Math.round((Date.now() - diagnostics.lastOpenSuccessAt) / 3600000)
+        : config.autoLearnNoTradeHours ?? 3;
+    const topKey = topReasons[0].key;
+    const label = topReasons[0].label;
+    const delta = AUTO_LEARN_DELTAS;
+    const reason = `Auto-tanulás: ${hours} óra ügylet nélkül → ${label} lazítva`;
+
+    function loosenOne(key, newValue) {
+      const scratch = { ...next };
+      const changes = [];
+      proposeLearnChange(scratch, changes, key, newValue, reason, { loosen: true });
+      if (changes.length) {
+        pending.push(changes[0]);
+        next[key] = changes[0].to;
+      }
+    }
+
+    if (topKey === "low-confidence") {
+      loosenOne("minConfidence", next.minConfidence - delta.minConfidence);
+    } else if (topKey === "low-opportunity") {
+      loosenOne("minOpportunityScore", next.minOpportunityScore - delta.minOpportunityScore);
+    } else if (topKey === "entry-quality") {
+      loosenOne("minEntryQualityScore", next.minEntryQualityScore - delta.minEntryQualityScore);
+    } else if (topKey === "alignment" && next.requireAlignment) {
+      loosenOne("requireAlignment", false);
+    } else if (topKey === "alignment") {
+      loosenOne("minAlignmentRatio", Math.max(0.5, next.minAlignmentRatio - 0.1));
+    } else if (topKey === "regime" && next.regimeFilter !== "both") {
+      loosenOne("regimeFilter", "both");
+    } else if (topKey === "htf-trend" && next.htfTrendFilterStrength === "strict") {
+      loosenOne("htfTrendFilterStrength", "medium");
+    } else if (topKey === "htf-trend" && next.htfTrendFilterStrength === "medium") {
+      loosenOne("htfTrendFilterStrength", "loose");
+    } else if (topKey === "entry-mode" && next.entryMode !== "both") {
+      loosenOne("entryMode", "both");
+    } else if (topKey === "cooldown") {
+      loosenOne("cooldownMinutes", next.cooldownMinutes - delta.cooldownMinutes);
+    } else if (topKey === "entry-gap") {
+      loosenOne("minEntryGapMinutes", next.minEntryGapMinutes - delta.minEntryGapMinutes);
+    } else if (topKey === "trade-rate") {
+      loosenOne("maxTradesPerDay", next.maxTradesPerDay + delta.maxTradesPerDay);
+    } else if (topKey === "low-signal") {
+      loosenOne("signalScoreThreshold", next.signalScoreThreshold - delta.signalScoreThreshold);
+    } else if (topKey === "direction-filters") {
+      loosenOne("momentumThreshold", next.momentumThreshold - delta.momentumThreshold);
+    } else {
+      loosenOne("minConfidence", next.minConfidence - delta.minConfidence);
+    }
+
+    const changes = finalizeLearningChanges(pending, 1);
+    return changes.length ? changes : null;
+  }
+
+  function learnFromTradeClose(botState, context, trade) {
+    if (!botState.config.autoLearnEnabled || !trade || trade.partial) {
+      return { applied: false, reason: "Nincs trade-close tanulás.", changes: [] };
+    }
+    const gate = canApplyAutoLearnChange(botState, botState.config);
+    if (!gate.ok) {
+      return { applied: false, reason: gate.reason, changes: [], nextReviewAt: gate.nextReviewAt };
+    }
+    const changes = buildTradeCloseLearningChanges(trade, botState.config);
+    if (!changes.length) {
+      return { applied: false, reason: "Nincs szükség módosításra ennél az ügyletnél.", changes: [] };
+    }
+    return applyLearningChanges(botState, changes, {
+      trigger: "trade-close",
+      tradeId: trade.id,
+      activityMessage: `Auto-tanulás (ügylet): ${changes.length} paraméter finomhangolva – ${trade.id?.slice(-8) || "?"}.`,
+    });
+  }
+
+  function maybeRunNoTradeAutoLearn(botState, context) {
+    if (!botState.config.autoLearnEnabled || !botState.config.enabled) return null;
+    const config = botState.config;
+    const diagnostics = ensureTradeDiagnostics(botState);
+    const now = Date.now();
+    const lastOpen = diagnostics.lastOpenSuccessAt || 0;
+    const timeoutHours = config.autoLearnNoTradeHours ?? 3;
+    const staleMs = timeoutHours * 3600000;
+    const hoursSince = lastOpen ? (now - lastOpen) / 3600000 : null;
+    const isStale = hoursSince === null || hoursSince >= timeoutHours;
+    if (!isStale) return null;
+
+    const gate = canApplyAutoLearnChange(botState, config, { ignoreTargets: true });
+    if (!gate.ok) return { applied: false, reason: gate.reason, nextReviewAt: gate.nextReviewAt };
+
+    const changes = buildNoTradeLooseningChange(botState);
+    if (!changes?.length) return null;
+
+    diagnostics.lastNoTradeLearnAt = now;
+    const hoursLabel = hoursSince === null ? timeoutHours : Math.round(hoursSince);
+    return applyLearningChanges(botState, changes, {
+      trigger: "no-trade-timeout",
+      activityMessage: `Auto-tanulás: ${hoursLabel} óra ügylet nélkül → ${CONFIG_LABELS[changes[0].key] || changes[0].key} lazítva.`,
+    });
+  }
+
+  function getAutoLearnStatus(botState, context = null) {
+    const config = botState?.config || {};
+    const runtime = ensureAutoLearnRuntime(botState || { autoLearnRuntime: createEmptyAutoLearnRuntime() });
+    const rolling = botState ? getRollingLearningMetrics(botState, config) : null;
+    const targetsMet = botState ? areLearningTargetsMet(botState, context) : false;
+    const goal = botState ? getPrimaryLearningGoal(botState, context) : "";
+    const maxDaily = config.autoLearnMaxDailyAdjustments ?? 20;
+    const minIntervalMs = (config.autoLearnMinChangeMinutes ?? 15) * 60000;
+    const nextReviewAt =
+      runtime.nextReviewAt && runtime.nextReviewAt > Date.now()
+        ? runtime.nextReviewAt
+        : runtime.lastChangeAt
+          ? runtime.lastChangeAt + minIntervalMs
+          : Date.now();
+
+    return {
+      active: Boolean(config.autoLearnEnabled),
+      dailyCount: runtime.dailyCount,
+      maxDaily,
+      minIntervalMinutes: config.autoLearnMinChangeMinutes ?? 15,
+      lastChangeAt: runtime.lastChangeAt || null,
+      lastChangeSummary: runtime.lastChangeSummary || "",
+      lastTrigger: runtime.lastTrigger || "",
+      lastTradeId: runtime.lastTradeId || null,
+      nextReviewAt,
+      targetsMet,
+      goal,
+      rolling,
+      targetWinRate: config.autoLearnTargetWinRate ?? 40,
+      targetTradesPer6h: config.autoLearnTargetTradesPer6h ?? 1,
+      noTradeTimeoutHours: config.autoLearnNoTradeHours ?? 3,
+    };
+  }
+
+  function runAggregateAutoLearnPreview(botState, context) {
     if (botState.trades.length < 5) {
       return {
         applied: false,
-        reason: "Legalább 5 lezárt ügylet kell az auto-tanuláshoz.",
+        reason: "Legalább 5 lezárt ügylet kell az összesített elemzéshez.",
         changes: [],
       };
     }
@@ -3549,68 +4110,33 @@
     const next = { ...botState.config };
     const changes = [];
 
-    function propose(key, newValue, reason) {
-      if (typeof next[key] === "boolean") {
-        if (next[key] !== newValue) {
-          changes.push({ key, from: next[key], to: newValue, reason });
-          next[key] = newValue;
-        }
-        return;
-      }
-      const clamped = clampParam(key, newValue);
-      if (clamped !== next[key]) {
-        changes.push({ key, from: next[key], to: clamped, reason });
-        next[key] = clamped;
-      }
+    function propose(key, newValue, reason, loosen = false) {
+      proposeLearnChange(next, changes, key, newValue, reason, { loosen });
     }
 
     if (metrics.winRate !== null && metrics.winRate < 45) {
       propose(
         "minConfidence",
-        next.minConfidence + 5,
+        next.minConfidence + AUTO_LEARN_DELTAS.minConfidence,
         `Alacsony találati arány (${metrics.winRate.toFixed(1)}%) – szigorúbb belépő.`,
       );
     } else if (metrics.winRate !== null && metrics.winRate > 62 && metrics.profitFactor > 1.3) {
       propose(
         "minConfidence",
-        next.minConfidence - 5,
+        next.minConfidence - AUTO_LEARN_DELTAS.minConfidence,
         `Erős találati arány (${metrics.winRate.toFixed(1)}%) – enyhébb küszöb lehetséges.`,
+        true,
       );
     }
 
     if (metrics.profitFactor !== null && metrics.profitFactor < 1 && metrics.profitFactor !== Infinity) {
-      propose(
-        "riskPercent",
-        next.riskPercent - 0.25,
-        `Profit factor ${metrics.profitFactor.toFixed(2)} – kockázat csökkentése.`,
-      );
-      propose(
-        "rewardRatio",
-        next.rewardRatio + 0.25,
-        "Magasabb cél R arány a vesztes ügyletek kompenzálásához.",
-      );
+      propose("riskPercent", next.riskPercent - AUTO_LEARN_DELTAS.riskPercent, `Profit factor ${metrics.profitFactor.toFixed(2)} – kockázat csökkentése.`);
+      propose("rewardRatio", next.rewardRatio + AUTO_LEARN_DELTAS.rewardRatio, "Magasabb cél R arány a vesztes ügyletek kompenzálásához.");
     }
 
     if (metrics.maxDrawdown > 12) {
-      propose(
-        "maxPositions",
-        next.maxPositions - 1,
-        `Magas drawdown (${metrics.maxDrawdown.toFixed(1)}%) – kevesebb párhuzamos pozíció.`,
-      );
-      propose(
-        "riskPercent",
-        next.riskPercent - 0.25,
-        "Drawdown miatt csökkentett kockázat.",
-      );
-    }
-
-    const tradesPerDay = botState.trades.filter((trade) => trade.closedAt > Date.now() - 86400000).length;
-    if (tradesPerDay > 8 && !next.professionalMode) {
-      propose(
-        "cooldownMinutes",
-        next.cooldownMinutes + 10,
-        `${tradesPerDay} ügylet / 24 óra – hosszabb cooldown.`,
-      );
+      propose("maxPositions", next.maxPositions - 1, `Magas drawdown (${metrics.maxDrawdown.toFixed(1)}%) – kevesebb párhuzamos pozíció.`);
+      propose("riskPercent", next.riskPercent - AUTO_LEARN_DELTAS.riskPercent, "Drawdown miatt csökkentett kockázat.");
     }
 
     const stopLosses = botState.trades.filter(
@@ -3618,112 +4144,65 @@
     ).length;
     const stopRatio = botState.trades.length ? stopLosses / botState.trades.length : 0;
     if (stopRatio > 0.5 && botState.trades.length >= 6) {
-      propose(
-        "atrStopMultiplier",
-        next.atrStopMultiplier + 0.25,
-        "Sok stop-loss – szélesebb ATR stop.",
-      );
-      propose(
-        "atrStopMultiplierLong",
-        (next.atrStopMultiplierLong ?? next.atrStopMultiplier) + 0.25,
-        "LONG stop szélesítése a zajos kifutások csökkentésére.",
-      );
-      propose(
-        "atrStopMultiplierShort",
-        (next.atrStopMultiplierShort ?? next.atrStopMultiplier) + 0.25,
-        "SHORT stop szélesítése a zajos kifutások csökkentésére.",
-      );
-      propose(
-        "signalScoreThreshold",
-        next.signalScoreThreshold + 0.25,
-        "Szigorúbb jelzésküszöb a gyengébb setupok kiszűréséhez.",
-      );
-      propose(
-        "minOpportunityScore",
-        (next.minOpportunityScore || 65) + 5,
-        "Magasabb lehetőség-pontszám – kevesebb, de jobb belépés.",
-      );
+      propose("atrStopMultiplier", next.atrStopMultiplier + AUTO_LEARN_DELTAS.atrStopMultiplier, "Sok stop-loss – szélesebb ATR stop.");
+      propose("signalScoreThreshold", next.signalScoreThreshold + AUTO_LEARN_DELTAS.signalScoreThreshold, "Szigorúbb jelzésküszöb a gyengébb setupok kiszűréséhez.");
+      propose("minOpportunityScore", next.minOpportunityScore + AUTO_LEARN_DELTAS.minOpportunityScore, "Magasabb lehetőség-pontszám – kevesebb, de jobb belépés.");
     }
 
     const dailyPnl = getDailyRealizedPnl(botState);
     if (dailyPnl < 0 && Math.abs(dailyPnl) > botState.initialCapital * 0.03) {
-      propose(
-        "maxPositions",
-        Math.max(1, next.maxPositions - 1),
-        "Negatív napi eredmény – kevesebb párhuzamos pozíció.",
-      );
-      propose(
-        "cooldownMinutes",
-        next.cooldownMinutes + 10,
-        "Negatív nap – hosszabb pihenő új belépések között.",
-      );
+      propose("maxPositions", Math.max(1, next.maxPositions - 1), "Negatív napi eredmény – kevesebb párhuzamos pozíció.");
+      propose("cooldownMinutes", next.cooldownMinutes + AUTO_LEARN_DELTAS.cooldownMinutes, "Negatív nap – hosszabb pihenő új belépések között.");
     }
 
-    const recentLearning = botState.learningHistory?.[0];
-    if (
-      recentLearning &&
-      Date.now() - recentLearning.time < 3600000 &&
-      recentLearning.changes.some((change) => change.key === "minConfidence")
-    ) {
-      // Avoid oscillating confidence within the same hour.
-    } else if (metrics.avgLoss > metrics.avgWin * 0.8 && metrics.losses >= 4) {
-      propose(
-        "rewardRatio",
-        next.rewardRatio + 0.25,
-        "Átlagos veszteség közelít a nyereséghez – magasabb cél R arány.",
-      );
-    }
-
-    const mixedAlignmentLosses = botState.trades.filter(
-      (trade) =>
-        trade.outcome === "loss" &&
-        trade.analysis?.some((line) => line.includes("idősík")),
-    ).length;
-    if (mixedAlignmentLosses >= 3 && !next.requireAlignment) {
-      propose(
-        "requireAlignment",
-        true,
-        "Vegyes idősíkos veszteségek – idősík-egyezés kötelezővé tétele.",
-      );
-    }
-
-    const weakMomentumLosses = botState.trades.filter(
-      (trade) => trade.outcome === "loss" && trade.confidence < 58,
-    ).length;
-    if (weakMomentumLosses >= 4) {
-      propose(
-        "momentumThreshold",
-        next.momentumThreshold + 0.02,
-        "Gyenge momentumú vesztes ügyletek – magasabb lendület-küszöb.",
-      );
-    }
-
-    if (!changes.length) {
+    const finalized = finalizeLearningChanges(changes, 3);
+    const after = pickLearnable({ ...next, ...Object.fromEntries(finalized.map((c) => [c.key, c.to])) });
+    if (!finalized.length) {
       return { applied: false, reason: "Nincs szükség módosításra.", changes: [], before, after: before };
     }
+    return { applied: false, preview: true, trigger: "manual-preview", before, after, changes: finalized };
+  }
 
-    const after = pickLearnable(next);
-    const entry = {
-      time: Date.now(),
-      trigger,
-      before,
-      after,
-      changes,
-    };
+  function runAutoLearn(botState, context, options = {}) {
+    const { dryRun = false, trigger = "manual", trade = null } = options;
+    if (!dryRun && !botState.config.autoLearnEnabled) return null;
 
-    if (!dryRun && botState.config.autoLearnEnabled) {
-      botState.config = { ...botState.config, ...next };
-      botState.learningHistory = [entry, ...(botState.learningHistory || [])].slice(0, 30);
-      logConfigChanges(botState, "auto-tanulás", changes);
-      logActivity(
-        botState,
-        `Auto-tanulás: ${changes.length} paraméter módosítva (${changes.map((c) => c.key).join(", ")}).`,
-      );
-      saveBotState(botState);
-      return { applied: true, ...entry };
+    if (trigger === "trade-close" && trade) {
+      if (dryRun) {
+        const changes = buildTradeCloseLearningChanges(trade, botState.config);
+        return {
+          applied: false,
+          preview: true,
+          trigger,
+          changes,
+          reason: changes.length ? null : "Nincs javasolt módosítás ehhez az ügylethez.",
+        };
+      }
+      return learnFromTradeClose(botState, context, trade);
     }
 
-    return { applied: false, preview: true, ...entry };
+    if (trigger === "no-trade-timeout") {
+      if (dryRun) {
+        const changes = buildNoTradeLooseningChange(botState) || [];
+        return { applied: false, preview: true, trigger, changes };
+      }
+      return maybeRunNoTradeAutoLearn(botState, context);
+    }
+
+    const preview = runAggregateAutoLearnPreview(botState, context);
+    if (dryRun || !preview.changes?.length) {
+      return preview;
+    }
+
+    const gate = canApplyAutoLearnChange(botState, botState.config, { ignoreInterval: trigger === "manual-apply" });
+    if (!gate.ok) {
+      return { applied: false, reason: gate.reason, changes: [], nextReviewAt: gate.nextReviewAt };
+    }
+
+    return applyLearningChanges(botState, preview.changes, {
+      trigger: trigger || "manual-apply",
+      activityMessage: `Auto-tanulás (összesített): ${preview.changes.length} paraméter módosítva.`,
+    });
   }
 
   function buildSuggestions(botState, context) {
@@ -3934,6 +4413,7 @@
     compareOpportunityResults,
     buildSuggestions,
     runAutoLearn,
+    getAutoLearnStatus,
     resetBot,
     applyCapitalFromConfig,
     resetCapitalAccount,

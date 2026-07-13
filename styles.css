@@ -2086,6 +2086,58 @@ h2 {
   margin-bottom: 16px;
 }
 
+.bot-auto-learn-status {
+  border-left: 4px solid rgba(42, 107, 79, 0.55);
+  margin-bottom: 16px;
+  background: linear-gradient(180deg, rgba(240, 250, 244, 0.95), rgba(252, 255, 253, 0.92));
+}
+
+.bot-auto-learn-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.bot-auto-learn-metric {
+  background: rgba(18, 26, 22, 0.04);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+}
+
+.bot-auto-learn-metric span {
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.bot-auto-learn-metric strong {
+  font-size: 14px;
+}
+
+.bot-auto-learn-metric.ok {
+  border-color: rgba(42, 107, 79, 0.35);
+}
+
+.bot-auto-learn-metric.pending {
+  border-color: rgba(180, 95, 6, 0.45);
+  background: rgba(255, 248, 235, 0.65);
+}
+
+.bot-auto-learn-next {
+  margin: 0;
+}
+
+.bot-auto-learn-inline-status {
+  background: rgba(42, 107, 79, 0.08);
+  border: 1px solid rgba(42, 107, 79, 0.2);
+  border-radius: var(--radius-md);
+  margin-bottom: 12px;
+  padding: 10px 12px;
+}
+
 .bot-no-trade-diagnostics.is-stale {
   border-left-color: rgba(180, 95, 6, 0.85);
   background: linear-gradient(180deg, rgba(255, 248, 235, 0.95), rgba(255, 253, 249, 0.9));

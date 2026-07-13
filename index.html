@@ -497,6 +497,19 @@
 
           <p id="botStatus" class="bot-status">Bot kikapcsolva.</p>
 
+          <article id="botAutoLearnStatusCard" class="panel bot-auto-learn-status" hidden>
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">AUTO-TANULÁS</p>
+                <h3 id="botAutoLearnStatusTitle">Auto-tanulás állapota</h3>
+              </div>
+              <span id="botAutoLearnStatusBadge" class="local-badge learn-active">Aktív</span>
+            </div>
+            <p id="botAutoLearnStatusSummary" class="helper-text">–</p>
+            <div id="botAutoLearnStatusMetrics" class="bot-auto-learn-metrics"></div>
+            <p id="botAutoLearnStatusNext" class="bot-auto-learn-next helper-text">–</p>
+          </article>
+
           <article id="botNoTradeDiagnostics" class="panel bot-no-trade-diagnostics" hidden>
             <div class="section-heading compact-heading">
               <div>
@@ -989,6 +1002,48 @@
                   </span>
                   <input id="botMinEntryGap" type="range" min="0" max="60" step="5" value="10" />
                 </label>
+                <div class="bot-pro-info panel-inset">
+                  <p class="eyebrow">AUTO-TANULÁS FINOMHANGOLÁS</p>
+                  <p class="helper-text">
+                    A bot minden lezárt ügylet után és hosszú ügylet-szünet esetén automatikusan módosít
+                    1–3 paramétert. A napi limit és a minimum várakozás megakadályozza a túlzott finomhangolást.
+                  </p>
+                </div>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Ügylet-szünet tanulás (óra)</span>
+                    <output for="botAutoLearnNoTradeHours" id="botAutoLearnNoTradeHoursOut">3</output>
+                  </span>
+                  <input id="botAutoLearnNoTradeHours" type="range" min="2" max="8" step="1" value="3" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Max. auto-módosítás / nap</span>
+                    <output for="botAutoLearnMaxDaily" id="botAutoLearnMaxDailyOut">20</output>
+                  </span>
+                  <input id="botAutoLearnMaxDaily" type="range" min="5" max="50" step="1" value="20" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Min. idő módosítások között (perc)</span>
+                    <output for="botAutoLearnMinInterval" id="botAutoLearnMinIntervalOut">15</output>
+                  </span>
+                  <input id="botAutoLearnMinInterval" type="range" min="5" max="60" step="5" value="15" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Cél win rate (%)</span>
+                    <output for="botAutoLearnTargetWinRate" id="botAutoLearnTargetWinRateOut">40</output>
+                  </span>
+                  <input id="botAutoLearnTargetWinRate" type="range" min="30" max="70" step="5" value="40" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Cél ügylet / 6 óra</span>
+                    <output for="botAutoLearnTargetTrades6h" id="botAutoLearnTargetTrades6hOut">1</output>
+                  </span>
+                  <input id="botAutoLearnTargetTrades6h" type="range" min="1" max="5" step="1" value="1" />
+                </label>
               </div>
 
               <div id="botConfigPanelSync" class="bot-config-panel-group" data-bot-config-panel="sync" role="tabpanel" hidden>
@@ -1067,9 +1122,10 @@
                 <div><p class="eyebrow">AUTO-TANULÁS</p><h3>Tapasztalatból finomhangolás</h3></div>
               </div>
               <p class="helper-text">
-                A bot a lezárt ügyletek alapján javasol paraméter-módosításokat. Alkalmazás csak
-                bekapcsolt Auto-tanulás mellett történik automatikusan; előnézet mindig elérhető.
+                A bot a lezárt ügyletek alapján javasol paraméter-módosításokat. Bekapcsolt Auto-tanulás
+                mellett minden zárás után és ügylet-szünet esetén automatikusan finomhangol; előnézet mindig elérhető.
               </p>
+              <div id="botAutoLearnExperiencesStatus" class="bot-auto-learn-inline-status helper-text" hidden></div>
               <div class="bot-learn-actions">
                 <button id="botRunLearnButton" class="secondary-button" type="button">Elemzés futtatása</button>
                 <button id="botApplyLearnButton" class="text-button" type="button">Javaslat alkalmazása</button>

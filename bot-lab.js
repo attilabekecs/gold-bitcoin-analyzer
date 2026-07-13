@@ -61,6 +61,11 @@
     { id: "botMaxTradesPerDay", key: "maxTradesPerDay", type: "range", decimals: 0 },
     { id: "botMaxTradesPerHour", key: "maxTradesPerHour", type: "range", decimals: 0 },
     { id: "botMinEntryGap", key: "minEntryGapMinutes", type: "range", decimals: 0 },
+    { id: "botAutoLearnNoTradeHours", key: "autoLearnNoTradeHours", type: "range", decimals: 0 },
+    { id: "botAutoLearnMaxDaily", key: "autoLearnMaxDailyAdjustments", type: "range", decimals: 0 },
+    { id: "botAutoLearnMinInterval", key: "autoLearnMinChangeMinutes", type: "range", decimals: 0 },
+    { id: "botAutoLearnTargetWinRate", key: "autoLearnTargetWinRate", type: "range", decimals: 0 },
+    { id: "botAutoLearnTargetTrades6h", key: "autoLearnTargetTradesPer6h", type: "range", decimals: 0 },
     { id: "botMaxDailyLoss", key: "maxDailyLossPercent", type: "range", decimals: 1 },
     { id: "botFeePercent", key: "feePercent", type: "number" },
     { id: "botSpreadPercent", key: "spreadPercent", type: "number" },
@@ -1280,6 +1285,7 @@
     renderTrades(appendEmptyTableRow, formatNumber, valueClass, currency);
     renderMissedOpportunities(formatNumber);
     renderNoTradeDiagnostics();
+    renderAutoLearnStatus();
     renderSuggestions();
     renderActivity();
     renderEquityChart();
@@ -1408,6 +1414,115 @@
     bridge?.scheduleBotTick?.();
     bridge?.showToast?.(`${preset.label} profil alkalmazva – ellenőrizd a beállításokat.`);
     if (botState.config.enabled) bridge?.runTick?.();
+  }
+
+  function renderAutoLearnStatus() {
+    const botState = getBotState();
+    const card = document.getElementById("botAutoLearnStatusCard");
+    const experiences = document.getElementById("botAutoLearnExperiencesStatus");
+    if (!botState) return;
+
+    const status = Bot.getAutoLearnStatus?.(botState, getContext());
+    if (!status) return;
+
+    const show = Boolean(status.active);
+    if (card) card.hidden = !show;
+    if (experiences) experiences.hidden = !show;
+
+    const summaryText = status.active
+      ? `Auto-tanulás aktív: ${status.dailyCount} finomhangolás ma, cél: ${status.goal}`
+      : "";
+
+    if (card) {
+      const title = document.getElementById("botAutoLearnStatusTitle");
+      const badge = document.getElementById("botAutoLearnStatusBadge");
+      const summary = document.getElementById("botAutoLearnStatusSummary");
+      const metrics = document.getElementById("botAutoLearnStatusMetrics");
+      const next = document.getElementById("botAutoLearnStatusNext");
+
+      if (title) {
+        title.textContent = status.targetsMet
+          ? "Auto-tanulás – célok teljesülnek"
+          : "Auto-tanulás – finomhangolás folyamatban";
+      }
+      if (badge) {
+        badge.textContent = status.targetsMet ? "Cél teljesítve" : "Aktív";
+        badge.className = `local-badge learn-active ${status.targetsMet ? "sync-ok" : ""}`;
+      }
+      if (summary) summary.textContent = summaryText;
+
+      if (metrics) {
+        metrics.replaceChildren();
+        const rolling = status.rolling || {};
+        const items = [
+          {
+            label: "Gördülő win rate",
+            value:
+              rolling.winRate === null || rolling.sampleSize < 5
+                ? "–"
+                : `${rolling.winRate.toFixed(1)}% / ${status.targetWinRate}%`,
+            ok: rolling.sampleSize < 5 || rolling.winRate === null || rolling.winRate >= status.targetWinRate,
+          },
+          {
+            label: "Ügylet / 6 óra",
+            value: `${rolling.tradesLast6h ?? 0} / ${status.targetTradesPer6h}`,
+            ok: (rolling.tradesLast6h ?? 0) >= status.targetTradesPer6h,
+          },
+          {
+            label: "Gördülő PnL",
+            value:
+              rolling.sampleSize < 5
+                ? "–"
+                : bridge?.formatBotSignedMoney?.(rolling.rollingPnl, getBotCurrency(botState.config)) ||
+                  `${rolling.rollingPnl?.toFixed(2)} USD`,
+            ok: rolling.sampleSize < 5 || (rolling.rollingPnl ?? 0) >= 0,
+          },
+          {
+            label: "Módosítások ma",
+            value: `${status.dailyCount} / ${status.maxDaily}`,
+            ok: status.dailyCount < status.maxDaily,
+          },
+        ];
+        items.forEach((item) => {
+          const chip = document.createElement("div");
+          chip.className = `bot-auto-learn-metric ${item.ok ? "ok" : "pending"}`;
+          chip.innerHTML = `<span>${item.label}</span><strong>${item.value}</strong>`;
+          metrics.append(chip);
+        });
+      }
+
+      if (next) {
+        const parts = [];
+        if (status.lastChangeSummary) {
+          parts.push(`Utolsó módosítás: ${status.lastChangeSummary}`);
+        } else if (status.lastChangeAt) {
+          parts.push(
+            `Utolsó módosítás: ${new Intl.DateTimeFormat("hu-HU", {
+              hour: "2-digit",
+              minute: "2-digit",
+            }).format(status.lastChangeAt)}`,
+          );
+        }
+        if (status.nextReviewAt) {
+          const reviewLabel =
+            status.nextReviewAt > Date.now()
+              ? new Intl.DateTimeFormat("hu-HU", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                }).format(status.nextReviewAt)
+              : "most";
+          parts.push(`Következő felülvizsgálat: ${reviewLabel}`);
+        }
+        next.textContent = parts.join(" · ") || "Még nem történt auto-finomhangolás.";
+      }
+    }
+
+    if (experiences) {
+      experiences.textContent = summaryText;
+      if (status.lastChangeSummary) {
+        experiences.textContent += ` · Utolsó: ${status.lastChangeSummary}`;
+      }
+    }
   }
 
   function renderNoTradeDiagnostics() {
