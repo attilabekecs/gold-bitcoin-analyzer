@@ -13,11 +13,6 @@ const botSyncRequestTimes = new Map();
 const BOT_STATE_MAX_BYTES = 512000;
 const BOT_SYNC_RATE_WINDOW_MS = 60 * 1000;
 const BOT_SYNC_RATE_LIMIT = 30;
-const botSyncRequestTimes = new Map();
-
-const BOT_STATE_MAX_BYTES = 512000;
-const BOT_SYNC_RATE_WINDOW_MS = 60 * 1000;
-const BOT_SYNC_RATE_LIMIT = 30;
 
 const SYSTEM_INSTRUCTION = `Te az Aurum & Satoshi oktatási célú piaci elemzője vagy.
 Magyarul válaszolj, tömören és jól tagoltan.
