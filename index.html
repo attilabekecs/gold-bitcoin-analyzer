@@ -36,17 +36,14 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=20260717-01" />
+    <link rel="stylesheet" href="styles.css?v=20260717-05" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
     <script src="assets-catalog.js?v=20260712-22" defer></script>
     <script src="bot-intelligence-statistics.js?v=20260717-01" defer></script>
     <script src="bot-intelligence-engine.js?v=20260717-01" defer></script>
     <script src="virtual-bot.js?v=20260717-04" defer></script>
     <script src="bot-lab.js?v=20260717-04" defer></script>
-    <script src="practice-lab.js?v=20260712-22" defer></script>
-    <script src="app.js?v=20260717-01" defer></script>
-    <script src="strategy-engine.js?v=20260712-22" defer></script>
-    <script src="strategy-lab.js?v=20260712-22" defer></script>
+    <script src="app.js?v=20260717-06" defer></script>
   </head>
   <body data-view="bot">
     <header class="site-header">
@@ -54,17 +51,10 @@
         <span class="brand-mark">A&S</span>
         <span>Aurum & Satoshi</span>
       </a>
-      <nav class="main-nav" aria-label="Fő navigáció">
-        <button class="nav-link active nav-link-primary" data-view-target="bot" type="button">Botközpont</button>
-        <button class="nav-link" data-view-target="markets" type="button">Piacok</button>
-        <button class="nav-link" data-view-target="strategy" type="button">Stratégialabor</button>
-        <button class="nav-link" data-view-target="portfolio" type="button">Portfólió</button>
-        <button class="nav-link" data-view-target="practice" type="button">Akadémia</button>
-        <button class="nav-link" data-view-target="overview" type="button">Elemzések</button>
-        <button class="nav-link" data-view-target="news" type="button">Hírek</button>
-        <button class="nav-link" data-view-target="simulator" type="button">Szimulátor</button>
-        <button class="nav-link" data-view-target="ai" type="button">AI</button>
-      </nav>
+      <div class="bot-header-focus" aria-label="Virtuális Bot központ">
+        <span class="bot-header-focus-dot" aria-hidden="true"></span>
+        <span><strong>VIRTUÁLIS BOT</strong><small>Intelligence · Tanulás · Végrehajtás</small></span>
+      </div>
       <div class="header-actions">
         <span id="marketStatus" class="status"><span></span> Adatok betöltése</span>
         <button id="refreshButton" class="icon-button" type="button" aria-label="Adatok frissítése">
@@ -1947,7 +1937,7 @@
 
     <footer>
       <span>© <span id="year"></span> Aurum & Satoshi</span>
-      <span>Ingyenes, nyílt piaci adatokból</span>
+      <span>Virtuális Bot Intelligence Platform</span>
     </footer>
 
     <dialog id="settingsDialog" class="settings-dialog">

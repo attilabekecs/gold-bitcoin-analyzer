@@ -58,19 +58,7 @@ const ASSET_REFRESH_BATCH_SIZE = Catalog.SCAN_BATCH_SIZE;
 const ASSET_REFRESH_BATCH_DELAY_MS = Catalog.SCAN_BATCH_DELAY_MS;
 const NEWS_STALE_MS = 600000;
 
-const VALID_VIEWS = [
-  "overview",
-  "bitcoin",
-  "gold",
-  "markets",
-  "news",
-  "portfolio",
-  "practice",
-  "bot",
-  "simulator",
-  "strategy",
-  "ai",
-];
+const VALID_VIEWS = ["bot"];
 
 const BOT_SECTIONS = [
   "summary",
@@ -283,11 +271,14 @@ document.addEventListener("DOMContentLoaded", () => {
   window.addEventListener("online", () => {
     if (state.botState) initBotCloudSync();
   });
-  window.PracticeLab?.init?.();
   const { view: initialView, botSection: initialBotSection } = parseLocationHash();
   setActiveView(initialView, false);
   if (initialView === "bot") {
     window.BotLab?.switchSection?.(initialBotSection, false);
+  }
+  const canonicalInitialHash = `#${buildViewHash("bot", initialBotSection)}`;
+  if (window.location.hash !== canonicalInitialHash) {
+    window.history.replaceState(null, "", canonicalInitialHash);
   }
   window.addEventListener("hashchange", () => {
     const { view, botSection } = parseLocationHash();
@@ -296,6 +287,10 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (view === "bot") {
       window.BotLab?.switchSection?.(botSection, false);
+    }
+    const canonicalHash = `#${buildViewHash("bot", botSection)}`;
+    if (window.location.hash !== canonicalHash) {
+      window.history.replaceState(null, "", canonicalHash);
     }
   });
   applySettings();
@@ -1432,37 +1427,40 @@ function createGradient(canvas, color) {
 }
 
 function setActiveView(view, updateHash = true) {
-  state.activeView = view;
-  document.body.dataset.view = view;
+  const activeView = VALID_VIEWS.includes(view) ? view : "bot";
+  state.activeView = activeView;
+  document.body.dataset.view = activeView;
   document.querySelectorAll("[data-view-target]").forEach((button) => {
-    const isActive = button.dataset.viewTarget === view;
+    const isActive = button.dataset.viewTarget === activeView;
     button.classList.toggle("active", isActive);
     if (isActive) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   });
   document.querySelectorAll("[data-pages]").forEach((section) => {
-    section.hidden = !section.dataset.pages.split(" ").includes(view);
+    section.hidden = !section.dataset.pages.split(" ").includes(activeView);
   });
   document.querySelectorAll(".asset-card[data-asset]").forEach((card) => {
-    card.hidden = (view === "bitcoin" || view === "gold") && card.dataset.asset !== view;
+    card.hidden =
+      (activeView === "bitcoin" || activeView === "gold") &&
+      card.dataset.asset !== activeView;
   });
-  if (view === "bitcoin" || view === "gold") {
-    selectTradeAsset(view);
-    selectIndicatorAsset(view);
+  if (activeView === "bitcoin" || activeView === "gold") {
+    selectTradeAsset(activeView);
+    selectIndicatorAsset(activeView);
   }
-  if (view === "markets" || view === "bot") {
+  if (activeView === "markets" || activeView === "bot") {
     renderMarketsGrid();
     renderBotTrading();
-    if (view === "bot" && state.initialLoadComplete && !state.assetRefreshTimer) {
+    if (activeView === "bot" && state.initialLoadComplete && !state.assetRefreshTimer) {
       startContinuousAssetRefresh();
     }
   }
-  if (view === "news" && (isNewsStale() || !state.news.length)) {
+  if (activeView === "news" && (isNewsStale() || !state.news.length)) {
     refreshNewsInBackground();
   }
   if (updateHash) {
-    const botSection = view === "bot" ? window.BotLab?.getActiveSection?.() || "summary" : null;
-    window.history.replaceState(null, "", `#${buildViewHash(view, botSection)}`);
+    const botSection = window.BotLab?.getActiveSection?.() || "summary";
+    window.history.replaceState(null, "", `#${buildViewHash(activeView, botSection)}`);
   }
   window.scrollTo({ top: 0, behavior: "smooth" });
   requestAnimationFrame(() => {
