@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="Ingyenes Bitcoin- és aranypiaci figyelő technikai és híralapú elemzésekkel."
+      content="Virtuális kereskedési bot adaptív tanulással, részletes beállításokkal és átlátható teljesítményelemzéssel."
     />
     <script>
       (function () {
@@ -29,40 +29,40 @@
         });
       })();
     </script>
-    <title>Aurum & Satoshi – Piaci figyelő</title>
+    <title>Aurum & Satoshi – Virtuális Bot</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=20260713-01" />
+    <link rel="stylesheet" href="styles.css?v=20260717-01" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
     <script src="assets-catalog.js?v=20260712-22" defer></script>
-    <script src="virtual-bot.js?v=20260713-01" defer></script>
-    <script src="bot-lab.js?v=20260713-01" defer></script>
+    <script src="bot-intelligence-statistics.js?v=20260717-01" defer></script>
+    <script src="bot-intelligence-engine.js?v=20260717-01" defer></script>
+    <script src="virtual-bot.js?v=20260717-04" defer></script>
+    <script src="bot-lab.js?v=20260717-04" defer></script>
     <script src="practice-lab.js?v=20260712-22" defer></script>
-    <script src="app.js?v=20260713-01" defer></script>
+    <script src="app.js?v=20260717-01" defer></script>
     <script src="strategy-engine.js?v=20260712-22" defer></script>
     <script src="strategy-lab.js?v=20260712-22" defer></script>
   </head>
-  <body data-view="overview">
+  <body data-view="bot">
     <header class="site-header">
       <a class="brand" href="#" aria-label="Kezdőlap">
         <span class="brand-mark">A&S</span>
         <span>Aurum & Satoshi</span>
       </a>
       <nav class="main-nav" aria-label="Fő navigáció">
-        <button class="nav-link active" data-view-target="overview" type="button">Áttekintés</button>
-        <button class="nav-link" data-view-target="bitcoin" type="button">Bitcoin</button>
-        <button class="nav-link" data-view-target="gold" type="button">Arany</button>
+        <button class="nav-link active nav-link-primary" data-view-target="bot" type="button">Botközpont</button>
         <button class="nav-link" data-view-target="markets" type="button">Piacok</button>
-        <button class="nav-link" data-view-target="news" type="button">Hírek</button>
-        <button class="nav-link" data-view-target="portfolio" type="button">Portfólió</button>
-        <button class="nav-link" data-view-target="practice" type="button">Gyakorló</button>
-        <button class="nav-link" data-view-target="bot" type="button">Virtuális bot</button>
-        <button class="nav-link" data-view-target="simulator" type="button">Szimulátor</button>
         <button class="nav-link" data-view-target="strategy" type="button">Stratégialabor</button>
+        <button class="nav-link" data-view-target="portfolio" type="button">Portfólió</button>
+        <button class="nav-link" data-view-target="practice" type="button">Akadémia</button>
+        <button class="nav-link" data-view-target="overview" type="button">Elemzések</button>
+        <button class="nav-link" data-view-target="news" type="button">Hírek</button>
+        <button class="nav-link" data-view-target="simulator" type="button">Szimulátor</button>
         <button class="nav-link" data-view-target="ai" type="button">AI</button>
       </nav>
       <div class="header-actions">
@@ -446,12 +446,73 @@
       </section>
 
       <section class="bot-section" data-pages="bot" aria-labelledby="botTitle">
+        <section class="bot-product-hero" aria-labelledby="botProductTitle">
+          <div class="bot-product-copy">
+            <div class="bot-live-pill"><span></span> ADAPTÍV PAPÍRKERESKEDÉSI RENDSZER</div>
+            <h1 id="botProductTitle">A bot, amely minden lezárt ügyletből <em>tanul.</em></h1>
+            <p>
+              Tesztelj stratégiákat virtuális tőkével, kövesd végig a döntések okait,
+              és finomhangold a kockázatot mérhető eredmények alapján – valódi pénz kockáztatása nélkül.
+            </p>
+            <div class="bot-product-actions">
+              <button class="bot-hero-primary" data-bot-jump="settings" type="button">Bot beállítása</button>
+              <button class="bot-hero-secondary" data-bot-jump="experiences" type="button">Tanulás elemzése</button>
+            </div>
+            <div class="bot-trust-row" aria-label="A rendszer fő tulajdonságai">
+              <span><i>✓</i> Papírkereskedés</span>
+              <span><i>✓</i> Döntési napló</span>
+              <span><i>✓</i> Kockázati limitek</span>
+            </div>
+          </div>
+
+          <div class="bot-intelligence-card" aria-label="A bot tanulási folyamata">
+            <div class="bot-intelligence-head">
+              <div>
+                <span>BOT INTELLIGENCE</span>
+                <strong>Folyamatos optimalizálás</strong>
+              </div>
+              <span class="bot-engine-status"><i></i> Aktív rendszer</span>
+            </div>
+            <div class="bot-learning-visual" aria-hidden="true">
+              <div class="learning-orbit orbit-one"></div>
+              <div class="learning-orbit orbit-two"></div>
+              <div class="learning-core"><span>A&S</span><small>BOT</small></div>
+              <span class="learning-node node-market">PIAC</span>
+              <span class="learning-node node-risk">KOCKÁZAT</span>
+              <span class="learning-node node-signal">JELZÉS</span>
+            </div>
+            <div class="bot-learning-stages">
+              <div class="complete"><span>01</span><strong>Megfigyel</strong><small>Többpiacos szkenner</small></div>
+              <div class="active"><span>02</span><strong>Dönt</strong><small>Szabályalapú végrehajtás</small></div>
+              <div><span>03</span><strong>Tanul</strong><small>Eredményalapú finomhangolás</small></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="bot-value-grid" aria-label="Virtuális bot képességek">
+          <button class="bot-value-card" data-bot-jump="experiences" type="button">
+            <span class="bot-value-icon">↗</span>
+            <span><small>ADAPTÍV TANULÁS</small><strong>Lásd, mit tanult a bot</strong><em>Minden módosítás visszakövethető és indokolt.</em></span>
+            <b>→</b>
+          </button>
+          <button class="bot-value-card" data-bot-jump="settings" type="button">
+            <span class="bot-value-icon">⌁</span>
+            <span><small>STRATÉGIA ÉS KOCKÁZAT</small><strong>Te szabod meg a kereteket</strong><em>Belépés, kilépés, veszteséglimit és végrehajtás.</em></span>
+            <b>→</b>
+          </button>
+          <button class="bot-value-card" data-bot-jump="summary" type="button">
+            <span class="bot-value-icon">◫</span>
+            <span><small>TELJESÍTMÉNYELEMZÉS</small><strong>Ne csak a profitot nézd</strong><em>Találati arány, profit factor és drawdown egy helyen.</em></span>
+            <b>→</b>
+          </button>
+        </section>
+
         <div class="bot-toolbar">
           <div class="bot-toolbar-heading">
             <p class="eyebrow">BOT VEZÉRLŐKÖZPONT</p>
-            <h1 id="botTitle">Virtuális bot labor</h1>
+            <h1 id="botTitle">Irányítópult</h1>
             <p class="bot-toolbar-desc">
-              Papírkereskedő bot kézi beállításokkal és opcionális auto-tanulással – élő megbízás nélkül.
+              Állapot, működési mód és tanulásvezérlés egyetlen helyen.
             </p>
           </div>
           <div class="bot-toolbar-controls">
@@ -475,11 +536,12 @@
         </div>
 
         <nav class="bot-sub-nav" role="tablist" aria-label="Bot almenü">
-          <button class="active" data-bot-section="summary" type="button" role="tab" aria-selected="true">Összegzés</button>
+          <button class="active" data-bot-section="summary" type="button" role="tab" aria-selected="true">Teljesítmény</button>
+          <button data-bot-section="intelligence" type="button" role="tab" aria-selected="false">Intelligence</button>
           <button data-bot-section="scanner" type="button" role="tab" aria-selected="false">Piaci szkenner</button>
           <button data-bot-section="settings" type="button" role="tab" aria-selected="false">Beállítások</button>
           <button data-bot-section="trades" type="button" role="tab" aria-selected="false">Ügyletek</button>
-          <button data-bot-section="experiences" type="button" role="tab" aria-selected="false">Tapasztalatok</button>
+          <button data-bot-section="experiences" type="button" role="tab" aria-selected="false">Tanulás</button>
         </nav>
 
         <div class="bot-section-panel" data-bot-section-panel="summary" role="tabpanel">
@@ -530,6 +592,73 @@
             </div>
             <div class="bot-chart-wrap"><canvas id="botEquityChart"></canvas></div>
           </article>
+        </div>
+
+        <div class="bot-section-panel" data-bot-section-panel="intelligence" role="tabpanel" hidden>
+          <section class="intelligence-overview" aria-labelledby="intelligenceTitle">
+            <div>
+              <p class="eyebrow">BOT INTELLIGENCE</p>
+              <h2 id="intelligenceTitle">Döntési minőség és validáció</h2>
+              <p id="intelligenceSummary">
+                A rendszer a setupok várható értékét, a portfóliókockázatot és az out-of-sample
+                teljesítményt együttesen értékeli.
+              </p>
+            </div>
+            <span id="intelligenceStatusBadge" class="intelligence-status pending">Adatgyűjtés</span>
+          </section>
+
+          <div id="intelligenceMetricGrid" class="intelligence-metric-grid"></div>
+
+          <div class="intelligence-dashboard-grid">
+            <article class="panel intelligence-validation-card">
+              <div class="section-heading compact-heading">
+                <div><p class="eyebrow">WALK-FORWARD</p><h3>Out-of-sample validáció</h3></div>
+                <span id="intelligenceValidationBadge" class="local-badge">–</span>
+              </div>
+              <p id="intelligenceValidationSummary" class="helper-text">Még nincs elegendő lezárt ügylet.</p>
+              <div id="intelligenceFoldGrid" class="intelligence-fold-grid"></div>
+            </article>
+
+            <article class="panel intelligence-safety-card">
+              <div class="section-heading compact-heading">
+                <div><p class="eyebrow">RISK CONTROL</p><h3>Biztonsági rendszer</h3></div>
+                <span id="intelligenceKillBadge" class="local-badge">–</span>
+              </div>
+              <div id="intelligenceRiskState" class="intelligence-risk-state"></div>
+            </article>
+          </div>
+
+          <div class="intelligence-dashboard-grid">
+            <article class="panel">
+              <div class="section-heading compact-heading">
+                <div><p class="eyebrow">SETUP MEMÓRIA</p><h3>Legjobb és leggyengébb minták</h3></div>
+              </div>
+              <div id="intelligenceSetupList" class="intelligence-setup-list"></div>
+            </article>
+
+            <article class="panel">
+              <div class="section-heading compact-heading">
+                <div><p class="eyebrow">KALIBRÁCIÓ</p><h3>Jelzett bizalom vs. valós találati arány</h3></div>
+              </div>
+              <div id="intelligenceCalibration" class="intelligence-calibration"></div>
+            </article>
+          </div>
+
+          <div class="intelligence-dashboard-grid">
+            <article class="panel">
+              <div class="section-heading compact-heading">
+                <div><p class="eyebrow">OPPORTUNITY COST</p><h3>Kihagyott lehetőségek utóélete</h3></div>
+              </div>
+              <div id="intelligenceMissed" class="intelligence-missed"></div>
+            </article>
+
+            <article class="panel">
+              <div class="section-heading compact-heading">
+                <div><p class="eyebrow">CONFIG GUARD</p><h3>Automatikus checkpoint és rollback</h3></div>
+              </div>
+              <div id="intelligenceRollback" class="intelligence-rollback"></div>
+            </article>
+          </div>
         </div>
 
         <div class="bot-section-panel" data-bot-section-panel="scanner" role="tabpanel" hidden>
@@ -939,6 +1068,58 @@
                     prioritástól függően 10–45 mp-enként frissít piaci módban.
                   </p>
                 </div>
+                <div class="bot-pro-info panel-inset">
+                  <p class="eyebrow">BOT INTELLIGENCE VÉDELEM</p>
+                  <p class="helper-text">
+                    Setup-várhatóérték, walk-forward validáció, korrelált portfóliókockázat,
+                    dinamikus pozícióméret és automatikus konfiguráció-visszaállítás.
+                  </p>
+                </div>
+                <label class="toggle-switch wide-check">
+                  <span class="toggle-label">Bot Intelligence döntési kapu</span>
+                  <input id="botIntelligenceEnabled" type="checkbox" checked />
+                  <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                </label>
+                <label class="toggle-switch wide-check">
+                  <span class="toggle-label">Automatikus konfiguráció-visszaállítás</span>
+                  <input id="botAutoConfigRollback" type="checkbox" checked />
+                  <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Setup minimum minta</span>
+                    <output for="botMinimumSetupSamples" id="botMinimumSetupSamplesOut">8</output>
+                  </span>
+                  <input id="botMinimumSetupSamples" type="range" min="5" max="30" step="1" value="8" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Max. teljes nyitott kockázat (%)</span>
+                    <output for="botMaximumOpenRisk" id="botMaximumOpenRiskOut">4.5</output>
+                  </span>
+                  <input id="botMaximumOpenRisk" type="range" min="1" max="10" step="0.5" value="4.5" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Max. eszközcsoport-kockázat (%)</span>
+                    <output for="botMaximumGroupRisk" id="botMaximumGroupRiskOut">3.0</output>
+                  </span>
+                  <input id="botMaximumGroupRisk" type="range" min="1" max="8" step="0.5" value="3" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Kill switch vesztes sorozat</span>
+                    <output for="botMaximumConsecutiveLosses" id="botMaximumConsecutiveLossesOut">4</output>
+                  </span>
+                  <input id="botMaximumConsecutiveLosses" type="range" min="2" max="10" step="1" value="4" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Max. heti veszteség (%)</span>
+                    <output for="botMaximumWeeklyLoss" id="botMaximumWeeklyLossOut">8.0</output>
+                  </span>
+                  <input id="botMaximumWeeklyLoss" type="range" min="1" max="20" step="0.5" value="8" />
+                </label>
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Pro: magas pontszám küszöb (azonnali belépés)</span>
@@ -1005,16 +1186,17 @@
                 <div class="bot-pro-info panel-inset">
                   <p class="eyebrow">AUTO-TANULÁS FINOMHANGOLÁS</p>
                   <p class="helper-text">
-                    A bot minden lezárt ügylet után és hosszú ügylet-szünet esetén automatikusan módosít
-                    1–3 paramétert. A napi limit és a minimum várakozás megakadályozza a túlzott finomhangolást.
+                    Egy óra ügylet-szünet után a bot újraelemzi a blokkoló okokat, majd 15 percenként
+                    fokozatosan finomhangol legfeljebb három belépési paramétert. A kockázati limiteket,
+                    stop-loss védelmet és biztonsági minimumokat nem lazítja.
                   </p>
                 </div>
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Ügylet-szünet tanulás (óra)</span>
-                    <output for="botAutoLearnNoTradeHours" id="botAutoLearnNoTradeHoursOut">3</output>
+                    <output for="botAutoLearnNoTradeHours" id="botAutoLearnNoTradeHoursOut">1</output>
                   </span>
-                  <input id="botAutoLearnNoTradeHours" type="range" min="2" max="8" step="1" value="3" />
+                  <input id="botAutoLearnNoTradeHours" type="range" min="1" max="1" step="1" value="1" disabled />
                 </label>
                 <label class="control-slider">
                   <span class="control-header">

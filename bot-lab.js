@@ -10,7 +10,14 @@
   let lastLearnPreview = null;
   let activeSection = "summary";
 
-  const BOT_SECTIONS = ["summary", "scanner", "settings", "trades", "experiences"];
+  const BOT_SECTIONS = [
+    "summary",
+    "intelligence",
+    "scanner",
+    "settings",
+    "trades",
+    "experiences",
+  ];
 
   const CONFIG_FIELDS = [
     { id: "botInitialCapital", key: "initialCapital", type: "number" },
@@ -66,6 +73,11 @@
     { id: "botAutoLearnMinInterval", key: "autoLearnMinChangeMinutes", type: "range", decimals: 0 },
     { id: "botAutoLearnTargetWinRate", key: "autoLearnTargetWinRate", type: "range", decimals: 0 },
     { id: "botAutoLearnTargetTrades6h", key: "autoLearnTargetTradesPer6h", type: "range", decimals: 0 },
+    { id: "botMinimumSetupSamples", key: "minimumSetupSamples", type: "range", decimals: 0 },
+    { id: "botMaximumOpenRisk", key: "maximumOpenRiskPercent", type: "range", decimals: 1 },
+    { id: "botMaximumGroupRisk", key: "maximumGroupRiskPercent", type: "range", decimals: 1 },
+    { id: "botMaximumConsecutiveLosses", key: "maximumConsecutiveLosses", type: "range", decimals: 0 },
+    { id: "botMaximumWeeklyLoss", key: "maximumWeeklyLossPercent", type: "range", decimals: 1 },
     { id: "botMaxDailyLoss", key: "maxDailyLossPercent", type: "range", decimals: 1 },
     { id: "botFeePercent", key: "feePercent", type: "number" },
     { id: "botSpreadPercent", key: "spreadPercent", type: "number" },
@@ -90,6 +102,8 @@
     { id: "botBlockAgainstDailyTrend", key: "blockAgainstDailyTrend" },
     { id: "botUseTrailingStop", key: "useTrailingStop" },
     { id: "botPartialTakeProfit", key: "partialTakeProfitEnabled" },
+    { id: "botIntelligenceEnabled", key: "intelligenceEnabled" },
+    { id: "botAutoConfigRollback", key: "autoConfigRollbackEnabled" },
     { id: "botUseTradingHours", key: "useTradingHours" },
   ];
 
@@ -808,15 +822,19 @@
     CONFIG_FIELDS.forEach(({ id, key, type }) => {
       const element = document.getElementById(id);
       if (!element || key === "initialCapital") return;
-      if (type === "number" || type === "range") element.value = config[key];
-      else element.value = config[key];
+      const value = config[key] ?? Bot.DEFAULT_CONFIG[key];
+      if (config[key] === undefined && value !== undefined) config[key] = value;
+      if (type === "number" || type === "range") element.value = value;
+      else element.value = value;
     });
 
     CONFIG_FIELDS.filter((field) => field.type === "range").forEach(updateSliderOutput);
 
     CHECKBOX_FIELDS.forEach(({ id, key }) => {
       const element = document.getElementById(id);
-      if (element) element.checked = Boolean(config[key]);
+      const value = config[key] ?? Bot.DEFAULT_CONFIG[key];
+      if (config[key] === undefined && value !== undefined) config[key] = value;
+      if (element) element.checked = Boolean(value);
     });
 
     const currencySelect = document.getElementById("botCurrency");
@@ -1291,8 +1309,280 @@
     renderEquityChart();
     renderMarketScan(formatNumber);
     renderLearnPanel();
+    renderIntelligence();
     renderConfigChangeLog();
     renderCloudSyncStatus();
+  }
+
+  function appendIntelligenceMetric(container, label, value, detail, tone = "neutral") {
+    const card = document.createElement("div");
+    card.className = `intelligence-metric ${tone}`;
+    const labelElement = document.createElement("span");
+    labelElement.textContent = label;
+    const valueElement = document.createElement("strong");
+    valueElement.textContent = value;
+    const detailElement = document.createElement("small");
+    detailElement.textContent = detail;
+    card.append(labelElement, valueElement, detailElement);
+    container.append(card);
+  }
+
+  function renderIntelligence() {
+    const botState = getBotState();
+    const metricGrid = document.getElementById("intelligenceMetricGrid");
+    if (!botState || !metricGrid) return;
+
+    const intelligence = Bot.refreshIntelligenceState?.(botState, getContext());
+    const report = intelligence?.report;
+    if (!report) return;
+
+    const currency = getBotCurrency(botState.config);
+    const overall = report.overall || {};
+    const validation = report.validation || {};
+    const killSwitch = report.killSwitch || { active: false, reasons: [] };
+    const statusBadge = document.getElementById("intelligenceStatusBadge");
+    const summary = document.getElementById("intelligenceSummary");
+
+    if (statusBadge) {
+      statusBadge.textContent = killSwitch.active
+        ? "Biztonsági stop"
+        : validation.status === "passed"
+          ? "Validált"
+          : validation.status === "failed"
+            ? "Újratanulás"
+            : "Adatgyűjtés";
+      statusBadge.className = `intelligence-status ${
+        killSwitch.active
+          ? "danger"
+          : validation.status === "passed"
+            ? "positive"
+            : validation.status === "failed"
+              ? "warning"
+              : "pending"
+      }`;
+    }
+    if (summary) {
+      summary.textContent = killSwitch.active
+        ? `Új belépés szünetel: ${killSwitch.reasons.join(", ")}. A nyitott pozíciók védelme tovább működik.`
+        : validation.reason || "A döntési réteg aktív és minden setupot több szinten ellenőriz.";
+    }
+
+    metricGrid.replaceChildren();
+    appendIntelligenceMetric(
+      metricGrid,
+      "Várható érték / ügylet",
+      bridge.formatBotSignedMoney?.(overall.expectancy || 0, currency) || `${overall.expectancy || 0}`,
+      `${overall.sampleSize || 0} lezárt ügylet`,
+      overall.expectancy > 0 ? "positive" : overall.sampleSize ? "negative" : "neutral",
+    );
+    appendIntelligenceMetric(
+      metricGrid,
+      "Konfidens találati arány",
+      `${((overall.winRateLowerBound || 0) * 100).toFixed(1)}%`,
+      "90%-os Wilson alsó korlát",
+      overall.winRateLowerBound >= 0.3 ? "positive" : "neutral",
+    );
+    appendIntelligenceMetric(
+      metricGrid,
+      "Out-of-sample stabilitás",
+      validation.consistency === undefined
+        ? "–"
+        : `${(validation.consistency * 100).toFixed(0)}%`,
+      validation.status === "insufficient-data" ? "További minta szükséges" : validation.reason,
+      validation.passed ? "positive" : "neutral",
+    );
+    appendIntelligenceMetric(
+      metricGrid,
+      "Setup memória",
+      String(report.setupMemory?.length || 0),
+      "külön tanult piaci minta",
+    );
+    appendIntelligenceMetric(
+      metricGrid,
+      "Max. drawdown",
+      `${(overall.maxDrawdownPercent || 0).toFixed(2)}%`,
+      "teljes lezárt mintán",
+      overall.maxDrawdownPercent > 8 ? "negative" : "positive",
+    );
+
+    renderIntelligenceValidation(validation);
+    renderIntelligenceRisk(killSwitch, currency);
+    renderIntelligenceSetups(report);
+    renderIntelligenceCalibration(report.calibration || []);
+    renderIntelligenceMissed(report.missedOpportunity || {});
+    renderIntelligenceRollback(botState, report.rollback);
+  }
+
+  function renderIntelligenceValidation(validation) {
+    const badge = document.getElementById("intelligenceValidationBadge");
+    const summary = document.getElementById("intelligenceValidationSummary");
+    const folds = document.getElementById("intelligenceFoldGrid");
+    if (!badge || !summary || !folds) return;
+    const labels = {
+      passed: "Megfelelt",
+      failed: "Nem stabil",
+      "insufficient-data": "Adatgyűjtés",
+    };
+    badge.textContent = labels[validation.status] || "–";
+    badge.className = `local-badge ${validation.passed ? "sync-ok" : ""}`;
+    summary.textContent = validation.reason || "Még nincs validációs eredmény.";
+    folds.replaceChildren();
+    if (!validation.folds?.length) {
+      folds.append(
+        Object.assign(document.createElement("span"), {
+          className: "helper-text",
+          textContent: `${validation.sampleSize || 0}/${validation.required || 20} ügylet áll rendelkezésre.`,
+        }),
+      );
+      return;
+    }
+    validation.folds.forEach((fold, index) => {
+      const item = document.createElement("div");
+      item.className = `intelligence-fold ${fold.passed ? "positive" : "negative"}`;
+      const label = document.createElement("span");
+      label.textContent = `${index + 1}. tesztablak`;
+      const value = document.createElement("strong");
+      value.textContent = `${fold.testNetPnl >= 0 ? "+" : ""}${fold.testNetPnl.toFixed(2)}`;
+      const detail = document.createElement("small");
+      detail.textContent = `${fold.testSize} ügylet · EV ${fold.testExpectancy.toFixed(2)}`;
+      item.append(label, value, detail);
+      folds.append(item);
+    });
+  }
+
+  function renderIntelligenceRisk(killSwitch, currency) {
+    const badge = document.getElementById("intelligenceKillBadge");
+    const container = document.getElementById("intelligenceRiskState");
+    if (!badge || !container) return;
+    badge.textContent = killSwitch.active ? "Belépés tiltva" : "Védelem aktív";
+    badge.className = `local-badge ${killSwitch.active ? "" : "sync-ok"}`;
+    container.replaceChildren();
+    const rows = [
+      ["Napi eredmény", bridge.formatBotSignedMoney?.(killSwitch.dailyPnl || 0, currency)],
+      ["Heti eredmény", bridge.formatBotSignedMoney?.(killSwitch.weeklyPnl || 0, currency)],
+      ["Drawdown", `${(killSwitch.drawdownPercent || 0).toFixed(2)}%`],
+      ["Vesztes sorozat", `${killSwitch.consecutiveLosses || 0} ügylet`],
+    ];
+    rows.forEach(([label, value]) => {
+      const row = document.createElement("div");
+      const name = document.createElement("span");
+      name.textContent = label;
+      const result = document.createElement("strong");
+      result.textContent = value || "–";
+      row.append(name, result);
+      container.append(row);
+    });
+    if (killSwitch.reasons?.length) {
+      const warning = document.createElement("p");
+      warning.className = "intelligence-warning";
+      warning.textContent = killSwitch.reasons.join(" · ");
+      container.append(warning);
+    }
+  }
+
+  function renderIntelligenceSetups(report) {
+    const container = document.getElementById("intelligenceSetupList");
+    if (!container) return;
+    container.replaceChildren();
+    const setups = [
+      ...(report.topSetups || []).map((setup) => ({ ...setup, tone: "positive", group: "Erős" })),
+      ...(report.weakSetups || []).map((setup) => ({ ...setup, tone: "negative", group: "Gyenge" })),
+    ].filter((setup, index, all) => all.findIndex((item) => item.key === setup.key) === index);
+    if (!setups.length) {
+      container.append(
+        Object.assign(document.createElement("p"), {
+          className: "helper-text",
+          textContent: "Legalább három azonos setupból lezárt ügylet kell a rangsorhoz.",
+        }),
+      );
+      return;
+    }
+    setups.slice(0, 8).forEach((setup) => {
+      const item = document.createElement("div");
+      item.className = `intelligence-setup ${setup.tone}`;
+      const heading = document.createElement("div");
+      const label = document.createElement("span");
+      label.textContent = setup.group;
+      const key = document.createElement("strong");
+      key.textContent = setup.key.split("|").slice(0, 4).join(" · ");
+      heading.append(label, key);
+      const metrics = document.createElement("small");
+      metrics.textContent = `${setup.sampleSize} ügylet · ${(setup.winRate * 100).toFixed(0)}% win · EV ${setup.expectancy.toFixed(2)} · PF ${Number.isFinite(setup.profitFactor) ? setup.profitFactor.toFixed(2) : "∞"}`;
+      item.append(heading, metrics);
+      container.append(item);
+    });
+  }
+
+  function renderIntelligenceCalibration(calibration) {
+    const container = document.getElementById("intelligenceCalibration");
+    if (!container) return;
+    container.replaceChildren();
+    calibration.forEach((bin) => {
+      const row = document.createElement("div");
+      row.className = "intelligence-calibration-row";
+      const heading = document.createElement("div");
+      const label = document.createElement("span");
+      label.textContent = bin.label;
+      const value = document.createElement("strong");
+      value.textContent = bin.sampleSize
+        ? `${(bin.actualWinRate * 100).toFixed(0)}% valós · ${bin.sampleSize} db`
+        : "nincs minta";
+      heading.append(label, value);
+      const track = document.createElement("div");
+      track.className = "intelligence-calibration-track";
+      const bar = document.createElement("span");
+      bar.style.width = `${Math.max(2, (bin.actualWinRate || 0) * 100)}%`;
+      track.append(bar);
+      row.append(heading, track);
+      container.append(row);
+    });
+  }
+
+  function renderIntelligenceMissed(missed) {
+    const container = document.getElementById("intelligenceMissed");
+    if (!container) return;
+    container.replaceChildren();
+    const metrics = [
+      ["Utólag értékelt", `${missed.evaluated || 0}/${missed.total || 0}`],
+      ["Nyerő lett volna", String(missed.wouldWin || 0)],
+      ["Vesztes lett volna", String(missed.wouldLose || 0)],
+      [
+        "Védelmi arány",
+        missed.protectionRate === null || missed.protectionRate === undefined
+          ? "–"
+          : `${(missed.protectionRate * 100).toFixed(0)}%`,
+      ],
+    ];
+    metrics.forEach(([label, value]) => {
+      const item = document.createElement("div");
+      const name = document.createElement("span");
+      name.textContent = label;
+      const result = document.createElement("strong");
+      result.textContent = value;
+      item.append(name, result);
+      container.append(item);
+    });
+  }
+
+  function renderIntelligenceRollback(botState, rollback) {
+    const container = document.getElementById("intelligenceRollback");
+    if (!container) return;
+    container.replaceChildren();
+    const intelligence = botState.intelligence || {};
+    const checkpoint = intelligence.activeCheckpoint;
+    const state = document.createElement("div");
+    state.className = "intelligence-rollback-state";
+    const title = document.createElement("strong");
+    title.textContent = checkpoint ? "Aktív konfigurációs próba" : "Nincs függő konfigurációs próba";
+    const detail = document.createElement("span");
+    detail.textContent = checkpoint
+      ? rollback?.reason || "Az új beállítás out-of-sample eredményeit figyeli."
+      : "Minden automatikus módosítás előtt visszaállítható checkpoint készül.";
+    state.append(title, detail);
+    container.append(state);
+    const history = document.createElement("small");
+    history.textContent = `${intelligence.checkpointHistory?.length || 0} checkpoint · ${intelligence.rollbackHistory?.length || 0} automatikus visszaállítás`;
+    container.append(history);
   }
 
   function renderPositions(appendEmptyTableRow, formatNumber, valueClass, currency) {
@@ -1429,8 +1719,13 @@
     if (card) card.hidden = !show;
     if (experiences) experiences.hidden = !show;
 
+    const recoveryActive = status.recoveryStep > 0 || status.recoveryExhausted;
     const summaryText = status.active
-      ? `Auto-tanulás aktív: ${status.dailyCount} finomhangolás ma, cél: ${status.goal}`
+      ? status.recoveryExhausted
+        ? "A biztonságos finomhangolási határ elérve. A bot tovább elemez, de nem kényszerít belépést."
+        : recoveryActive
+          ? `Egyórás helyreállítás aktív: ${status.recoveryStep}. kör, minden módosítás után teljes újraelemzéssel.`
+          : `Auto-tanulás aktív: ${status.dailyCount} finomhangolás ma, cél: ${status.goal}`
       : "";
 
     if (card) {
@@ -1441,13 +1736,23 @@
       const next = document.getElementById("botAutoLearnStatusNext");
 
       if (title) {
-        title.textContent = status.targetsMet
-          ? "Auto-tanulás – célok teljesülnek"
-          : "Auto-tanulás – finomhangolás folyamatban";
+        title.textContent = status.recoveryExhausted
+          ? "Auto-tanulás – biztonsági határ"
+          : recoveryActive
+            ? "Auto-tanulás – ügylet-szünet helyreállítás"
+            : status.targetsMet
+              ? "Auto-tanulás – célok teljesülnek"
+              : "Auto-tanulás – finomhangolás folyamatban";
       }
       if (badge) {
-        badge.textContent = status.targetsMet ? "Cél teljesítve" : "Aktív";
-        badge.className = `local-badge learn-active ${status.targetsMet ? "sync-ok" : ""}`;
+        badge.textContent = status.recoveryExhausted
+          ? "Biztonsági stop"
+          : recoveryActive
+            ? `${status.recoveryStep}. kör`
+            : status.targetsMet
+              ? "Cél teljesítve"
+              : "Aktív";
+        badge.className = `local-badge learn-active ${status.targetsMet && !recoveryActive ? "sync-ok" : ""}`;
       }
       if (summary) summary.textContent = summaryText;
 
@@ -1482,6 +1787,15 @@
             value: `${status.dailyCount} / ${status.maxDaily}`,
             ok: status.dailyCount < status.maxDaily,
           },
+          {
+            label: "Ügylet-szünet protokoll",
+            value: recoveryActive
+              ? status.recoveryExhausted
+                ? "Biztonsági határ"
+                : `${status.recoveryStep}. elemzési kör`
+              : `${status.noTradeTimeoutHours} óra után`,
+            ok: !status.recoveryExhausted,
+          },
         ];
         items.forEach((item) => {
           const chip = document.createElement("div");
@@ -1512,6 +1826,9 @@
                 }).format(status.nextReviewAt)
               : "most";
           parts.push(`Következő felülvizsgálat: ${reviewLabel}`);
+        }
+        if (status.recoveryBlockers?.length) {
+          parts.push(`Vizsgált blokkolók: ${status.recoveryBlockers.slice(0, 3).join(", ")}`);
         }
         next.textContent = parts.join(" · ") || "Még nem történt auto-finomhangolás.";
       }

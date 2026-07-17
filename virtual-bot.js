@@ -1,6 +1,8 @@
 (function () {
   "use strict";
 
+  const Intelligence = window.BotIntelligence;
+
   const STORAGE_KEY = "aurum-virtual-bot";
   const STORAGE_KEY_TRADES_BACKUP = "aurum-virtual-bot-trades-backup";
   const STORAGE_KEY_LEARNING_BACKUP = "aurum-virtual-bot-learning-backup";
@@ -48,12 +50,17 @@
     maxTradesPerHour: { min: 1, max: 10, step: 1 },
     minEntryGapMinutes: { min: 0, max: 60, step: 5 },
     volumeMultiplier: { min: 1, max: 3, step: 0.1 },
-    autoLearnNoTradeHours: { min: 2, max: 8, step: 1 },
+    autoLearnNoTradeHours: { min: 1, max: 1, step: 1 },
     autoLearnMaxDailyAdjustments: { min: 5, max: 50, step: 1 },
     autoLearnMinChangeMinutes: { min: 5, max: 60, step: 5 },
     autoLearnTargetWinRate: { min: 30, max: 70, step: 5 },
     autoLearnTargetTradesPer6h: { min: 1, max: 5, step: 1 },
     autoLearnRollingWindow: { min: 10, max: 50, step: 5 },
+    minimumSetupSamples: { min: 5, max: 30, step: 1 },
+    maximumOpenRiskPercent: { min: 1, max: 10, step: 0.5 },
+    maximumGroupRiskPercent: { min: 1, max: 8, step: 0.5 },
+    maximumConsecutiveLosses: { min: 2, max: 10, step: 1 },
+    maximumWeeklyLossPercent: { min: 1, max: 20, step: 0.5 },
   };
 
   const CONFIG_PRESETS = {
@@ -269,12 +276,19 @@
     htfTrendFilterStrength: "medium",
     entryMode: "both",
     scannerRefreshPriority: "balanced",
-    autoLearnNoTradeHours: 3,
+    autoLearnNoTradeHours: 1,
     autoLearnMaxDailyAdjustments: 20,
     autoLearnMinChangeMinutes: 15,
     autoLearnTargetWinRate: 40,
     autoLearnTargetTradesPer6h: 1,
     autoLearnRollingWindow: 20,
+    intelligenceEnabled: true,
+    minimumSetupSamples: 8,
+    maximumOpenRiskPercent: 4.5,
+    maximumGroupRiskPercent: 3,
+    maximumConsecutiveLosses: 4,
+    maximumWeeklyLossPercent: 8,
+    autoConfigRollbackEnabled: true,
   };
 
   const DIAGNOSTIC_STALE_HOURS = 4;
@@ -361,6 +375,9 @@
     { match: /Nincs elérhető|Hiányzó stop|Nincs szkennelhető/i, key: "data", label: "Adat / árkép hiány" },
     { match: /FX|árfolyam/i, key: "fx-pending", label: "FX / deviza nem kész" },
     { match: /Korábbi vesztes|eszköz büntetve/i, key: "learning-penalty", label: "Eszköz tanulási büntetés" },
+    { match: /Bot Intelligence:.*Setup tiltva/i, key: "intelligence-setup", label: "Negatív setup-várhatóérték" },
+    { match: /Bot Intelligence:.*kockázat|Korrelált/i, key: "intelligence-portfolio", label: "Portfóliókockázati védelem" },
+    { match: /Bot Intelligence:/i, key: "intelligence-safety", label: "Intelligence biztonsági kapu" },
   ];
 
   const LEARNABLE_KEYS = [
@@ -463,6 +480,13 @@
     autoLearnTargetWinRate: "Auto-tanulás: cél win rate (%)",
     autoLearnTargetTradesPer6h: "Auto-tanulás: cél ügylet / 6 óra",
     autoLearnRollingWindow: "Auto-tanulás: gördülő ablak (ügylet)",
+    intelligenceEnabled: "Bot Intelligence",
+    minimumSetupSamples: "Setup minimum minta",
+    maximumOpenRiskPercent: "Max. teljes nyitott kockázat",
+    maximumGroupRiskPercent: "Max. eszközcsoport-kockázat",
+    maximumConsecutiveLosses: "Max. egymást követő veszteség",
+    maximumWeeklyLossPercent: "Max. heti veszteség",
+    autoConfigRollbackEnabled: "Automatikus konfiguráció-visszaállítás",
   };
 
   const REGIME_FILTER_LABELS = {
@@ -604,6 +628,7 @@
         },
         tradeDiagnostics: botState.tradeDiagnostics || createEmptyTradeDiagnostics(),
         autoLearnRuntime: botState.autoLearnRuntime || createEmptyAutoLearnRuntime(),
+        intelligence: botState.intelligence || createEmptyIntelligenceState(),
         initialCapital: botState.initialCapital,
         cash: botState.cash,
         lastActionAt: botState.lastActionAt || {},
@@ -616,6 +641,7 @@
     if (!botState || !payload?.state) return botState;
     const incoming = payload.state;
     botState.config = { ...DEFAULT_CONFIG, ...incoming.config };
+    botState.config.autoLearnNoTradeHours = 1;
     botState.trades = Array.isArray(incoming.trades) ? incoming.trades : [];
     botState.positions = Array.isArray(incoming.positions) ? incoming.positions : [];
     botState.equityHistory = Array.isArray(incoming.equityHistory) ? incoming.equityHistory : [];
@@ -630,6 +656,10 @@
     botState.autoLearnRuntime = {
       ...createEmptyAutoLearnRuntime(),
       ...(incoming.autoLearnRuntime || botState.autoLearnRuntime || {}),
+    };
+    botState.intelligence = {
+      ...createEmptyIntelligenceState(),
+      ...(incoming.intelligence || botState.intelligence || {}),
     };
     botState.initialCapital = incoming.initialCapital;
     botState.cash = incoming.cash;
@@ -822,6 +852,20 @@
         lastNoTradeLearnAt: 0,
       },
       autoLearnRuntime: createEmptyAutoLearnRuntime(),
+      intelligence: createEmptyIntelligenceState(),
+    };
+  }
+
+  function createEmptyIntelligenceState() {
+    return {
+      version: 1,
+      activeCheckpoint: null,
+      checkpointHistory: [],
+      rollbackHistory: [],
+      killSwitch: { active: false, reasons: [] },
+      validation: null,
+      report: null,
+      lastReportAt: 0,
     };
   }
 
@@ -840,6 +884,7 @@
 
   function createEmptyAutoLearnRuntime() {
     return {
+      recoveryVersion: 1,
       dailyCount: 0,
       dayKey: "",
       lastChangeAt: 0,
@@ -848,6 +893,10 @@
       lastTradeId: null,
       nextReviewAt: 0,
       targetsMetAt: 0,
+      inactivityStartedAt: 0,
+      recoveryStep: 0,
+      recoveryExhausted: false,
+      recoveryBlockers: [],
     };
   }
 
@@ -919,6 +968,7 @@
         return createBotState();
       }
       saved.config = { ...DEFAULT_CONFIG, ...saved.config };
+      saved.config.autoLearnNoTradeHours = 1;
       saved.positions = Array.isArray(saved.positions) ? saved.positions : [];
       saved.trades = Array.isArray(saved.trades) ? saved.trades : [];
       saved.equityHistory = Array.isArray(saved.equityHistory) ? saved.equityHistory : [];
@@ -939,6 +989,10 @@
       saved.autoLearnRuntime = {
         ...createEmptyAutoLearnRuntime(),
         ...(saved.autoLearnRuntime || {}),
+      };
+      saved.intelligence = {
+        ...createEmptyIntelligenceState(),
+        ...(saved.intelligence || {}),
       };
       return reconcileBalanceOnLoad(saved, fxContext);
     } catch {
@@ -2251,6 +2305,14 @@
       opportunityScore: opportunity.opportunityScore,
       signal: opportunity.signal,
       confidence: opportunity.confidence,
+      direction: opportunity.direction,
+      entry: opportunity.decision?.currentPrice,
+      stop: opportunity.decision?.stop,
+      target: opportunity.decision?.target,
+      interval: opportunity.decision?.interval,
+      regime: opportunity.intelligence?.regime || opportunity.entryQuality?.regime,
+      setupKey: opportunity.intelligence?.setupKey || null,
+      maxAgeMs: 6 * 3600000,
       reason,
       detail,
     };
@@ -2272,6 +2334,236 @@
     };
   }
 
+  function ensureIntelligenceState(botState) {
+    const intelligenceDefaults = [
+      "intelligenceEnabled",
+      "minimumSetupSamples",
+      "maximumOpenRiskPercent",
+      "maximumGroupRiskPercent",
+      "maximumConsecutiveLosses",
+      "maximumWeeklyLossPercent",
+      "autoConfigRollbackEnabled",
+    ];
+    intelligenceDefaults.forEach((key) => {
+      if (botState.config[key] === undefined || botState.config[key] === null) {
+        botState.config[key] = DEFAULT_CONFIG[key];
+      }
+    });
+    if (!botState.intelligence) {
+      botState.intelligence = createEmptyIntelligenceState();
+    }
+    return botState.intelligence;
+  }
+
+  function normalizeMarketTimestamp(value) {
+    const timestamp = Number(value);
+    if (!Number.isFinite(timestamp)) return 0;
+    return timestamp < 100000000000 ? timestamp * 1000 : timestamp;
+  }
+
+  function getLatestMarketDataAt(context) {
+    let latest = 0;
+    Object.values(context?.intraday || {}).forEach((series) => {
+      const candle = series?.candles?.[series.candles.length - 1];
+      latest = Math.max(
+        latest,
+        normalizeMarketTimestamp(candle?.time),
+        normalizeMarketTimestamp(series?.updatedAt),
+      );
+    });
+    return latest || Date.now();
+  }
+
+  function buildIntelligenceCandidate(assetKey, direction, decision, entryQuality, config, now) {
+    const assetMeta = window.AssetCatalog?.getAsset?.(assetKey) || {};
+    const activeScore =
+      direction === "long" ? entryQuality?.longScore : entryQuality?.shortScore;
+    return {
+      asset: assetKey,
+      category: assetMeta.category || assetMeta.type || "",
+      direction,
+      interval: decision?.interval || config.primaryInterval,
+      regime: Intelligence?.classifyRegime?.(decision, entryQuality) || entryQuality?.regime,
+      structure: entryQuality?.structure,
+      entryMode: config.entryMode,
+      time: now,
+      confidence: decision?.confidence,
+      entryQualityScore: activeScore,
+      riskPercent: config.riskPercent,
+      decision,
+      entryQuality,
+    };
+  }
+
+  function refreshIntelligenceState(botState, context, force = false) {
+    const intelligence = ensureIntelligenceState(botState);
+    if (!Intelligence || !botState.config.intelligenceEnabled) {
+      intelligence.report = null;
+      intelligence.killSwitch = { active: false, reasons: [] };
+      return intelligence;
+    }
+    const now = Date.now();
+    if (!force && intelligence.lastReportAt && now - intelligence.lastReportAt < 10000) {
+      return intelligence;
+    }
+    const lastMarketDataAt = getLatestMarketDataAt(context);
+    const dataHealthy = now - lastMarketDataAt <= 5 * 60000;
+    const killSwitch = Intelligence.evaluateKillSwitch(
+      {
+        ...botState,
+        lastMarketDataAt,
+        dataHealthy,
+      },
+      now,
+      {
+        maximumDailyLossPercent: botState.config.maxDailyLossPercent,
+        maximumWeeklyLossPercent: botState.config.maximumWeeklyLossPercent,
+        maximumConsecutiveLosses: botState.config.maximumConsecutiveLosses,
+      },
+    );
+    const report = Intelligence.buildIntelligenceReport(botState, {
+      lastMarketDataAt,
+      dataHealthy,
+    });
+    report.killSwitch = killSwitch;
+    intelligence.killSwitch = killSwitch;
+    intelligence.validation = report.validation;
+    intelligence.report = report;
+    intelligence.lastReportAt = now;
+    return intelligence;
+  }
+
+  function assessIntelligenceEntry(
+    botState,
+    assetKey,
+    direction,
+    decision,
+    entryQuality,
+    context,
+    now,
+  ) {
+    const config = botState.config;
+    if (!Intelligence || !config.intelligenceEnabled) {
+      return {
+        allowed: true,
+        riskMultiplier: 1,
+        regime: entryQuality?.regime || "unknown",
+      };
+    }
+    const intelligence = refreshIntelligenceState(botState, context);
+    const candidate = buildIntelligenceCandidate(
+      assetKey,
+      direction,
+      decision,
+      entryQuality,
+      config,
+      now,
+    );
+    const setupGate = Intelligence.evaluateSetupGate(botState.trades, candidate, {
+      minimumSetupSamples: config.minimumSetupSamples,
+    });
+    const portfolioRisk = Intelligence.evaluatePortfolioRisk(botState.positions, candidate, {
+      maximumOpenRiskPercent: config.maximumOpenRiskPercent,
+      maximumGroupRiskPercent: config.maximumGroupRiskPercent,
+    });
+    const killSwitch = intelligence.killSwitch || { active: false, reasons: [] };
+    const drawdownPercent = killSwitch.drawdownPercent || 0;
+    const riskMultiplier = Intelligence.dynamicRiskMultiplier({
+      confidence: decision?.confidence,
+      regime: candidate.regime,
+      drawdownPercent,
+      setupGate,
+      portfolioRisk,
+      validation: intelligence.validation,
+    });
+    const reasons = [];
+    if (killSwitch.active) reasons.push(...killSwitch.reasons);
+    if (!setupGate.allowed) reasons.push(setupGate.reason);
+    if (!portfolioRisk.allowed) reasons.push(...portfolioRisk.reasons);
+    return {
+      allowed: reasons.length === 0,
+      reasons,
+      riskMultiplier,
+      regime: candidate.regime,
+      setupKey: setupGate.key,
+      setupGate,
+      portfolioRisk,
+      validation: intelligence.validation,
+      candidate,
+    };
+  }
+
+  function updateMissedOpportunityOutcomes(botState, context, now = Date.now()) {
+    if (!Intelligence || !botState.performanceStats?.missedLog?.length) return;
+    botState.performanceStats.missedLog = botState.performanceStats.missedLog.map((item) => {
+      if (item.outcome) return item;
+      const currentPrice = getCurrentPrice(item.assetKey, context);
+      return Intelligence.evaluateMissedOpportunity(item, currentPrice, now);
+    });
+  }
+
+  function maybeCreateConfigCheckpoint(botState, reason) {
+    if (
+      !Intelligence ||
+      !botState.config.intelligenceEnabled ||
+      !botState.config.autoConfigRollbackEnabled
+    ) {
+      return null;
+    }
+    const intelligence = ensureIntelligenceState(botState);
+    if (intelligence.activeCheckpoint) return intelligence.activeCheckpoint;
+    const checkpoint = Intelligence.createConfigCheckpoint(botState.config, botState.trades, {
+      reason,
+    });
+    intelligence.activeCheckpoint = checkpoint;
+    intelligence.checkpointHistory = [
+      checkpoint,
+      ...(intelligence.checkpointHistory || []),
+    ].slice(0, 20);
+    return checkpoint;
+  }
+
+  function evaluateAutomaticConfigRollback(botState) {
+    if (!Intelligence || !botState.config.autoConfigRollbackEnabled) return null;
+    const intelligence = ensureIntelligenceState(botState);
+    const checkpoint = intelligence.activeCheckpoint;
+    if (!checkpoint) return null;
+    const evaluation = Intelligence.evaluateCheckpointRollback(checkpoint, botState.trades);
+    if (evaluation.pending) return evaluation;
+    if (evaluation.shouldRollback) {
+      const before = { ...botState.config };
+      const preserved = {
+        enabled: botState.config.enabled,
+        assets: botState.config.assets,
+        currency: botState.config.currency,
+        initialCapital: botState.config.initialCapital,
+      };
+      botState.config = { ...checkpoint.config, ...preserved };
+      const changes = diffConfigs(before, botState.config).map((change) => ({
+        ...change,
+        reason: evaluation.reason,
+      }));
+      intelligence.rollbackHistory = [
+        {
+          time: Date.now(),
+          checkpointId: checkpoint.id,
+          reason: evaluation.reason,
+          evaluation,
+        },
+        ...(intelligence.rollbackHistory || []),
+      ].slice(0, 20);
+      intelligence.activeCheckpoint = null;
+      if (changes.length) {
+        logConfigChanges(botState, "auto-tanulás", changes, evaluation.reason);
+      }
+      logActivity(botState, `Bot Intelligence rollback: ${evaluation.reason}`);
+      return { ...evaluation, rolledBack: true, changes };
+    }
+    intelligence.activeCheckpoint = null;
+    logActivity(botState, "Bot Intelligence: az új konfiguráció validálva, rollback nem szükséges.");
+    return { ...evaluation, promoted: true };
+  }
+
   function canOpen(assetKey, botState, now, opportunityScore = 0) {
     if (botState.positions.length >= botState.config.maxPositions) return false;
     if (botState.positions.some((position) => position.asset === assetKey)) return false;
@@ -2279,7 +2571,7 @@
     return !status.blocked;
   }
 
-  function calculatePositionSize(botState, entry, stop, config, context) {
+  function calculatePositionSize(botState, entry, stop, config, context, riskMultiplier = 1) {
     const unitRisk = Math.abs(entry - stop);
     if (!(unitRisk > 0) || !(entry > 0)) return 0;
 
@@ -2287,7 +2579,8 @@
     const equity = Math.max(0, metrics.equity);
     if (!(equity > 0)) return 0;
 
-    const desiredRisk = equity * (config.riskPercent / 100);
+    const effectiveRiskPercent = config.riskPercent * clamp(riskMultiplier, 0.25, 1.2);
+    const desiredRisk = equity * (effectiveRiskPercent / 100);
     const feeBuffer = entry * ((config.feePercent || 0.1) / 100);
     let quantity = desiredRisk / (unitRisk + feeBuffer);
 
@@ -2790,6 +3083,18 @@
             botState,
           )
         : null;
+    const intelligence =
+      decision && direction
+        ? assessIntelligenceEntry(
+            botState,
+            assetKey,
+            direction,
+            decision,
+            entryQuality,
+            context,
+            now,
+          )
+        : null;
 
     if (!decision) {
       filterReasons.push("Nincs elérhető piaci adat");
@@ -2848,6 +3153,11 @@
           filterReasons.push(qualityGate.reason);
         }
       }
+      if (intelligence && !intelligence.allowed) {
+        intelligence.reasons.forEach((reason) => {
+          filterReasons.push(`Bot Intelligence: ${reason}`);
+        });
+      }
       if (!(decision.stop > 0) || !(decision.target > 0) || !(decision.currentPrice > 0)) {
         filterReasons.push("Hiányzó stop/cél/ár adat");
       }
@@ -2893,6 +3203,7 @@
       opportunityScore: scoreBreakdown.total,
       scoreBreakdown,
       entryQuality,
+      intelligence,
       entryReadiness: entryQuality
         ? direction
           ? direction === "long"
@@ -2966,6 +3277,8 @@
     if (config.autoLearnEnabled) {
       runAutoLearn(botState, context, { trigger: "trade-close", trade });
     }
+    evaluateAutomaticConfigRollback(botState);
+    refreshIntelligenceState(botState, context, true);
     return trade;
   }
 
@@ -3288,13 +3601,31 @@
     );
     if (!qualityGate.pass) return null;
 
+    const intelligence = assessIntelligenceEntry(
+      botState,
+      assetKey,
+      direction,
+      decision,
+      entryQuality,
+      context,
+      now,
+    );
+    if (!intelligence.allowed) return null;
+
     const activeReadiness =
       direction === "long" ? entryQuality.longReadiness : entryQuality.shortReadiness;
     const activeScore = direction === "long" ? entryQuality.longScore : entryQuality.shortScore;
 
     const rawEntry = decision.currentPrice;
     const entry = applySlippage(rawEntry, direction, true, config);
-    const quantity = calculatePositionSize(botState, entry, decision.stop, config, context);
+    const quantity = calculatePositionSize(
+      botState,
+      entry,
+      decision.stop,
+      config,
+      context,
+      intelligence.riskMultiplier,
+    );
     if (!(quantity > 0)) return null;
 
     const notional = entry * quantity;
@@ -3311,6 +3642,8 @@
       stop: decision.stop,
       target: decision.target,
       riskPercent: config.riskPercent,
+      effectiveRiskPercent: config.riskPercent * intelligence.riskMultiplier,
+      riskMultiplier: intelligence.riskMultiplier,
       confidence: decision.confidence,
       riskReward: decision.riskReward,
       interval: decision.interval,
@@ -3328,11 +3661,27 @@
       initialStop: decision.stop,
       initialQuantity: quantity,
       opportunityScore,
+      setupKey: intelligence.setupKey,
+      regime: intelligence.regime,
+      intelligence: {
+        setupKey: intelligence.setupKey,
+        regime: intelligence.regime,
+        setupSampleSize: intelligence.setupGate?.stats?.sampleSize || 0,
+        setupExpectancy: intelligence.setupGate?.stats?.expectancy || 0,
+        validationStatus: intelligence.validation?.status || "insufficient-data",
+        portfolioGroup: intelligence.portfolioRisk?.group || "other",
+        riskMultiplier: intelligence.riskMultiplier,
+      },
     };
     botState.positions.push(position);
     botState.lastActionAt[assetKey] = now;
     diagnostics.lastOpenSuccessAt = now;
     diagnostics.lastOpenAttemptAt = now;
+    const autoLearnRuntime = ensureAutoLearnRuntime(botState);
+    autoLearnRuntime.inactivityStartedAt = now;
+    autoLearnRuntime.recoveryStep = 0;
+    autoLearnRuntime.recoveryExhausted = false;
+    autoLearnRuntime.recoveryBlockers = [];
     const assetName = window.AssetCatalog?.getName(assetKey) || assetKey;
     const proNote =
       config.professionalMode && cooldownStatus.reason === "pro-immediate"
@@ -3396,18 +3745,13 @@
     if (validation.repaired) saveBotState(botState);
     if (validation.pending) return { opened: 0, closed: 0, skipped: "balance-pending" };
     if (!botState.config.enabled) return { opened: 0, closed: 0 };
-    if (isDailyLossLimitHit(botState, botState.config)) {
-      logActivity(
-        botState,
-        `Napi veszteség limit (${botState.config.maxDailyLossPercent}%) – új belépés szünetel`,
-      );
-      return { opened: 0, closed: 0, skipped: "daily-loss-limit" };
-    }
     const now = Date.now();
     let opened = 0;
     const beforeTrades = botState.trades.length;
     const config = botState.config;
     context.botConfig = config;
+    refreshIntelligenceState(botState, context, true);
+    updateMissedOpportunityOutcomes(botState, context, now);
 
     const scanKeys = getScanAssetKeys(config, botState);
     const positionAssets = [...new Set(botState.positions.map((position) => position.asset))];
@@ -3524,6 +3868,7 @@
             direction: chosen.direction,
             entryReadiness: chosen.entryReadiness,
             entryQuality: chosen.entryQuality,
+            intelligence: chosen.intelligence,
             scoreBreakdown: chosen.scoreBreakdown,
             topReasons: chosen.topReasons,
             filterReasons: [],
@@ -3544,6 +3889,7 @@
     maybeLogStaleTradeDiagnostics(botState, context);
     maybeRunNoTradeAutoLearn(botState, context);
     recordEquity(botState, context, now);
+    refreshIntelligenceState(botState, context, true);
     botState.lastTickAt = now;
     saveBotState(botState);
     return { opened, closed };
@@ -3671,8 +4017,13 @@
       (trade) => !trade.partial && trade.closedAt > sixHoursAgo,
     ).length;
     const diagnostics = ensureTradeDiagnostics(botState);
+    const runtime = ensureAutoLearnRuntime(botState);
     const lastOpen = diagnostics.lastOpenSuccessAt || 0;
-    const hoursSinceOpen = lastOpen ? (Date.now() - lastOpen) / 3600000 : null;
+    if (!runtime.inactivityStartedAt) {
+      runtime.inactivityStartedAt = lastOpen || botState.lastTickAt || Date.now();
+    }
+    const inactivityReference = lastOpen || runtime.inactivityStartedAt;
+    const hoursSinceOpen = (Date.now() - inactivityReference) / 3600000;
     return {
       windowSize,
       sampleSize: recent.length,
@@ -3706,7 +4057,7 @@
     const targetTradesPer6h = config.autoLearnTargetTradesPer6h ?? 1;
     if (
       config.enabled &&
-      (rolling.hoursSinceOpen === null || rolling.hoursSinceOpen >= (config.autoLearnNoTradeHours ?? 3))
+      rolling.hoursSinceOpen >= (config.autoLearnNoTradeHours ?? 1)
     ) {
       return "több ügylet";
     }
@@ -3791,6 +4142,10 @@
   function applyLearningChanges(botState, changes, meta = {}) {
     if (!changes?.length) return null;
     const before = pickLearnable(botState.config);
+    maybeCreateConfigCheckpoint(
+      botState,
+      `Auto-tanulás előtti állapot (${meta.trigger || "auto"})`,
+    );
     const next = { ...botState.config };
     changes.forEach((change) => {
       next[change.key] = change.to;
@@ -3803,6 +4158,11 @@
     runtime.lastChangeAt = now;
     runtime.lastTrigger = meta.trigger || "auto";
     runtime.lastTradeId = meta.tradeId || null;
+    if (String(meta.trigger || "").startsWith("no-trade-")) {
+      runtime.recoveryStep = (runtime.recoveryStep || 0) + 1;
+      runtime.recoveryExhausted = false;
+      runtime.recoveryBlockers = meta.blockers || [];
+    }
     runtime.lastChangeSummary = changes
       .map((change) => `${CONFIG_LABELS[change.key] || change.key}: ${formatConfigValue(change.key, change.from)} → ${formatConfigValue(change.key, change.to)}`)
       .join(" · ");
@@ -3958,20 +4318,17 @@
     const config = botState.config;
     const diagnostics = ensureTradeDiagnostics(botState);
     const topReasons = diagnostics.lastTopReasons || [];
-    if (!topReasons.length) return null;
+    if (!topReasons.length) return [];
 
     const next = { ...config };
     const pending = [];
-    const hours =
-      diagnostics.lastOpenSuccessAt
-        ? Math.round((Date.now() - diagnostics.lastOpenSuccessAt) / 3600000)
-        : config.autoLearnNoTradeHours ?? 3;
-    const topKey = topReasons[0].key;
-    const label = topReasons[0].label;
+    const runtime = ensureAutoLearnRuntime(botState);
+    const reference = diagnostics.lastOpenSuccessAt || runtime.inactivityStartedAt || Date.now();
+    const hours = Math.max(1, Math.round((Date.now() - reference) / 3600000));
     const delta = AUTO_LEARN_DELTAS;
-    const reason = `Auto-tanulás: ${hours} óra ügylet nélkül → ${label} lazítva`;
 
-    function loosenOne(key, newValue) {
+    function loosenOne(key, newValue, label) {
+      const reason = `Helyreállítás ${hours} óra ügylet-szünet után: ${label}`;
       const scratch = { ...next };
       const changes = [];
       proposeLearnChange(scratch, changes, key, newValue, reason, { loosen: true });
@@ -3981,40 +4338,52 @@
       }
     }
 
-    if (topKey === "low-confidence") {
-      loosenOne("minConfidence", next.minConfidence - delta.minConfidence);
-    } else if (topKey === "low-opportunity") {
-      loosenOne("minOpportunityScore", next.minOpportunityScore - delta.minOpportunityScore);
-    } else if (topKey === "entry-quality") {
-      loosenOne("minEntryQualityScore", next.minEntryQualityScore - delta.minEntryQualityScore);
-    } else if (topKey === "alignment" && next.requireAlignment) {
-      loosenOne("requireAlignment", false);
-    } else if (topKey === "alignment") {
-      loosenOne("minAlignmentRatio", Math.max(0.5, next.minAlignmentRatio - 0.1));
-    } else if (topKey === "regime" && next.regimeFilter !== "both") {
-      loosenOne("regimeFilter", "both");
-    } else if (topKey === "htf-trend" && next.htfTrendFilterStrength === "strict") {
-      loosenOne("htfTrendFilterStrength", "medium");
-    } else if (topKey === "htf-trend" && next.htfTrendFilterStrength === "medium") {
-      loosenOne("htfTrendFilterStrength", "loose");
-    } else if (topKey === "entry-mode" && next.entryMode !== "both") {
-      loosenOne("entryMode", "both");
-    } else if (topKey === "cooldown") {
-      loosenOne("cooldownMinutes", next.cooldownMinutes - delta.cooldownMinutes);
-    } else if (topKey === "entry-gap") {
-      loosenOne("minEntryGapMinutes", next.minEntryGapMinutes - delta.minEntryGapMinutes);
-    } else if (topKey === "trade-rate") {
-      loosenOne("maxTradesPerDay", next.maxTradesPerDay + delta.maxTradesPerDay);
-    } else if (topKey === "low-signal") {
-      loosenOne("signalScoreThreshold", next.signalScoreThreshold - delta.signalScoreThreshold);
-    } else if (topKey === "direction-filters") {
-      loosenOne("momentumThreshold", next.momentumThreshold - delta.momentumThreshold);
-    } else {
-      loosenOne("minConfidence", next.minConfidence - delta.minConfidence);
-    }
+    topReasons.slice(0, 5).forEach(({ key: topKey, label }) => {
+      if (pending.length >= 3) return;
+      if (topKey === "low-confidence") {
+        loosenOne("minConfidence", next.minConfidence - delta.minConfidence, label);
+      } else if (topKey === "low-opportunity") {
+        loosenOne(
+          "minOpportunityScore",
+          next.minOpportunityScore - delta.minOpportunityScore,
+          label,
+        );
+      } else if (topKey === "entry-quality") {
+        loosenOne(
+          "minEntryQualityScore",
+          next.minEntryQualityScore - delta.minEntryQualityScore,
+          label,
+        );
+      } else if (topKey === "alignment" && next.requireAlignment) {
+        loosenOne("requireAlignment", false, label);
+      } else if (topKey === "alignment") {
+        loosenOne("minAlignmentRatio", next.minAlignmentRatio - 0.05, label);
+      } else if (topKey === "regime" && next.regimeFilter !== "both") {
+        loosenOne("regimeFilter", "both", label);
+      } else if (topKey === "htf-trend" && next.htfTrendFilterStrength === "strict") {
+        loosenOne("htfTrendFilterStrength", "medium", label);
+      } else if (topKey === "htf-trend" && next.htfTrendFilterStrength === "medium") {
+        loosenOne("htfTrendFilterStrength", "loose", label);
+      } else if (topKey === "entry-mode" && next.entryMode !== "both") {
+        loosenOne("entryMode", "both", label);
+      } else if (topKey === "cooldown") {
+        loosenOne("cooldownMinutes", next.cooldownMinutes - delta.cooldownMinutes, label);
+      } else if (topKey === "entry-gap") {
+        loosenOne("minEntryGapMinutes", next.minEntryGapMinutes - delta.minEntryGapMinutes, label);
+      } else if (topKey === "trade-rate") {
+        loosenOne("maxTradesPerDay", next.maxTradesPerDay + delta.maxTradesPerDay, label);
+      } else if (topKey === "low-signal") {
+        loosenOne(
+          "signalScoreThreshold",
+          next.signalScoreThreshold - delta.signalScoreThreshold,
+          label,
+        );
+      } else if (topKey === "direction-filters") {
+        loosenOne("momentumThreshold", next.momentumThreshold - delta.momentumThreshold, label);
+      }
+    });
 
-    const changes = finalizeLearningChanges(pending, 1);
-    return changes.length ? changes : null;
+    return finalizeLearningChanges(pending, 3);
   }
 
   function learnFromTradeClose(botState, context, trade) {
@@ -4040,25 +4409,63 @@
     if (!botState.config.autoLearnEnabled || !botState.config.enabled) return null;
     const config = botState.config;
     const diagnostics = ensureTradeDiagnostics(botState);
+    const runtime = ensureAutoLearnRuntime(botState);
     const now = Date.now();
     const lastOpen = diagnostics.lastOpenSuccessAt || 0;
-    const timeoutHours = config.autoLearnNoTradeHours ?? 3;
+    if (!runtime.inactivityStartedAt) {
+      runtime.inactivityStartedAt = lastOpen || botState.lastTickAt || now;
+    }
+    const inactivityReference = lastOpen || runtime.inactivityStartedAt;
+    const timeoutHours = config.autoLearnNoTradeHours ?? 1;
     const staleMs = timeoutHours * 3600000;
-    const hoursSince = lastOpen ? (now - lastOpen) / 3600000 : null;
-    const isStale = hoursSince === null || hoursSince >= timeoutHours;
+    const hoursSince = (now - inactivityReference) / 3600000;
+    const isStale = now - inactivityReference >= staleMs;
     if (!isStale) return null;
 
     const gate = canApplyAutoLearnChange(botState, config, { ignoreTargets: true });
     if (!gate.ok) return { applied: false, reason: gate.reason, nextReviewAt: gate.nextReviewAt };
 
-    const changes = buildNoTradeLooseningChange(botState);
-    if (!changes?.length) return null;
+    const blockers = (diagnostics.lastTopReasons || []).slice(0, 5).map((item) => item.label);
+    const rolling = getRollingLearningMetrics(botState, config);
+    const targetWinRate = config.autoLearnTargetWinRate ?? 40;
+    const needsQualityRepair =
+      rolling.sampleSize >= 5 &&
+      (rolling.rollingPnl < 0 || (rolling.winRate !== null && rolling.winRate < targetWinRate));
+    const qualityPreview = needsQualityRepair
+      ? runAggregateAutoLearnPreview(botState, context)
+      : null;
+    const changes = needsQualityRepair
+      ? qualityPreview?.changes?.slice(0, 3) || []
+      : buildNoTradeLooseningChange(botState);
+    if (!changes?.length) {
+      const firstExhaustedNotice = !runtime.recoveryExhausted;
+      runtime.recoveryExhausted = true;
+      runtime.recoveryBlockers = blockers;
+      runtime.lastTrigger = "no-trade-safety-limit";
+      runtime.nextReviewAt = now + (config.autoLearnMinChangeMinutes ?? 15) * 60000;
+      if (firstExhaustedNotice) {
+        logActivity(
+          botState,
+          "Auto-tanulás: a biztonságosan lazítható küszöbök elfogytak; a bot tovább figyeli a piacot, de nem kényszerít ügyletet.",
+        );
+      }
+      saveBotState(botState);
+      return {
+        applied: false,
+        reason: "A biztonságos finomhangolási határ elérve; nincs kényszerített belépés.",
+        changes: [],
+        nextReviewAt: runtime.nextReviewAt,
+      };
+    }
 
     diagnostics.lastNoTradeLearnAt = now;
-    const hoursLabel = hoursSince === null ? timeoutHours : Math.round(hoursSince);
+    const hoursLabel = Math.max(timeoutHours, Math.round(hoursSince));
     return applyLearningChanges(botState, changes, {
-      trigger: "no-trade-timeout",
-      activityMessage: `Auto-tanulás: ${hoursLabel} óra ügylet nélkül → ${CONFIG_LABELS[changes[0].key] || changes[0].key} lazítva.`,
+      trigger: needsQualityRepair ? "no-trade-quality-recovery" : "no-trade-timeout",
+      blockers,
+      activityMessage: needsQualityRepair
+        ? `Auto-tanulás: ${hoursLabel} óra ügylet nélkül, negatív gördülő teljesítmény → ${changes.length} minőségi/kockázati paraméter javítva.`
+        : `Auto-tanulás: ${hoursLabel} óra ügylet nélkül → ${changes.length} belépési paraméter finomhangolva, majd teljes újraelemzés indul.`,
     });
   }
 
@@ -4092,7 +4499,10 @@
       rolling,
       targetWinRate: config.autoLearnTargetWinRate ?? 40,
       targetTradesPer6h: config.autoLearnTargetTradesPer6h ?? 1,
-      noTradeTimeoutHours: config.autoLearnNoTradeHours ?? 3,
+      noTradeTimeoutHours: config.autoLearnNoTradeHours ?? 1,
+      recoveryStep: runtime.recoveryStep || 0,
+      recoveryExhausted: Boolean(runtime.recoveryExhausted),
+      recoveryBlockers: runtime.recoveryBlockers || [],
     };
   }
 
@@ -4414,6 +4824,8 @@
     buildSuggestions,
     runAutoLearn,
     getAutoLearnStatus,
+    refreshIntelligenceState,
+    evaluateAutomaticConfigRollback,
     resetBot,
     applyCapitalFromConfig,
     resetCapitalAccount,

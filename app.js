@@ -7,7 +7,7 @@ const state = {
   selectedAsset: "bitcoin",
   selectedTradeAsset: "bitcoin",
   selectedIntradayInterval: 1,
-  activeView: "overview",
+  activeView: "bot",
   charts: {},
   marketCharts: {},
   intradayChart: null,
@@ -72,13 +72,20 @@ const VALID_VIEWS = [
   "ai",
 ];
 
-const BOT_SECTIONS = ["summary", "scanner", "settings", "trades", "experiences"];
+const BOT_SECTIONS = [
+  "summary",
+  "intelligence",
+  "scanner",
+  "settings",
+  "trades",
+  "experiences",
+];
 const SUPPORTED_CURRENCIES = ["USD", "EUR", "HUF"];
 
 function parseLocationHash() {
   const raw = window.location.hash.slice(1);
   const [viewPart, subPart] = raw.split("/");
-  const view = VALID_VIEWS.includes(viewPart) ? viewPart : "overview";
+  const view = VALID_VIEWS.includes(viewPart) ? viewPart : "bot";
   const botSection =
     view === "bot" && BOT_SECTIONS.includes(subPart) ? subPart : "summary";
   return { view, botSection };
@@ -261,9 +268,17 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   document.querySelector(".brand").addEventListener("click", (event) => {
     event.preventDefault();
-    setActiveView("overview");
+    setActiveView("bot");
   });
   initBotUi();
+  document.querySelectorAll("[data-bot-jump]").forEach((button) => {
+    button.addEventListener("click", () => {
+      window.BotLab?.switchSection?.(button.dataset.botJump);
+      document
+        .querySelector(".bot-toolbar")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
   initBotCloudSync();
   window.addEventListener("online", () => {
     if (state.botState) initBotCloudSync();
