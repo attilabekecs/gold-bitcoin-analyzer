@@ -36,15 +36,15 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=20260718-02" />
+    <link rel="stylesheet" href="styles.css?v=20260718-03" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
     <script src="assets-catalog.js?v=20260712-22" defer></script>
     <script src="bot-intelligence-statistics.js?v=20260717-01" defer></script>
     <script src="bot-intelligence-engine.js?v=20260717-01" defer></script>
     <script src="bot-adaptive-controller.js?v=20260718-01" defer></script>
     <script src="bot-strategy-arena.js?v=20260718-03" defer></script>
-    <script src="virtual-bot.js?v=20260718-07" defer></script>
-    <script src="bot-lab.js?v=20260718-06" defer></script>
+    <script src="virtual-bot.js?v=20260718-08" defer></script>
+    <script src="bot-lab.js?v=20260718-07" defer></script>
     <script src="app.js?v=20260718-01" defer></script>
   </head>
   <body data-view="bot">
@@ -596,7 +596,14 @@
                 teljesítményt együttesen értékeli.
               </p>
             </div>
-            <span id="intelligenceStatusBadge" class="intelligence-status pending">Adatgyűjtés</span>
+            <div class="intelligence-overview-actions">
+              <span id="intelligenceStatusBadge" class="intelligence-status pending">Adatgyűjtés</span>
+              <button id="botAnalysisExportButton" class="intelligence-export-button" type="button">
+                <span aria-hidden="true">↓</span>
+                Teljes elemzési csomag
+              </button>
+              <small id="botAnalysisExportHint">JSON · titkos adatok nélkül</small>
+            </div>
           </section>
 
           <div id="intelligenceMetricGrid" class="intelligence-metric-grid"></div>

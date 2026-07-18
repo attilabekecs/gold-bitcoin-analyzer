@@ -688,6 +688,7 @@
 
     document.getElementById("botClearChangeLog")?.addEventListener("click", clearChangeLog);
     document.getElementById("botExportChangeLog")?.addEventListener("click", exportChangeLog);
+    document.getElementById("botAnalysisExportButton")?.addEventListener("click", exportAnalysisPackage);
 
     document.querySelectorAll("[data-bot-preset]").forEach((button) => {
       button.addEventListener("click", () => applyPreset(button.dataset.botPreset));
@@ -1080,6 +1081,49 @@
     link.click();
     URL.revokeObjectURL(url);
     bridge?.showToast?.("Változásnapló exportálva CSV-be.");
+  }
+
+  function exportAnalysisPackage() {
+    const botState = getBotState();
+    if (!botState || !Bot.buildAnalysisExport) {
+      bridge?.showToast?.("Az elemzési csomag most nem állítható össze.");
+      return;
+    }
+
+    try {
+      const exportedAt = Date.now();
+      const currentLocation = window.location;
+      const payload = Bot.buildAnalysisExport(botState, getContext(), {
+        exportedAt,
+        runtime: {
+          pageUrl:
+            currentLocation?.protocol === "file:"
+              ? `file://local-page${currentLocation.hash || ""}`
+              : `${currentLocation?.origin || ""}${currentLocation?.pathname || ""}${currentLocation?.hash || ""}`,
+          visibilityState: document.visibilityState || null,
+          online: navigator.onLine,
+          language: navigator.language || null,
+          userAgent: navigator.userAgent || null,
+        },
+      });
+      const json = JSON.stringify(payload, null, 2);
+      const blob = new Blob([json], { type: "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const stamp = new Date(exportedAt).toISOString().replace(/[:.]/g, "-");
+      link.href = url;
+      link.download = `aurum-bot-elemzes-${stamp}.json`;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      bridge?.showToast?.(
+        `Teljes elemzési csomag letöltve (${Math.max(1, Math.round(blob.size / 1024))} KB).`,
+      );
+    } catch (error) {
+      console.error("Bot analysis export failed", error);
+      bridge?.showToast?.("Nem sikerült letölteni az elemzési csomagot.");
+    }
   }
 
   function renderConfigChangeLog() {
