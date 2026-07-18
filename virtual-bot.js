@@ -3,6 +3,7 @@
 
   const Intelligence = window.BotIntelligence;
   const Adaptive = window.BotAdaptiveController;
+  const StrategyArena = window.BotStrategyArena;
 
   const STORAGE_KEY = "aurum-virtual-bot";
   const STORAGE_KEY_TRADES_BACKUP = "aurum-virtual-bot-trades-backup";
@@ -65,6 +66,9 @@
     maximumGroupRiskPercent: { min: 1, max: 8, step: 0.5 },
     maximumConsecutiveLosses: { min: 2, max: 10, step: 1 },
     maximumWeeklyLossPercent: { min: 1, max: 20, step: 0.5 },
+    strategyArenaMinimumTrades: { min: 20, max: 150, step: 5 },
+    strategyArenaMinimumProfitFactor: { min: 1, max: 3, step: 0.1 },
+    strategyArenaMaximumDrawdownPercent: { min: 2, max: 20, step: 0.5 },
   };
 
   const CONFIG_PRESETS = {
@@ -307,6 +311,11 @@
     maximumConsecutiveLosses: 4,
     maximumWeeklyLossPercent: 8,
     autoConfigRollbackEnabled: true,
+    strategyArenaEnabled: true,
+    strategyArenaAutoPromotionEnabled: true,
+    strategyArenaMinimumTrades: 50,
+    strategyArenaMinimumProfitFactor: 1.2,
+    strategyArenaMaximumDrawdownPercent: 8,
   };
 
   const DIAGNOSTIC_STALE_HOURS = 4;
@@ -526,6 +535,11 @@
     maximumConsecutiveLosses: "Max. egymást követő veszteség",
     maximumWeeklyLossPercent: "Max. heti veszteség",
     autoConfigRollbackEnabled: "Automatikus konfiguráció-visszaállítás",
+    strategyArenaEnabled: "Champion–Challenger aréna",
+    strategyArenaAutoPromotionEnabled: "Automatikus kihívó-előléptetés",
+    strategyArenaMinimumTrades: "Aréna minimum ügyletszám",
+    strategyArenaMinimumProfitFactor: "Aréna minimum profit factor",
+    strategyArenaMaximumDrawdownPercent: "Aréna maximum drawdown",
   };
 
   const REGIME_FILTER_LABELS = {
@@ -725,6 +739,7 @@
         tradeDiagnostics: botState.tradeDiagnostics || createEmptyTradeDiagnostics(),
         autoLearnRuntime: botState.autoLearnRuntime || createEmptyAutoLearnRuntime(),
         intelligence: botState.intelligence || createEmptyIntelligenceState(),
+        strategyArena: botState.strategyArena || createEmptyStrategyArenaState(botState.config, botState.initialCapital),
         initialCapital: botState.initialCapital,
         cash: botState.cash,
         lastActionAt: botState.lastActionAt || {},
@@ -757,6 +772,11 @@
       ...createEmptyIntelligenceState(),
       ...(incoming.intelligence || botState.intelligence || {}),
     };
+    botState.strategyArena = StrategyArena?.ensureArena?.(
+      incoming.strategyArena || botState.strategyArena,
+      botState.config,
+      incoming.initialCapital || botState.initialCapital,
+    ) || incoming.strategyArena || botState.strategyArena;
     botState.initialCapital = incoming.initialCapital;
     botState.cash = incoming.cash;
     botState.lastActionAt = incoming.lastActionAt || {};
@@ -949,7 +969,23 @@
       },
       autoLearnRuntime: createEmptyAutoLearnRuntime(),
       intelligence: createEmptyIntelligenceState(),
+      strategyArena: createEmptyStrategyArenaState(merged, merged.initialCapital, now),
     };
+  }
+
+  function createEmptyStrategyArenaState(config = DEFAULT_CONFIG, capital = 10000, now = Date.now()) {
+    return StrategyArena?.createArena?.(config, capital, now) || null;
+  }
+
+  function ensureStrategyArenaState(botState, now = Date.now()) {
+    if (!botState || !StrategyArena) return botState?.strategyArena || null;
+    botState.strategyArena = StrategyArena.ensureArena(
+      botState.strategyArena,
+      botState.config,
+      botState.initialCapital,
+      now,
+    );
+    return botState.strategyArena;
   }
 
   function createEmptyIntelligenceState() {
@@ -1093,6 +1129,11 @@
         ...createEmptyIntelligenceState(),
         ...(saved.intelligence || {}),
       };
+      saved.strategyArena = StrategyArena?.ensureArena?.(
+        saved.strategyArena,
+        saved.config,
+        saved.initialCapital,
+      ) || saved.strategyArena || null;
       return reconcileBalanceOnLoad(saved, fxContext);
     } catch {
       return createBotState();
@@ -3336,6 +3377,117 @@
     return results;
   }
 
+  function buildArenaShadowState(botState, profile) {
+    return {
+      ...botState,
+      config: {
+        ...profile.config,
+        enabled: true,
+        intelligenceEnabled: false,
+        assets: [...(profile.config.assets || botState.config.assets || [])],
+      },
+      cash: profile.equity,
+      initialCapital: profile.initialCapital,
+      positions: profile.positions,
+      trades: profile.trades,
+      equityHistory: profile.equityHistory,
+      lastActionAt: profile.lastActionAt,
+      lastActionOutcome: {},
+      intelligence: createEmptyIntelligenceState(),
+    };
+  }
+
+  function runStrategyArena(botState, context, now = Date.now()) {
+    if (!StrategyArena || !botState.config.strategyArenaEnabled) return null;
+    const arena = StrategyArena.ensureArena(
+      botState.strategyArena,
+      botState.config,
+      botState.initialCapital,
+      now,
+    );
+    botState.strategyArena = arena;
+
+    const assetKeys = new Set(botState.config.assets || []);
+    arena.profiles.forEach((profile) => {
+      (profile.positions || []).forEach((position) => assetKeys.add(position.asset));
+    });
+    const prices = {};
+    assetKeys.forEach((assetKey) => {
+      const price = getCurrentPrice(assetKey, context);
+      if (Number.isFinite(price) && price > 0) prices[assetKey] = price;
+    });
+
+    arena.profiles.forEach((profile) => {
+      StrategyArena.updateShadowPositions(profile, prices, now);
+      const shadowState = buildArenaShadowState(botState, profile);
+      const profileConfig = shadowState.config;
+      context.botConfig = profileConfig;
+      const results = getScanAssetKeys(profileConfig, shadowState).map((assetKey) => {
+        const decision = analyzeSignal(assetKey, profileConfig, context);
+        return evaluateOpportunity(assetKey, decision, profileConfig, shadowState, now, context);
+      });
+      results.sort(compareOpportunityResults);
+      const candidate = results.find((result) => result.eligible);
+      if (!candidate) return;
+      StrategyArena.openShadowPosition(profile, {
+        asset: candidate.assetKey,
+        direction: candidate.direction,
+        entry: candidate.decision.currentPrice,
+        stop: candidate.decision.stop,
+        target: candidate.decision.target,
+        confidence: candidate.confidence,
+        opportunityScore: candidate.opportunityScore,
+        signal: candidate.signal,
+        regime: candidate.entryQuality?.regime || "unknown",
+      }, now);
+    });
+    context.botConfig = botState.config;
+    arena.lastTickAt = now;
+
+    const killSwitch = botState.intelligence?.killSwitch || { active: false, reasons: [] };
+    const decision = StrategyArena.evaluatePromotion(arena, {
+      minimumTrades: botState.config.strategyArenaMinimumTrades,
+      minimumProfitFactor: botState.config.strategyArenaMinimumProfitFactor,
+      maximumDrawdownPercent: botState.config.strategyArenaMaximumDrawdownPercent,
+      blocked: killSwitch.active,
+      blockedReason: killSwitch.reasons?.join(" · "),
+    }, now);
+
+    if (decision.eligible && botState.config.strategyArenaAutoPromotionEnabled) {
+      const challenger = arena.profiles.find((profile) => profile.id === decision.challengerId);
+      if (challenger) {
+        maybeCreateConfigCheckpoint(botState, `Stratégia-aréna előléptetés: ${challenger.label}`);
+        const before = copyConfigForCheckpoint(botState.config);
+        const preserved = {
+          enabled: botState.config.enabled,
+          assets: [...(botState.config.assets || [])],
+          currency: botState.config.currency,
+          initialCapital: botState.config.initialCapital,
+          strategyArenaEnabled: botState.config.strategyArenaEnabled,
+          strategyArenaAutoPromotionEnabled: botState.config.strategyArenaAutoPromotionEnabled,
+          strategyArenaMinimumTrades: botState.config.strategyArenaMinimumTrades,
+          strategyArenaMinimumProfitFactor: botState.config.strategyArenaMinimumProfitFactor,
+          strategyArenaMaximumDrawdownPercent: botState.config.strategyArenaMaximumDrawdownPercent,
+        };
+        botState.config = { ...challenger.config, ...preserved };
+        StrategyArena.promote(arena, challenger.id, now);
+        const changes = diffConfigs(before, botState.config).map((change) => ({
+          ...change,
+          reason: `${challenger.label} validált árnyékteljesítménye felülmúlta a Championt.`,
+        }));
+        if (changes.length) {
+          logConfigChanges(botState, "strategy-arena", changes);
+          logActivity(botState, `Stratégia-aréna: ${challenger.label} előléptetve (${changes.length} paraméter).`);
+        }
+      }
+    }
+    return decision;
+  }
+
+  function copyConfigForCheckpoint(config) {
+    return { ...config, assets: [...(config.assets || [])] };
+  }
+
   function closePosition(botState, id, exitPrice, reason, closedAt, context) {
     context.botConfig = botState.config;
     const index = botState.positions.findIndex((position) => position.id === id);
@@ -3987,6 +4139,7 @@
     recordDiagnosticRejections(botState, scanResults);
     maybeLogStaleTradeDiagnostics(botState, context);
     maybeRunNoTradeAutoLearn(botState, context);
+    runStrategyArena(botState, context, now);
     recordEquity(botState, context, now);
     refreshIntelligenceState(botState, context, true);
     botState.lastTickAt = now;
@@ -4963,6 +5116,7 @@
     analyzeEntryQuality,
     analyzeHoldVsExit,
     scanMarketOpportunities,
+    runStrategyArena,
     evaluateOpportunity,
     getScanAssetKeys,
     getTradeableAssetKeys,
@@ -4972,6 +5126,7 @@
     runAutoLearn,
     getAutoLearnStatus,
     refreshIntelligenceState,
+    ensureStrategyArenaState,
     evaluateAutomaticConfigRollback,
     resetBot,
     applyCapitalFromConfig,

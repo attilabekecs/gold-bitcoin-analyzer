@@ -42,8 +42,9 @@
     <script src="bot-intelligence-statistics.js?v=20260717-01" defer></script>
     <script src="bot-intelligence-engine.js?v=20260717-01" defer></script>
     <script src="bot-adaptive-controller.js?v=20260718-01" defer></script>
-    <script src="virtual-bot.js?v=20260718-04" defer></script>
-    <script src="bot-lab.js?v=20260718-01" defer></script>
+    <script src="bot-strategy-arena.js?v=20260718-02" defer></script>
+    <script src="virtual-bot.js?v=20260718-06" defer></script>
+    <script src="bot-lab.js?v=20260718-03" defer></script>
     <script src="app.js?v=20260718-01" defer></script>
   </head>
   <body data-view="bot">
@@ -650,6 +651,21 @@
               <div id="intelligenceRollback" class="intelligence-rollback"></div>
             </article>
           </div>
+
+          <article class="panel strategy-arena-card" aria-labelledby="strategyArenaTitle">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">CHAMPION–CHALLENGER</p>
+                <h3 id="strategyArenaTitle">Élő stratégia-aréna</h3>
+              </div>
+              <span id="strategyArenaBadge" class="local-badge">Adatgyűjtés</span>
+            </div>
+            <p id="strategyArenaSummary" class="helper-text">
+              Három kihívó ugyanazon a piacon, kizárólag árnyékügyletekkel versenyez az aktív stratégiával.
+            </p>
+            <div id="strategyArenaLeaderboard" class="strategy-arena-leaderboard"></div>
+            <div id="strategyArenaDecision" class="strategy-arena-decision"></div>
+          </article>
         </div>
 
         <div class="bot-section-panel" data-bot-section-panel="scanner" role="tabpanel" hidden>
@@ -1075,6 +1091,37 @@
                   <span class="toggle-label">Automatikus konfiguráció-visszaállítás</span>
                   <input id="botAutoConfigRollback" type="checkbox" checked />
                   <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                </label>
+                <label class="toggle-switch wide-check">
+                  <span class="toggle-label">Champion–Challenger stratégia-aréna</span>
+                  <input id="botStrategyArenaEnabled" type="checkbox" checked />
+                  <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                </label>
+                <label class="toggle-switch wide-check">
+                  <span class="toggle-label">Validált kihívó automatikus előléptetése</span>
+                  <input id="botStrategyArenaAutoPromotion" type="checkbox" checked />
+                  <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Aréna minimum lezárt ügylet / profil</span>
+                    <output for="botStrategyArenaMinimumTrades" id="botStrategyArenaMinimumTradesOut">50</output>
+                  </span>
+                  <input id="botStrategyArenaMinimumTrades" type="range" min="20" max="150" step="5" value="50" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Aréna minimum profit factor</span>
+                    <output for="botStrategyArenaMinimumProfitFactor" id="botStrategyArenaMinimumProfitFactorOut">1.2</output>
+                  </span>
+                  <input id="botStrategyArenaMinimumProfitFactor" type="range" min="1" max="3" step="0.1" value="1.2" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Aréna maximum drawdown (%)</span>
+                    <output for="botStrategyArenaMaximumDrawdown" id="botStrategyArenaMaximumDrawdownOut">8.0</output>
+                  </span>
+                  <input id="botStrategyArenaMaximumDrawdown" type="range" min="2" max="20" step="0.5" value="8" />
                 </label>
                 <label class="control-slider">
                   <span class="control-header">

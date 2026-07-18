@@ -3,6 +3,7 @@
 
   const Catalog = window.AssetCatalog;
   const Bot = window.VirtualBot;
+  const StrategyArena = window.BotStrategyArena;
   if (!Bot || !Catalog) return;
 
   let bridge = null;
@@ -80,6 +81,9 @@
     { id: "botMaximumGroupRisk", key: "maximumGroupRiskPercent", type: "range", decimals: 1 },
     { id: "botMaximumConsecutiveLosses", key: "maximumConsecutiveLosses", type: "range", decimals: 0 },
     { id: "botMaximumWeeklyLoss", key: "maximumWeeklyLossPercent", type: "range", decimals: 1 },
+    { id: "botStrategyArenaMinimumTrades", key: "strategyArenaMinimumTrades", type: "range", decimals: 0 },
+    { id: "botStrategyArenaMinimumProfitFactor", key: "strategyArenaMinimumProfitFactor", type: "range", decimals: 1 },
+    { id: "botStrategyArenaMaximumDrawdown", key: "strategyArenaMaximumDrawdownPercent", type: "range", decimals: 1 },
     { id: "botMaxDailyLoss", key: "maxDailyLossPercent", type: "range", decimals: 1 },
     { id: "botFeePercent", key: "feePercent", type: "number" },
     { id: "botSpreadPercent", key: "spreadPercent", type: "number" },
@@ -107,6 +111,8 @@
     { id: "botPartialTakeProfit", key: "partialTakeProfitEnabled" },
     { id: "botIntelligenceEnabled", key: "intelligenceEnabled" },
     { id: "botAutoConfigRollback", key: "autoConfigRollbackEnabled" },
+    { id: "botStrategyArenaEnabled", key: "strategyArenaEnabled" },
+    { id: "botStrategyArenaAutoPromotion", key: "strategyArenaAutoPromotionEnabled" },
     { id: "botUseTradingHours", key: "useTradingHours" },
   ];
 
@@ -1337,7 +1343,10 @@
 
     const intelligence = Bot.refreshIntelligenceState?.(botState, getContext());
     const report = intelligence?.report;
-    if (!report) return;
+    if (!report) {
+      renderStrategyArena(botState, getBotCurrency(botState.config));
+      return;
+    }
 
     const currency = getBotCurrency(botState.config);
     const overall = report.overall || {};
@@ -1414,6 +1423,85 @@
     renderIntelligenceCalibration(report.calibration || []);
     renderIntelligenceMissed(report.missedOpportunity || {});
     renderIntelligenceRollback(botState, report.rollback);
+    renderStrategyArena(botState, currency);
+  }
+
+  function renderStrategyArena(botState, currency) {
+    const badge = document.getElementById("strategyArenaBadge");
+    const summary = document.getElementById("strategyArenaSummary");
+    const leaderboardElement = document.getElementById("strategyArenaLeaderboard");
+    const decisionElement = document.getElementById("strategyArenaDecision");
+    if (!badge || !summary || !leaderboardElement || !decisionElement) return;
+
+    const arenaState = Bot.ensureStrategyArenaState?.(botState) || botState.strategyArena;
+    if (!StrategyArena || !botState.config.strategyArenaEnabled || !arenaState) {
+      badge.textContent = "Kikapcsolva";
+      badge.className = "local-badge";
+      summary.textContent = "A stratégia-aréna a Pro / Haladó beállításoknál kapcsolható be.";
+      leaderboardElement.replaceChildren();
+      decisionElement.replaceChildren();
+      return;
+    }
+
+    const arena = StrategyArena.ensureArena(
+      arenaState,
+      botState.config,
+      botState.initialCapital,
+    );
+    const minimumTrades = botState.config.strategyArenaMinimumTrades || 50;
+    const leaderboard = StrategyArena.buildLeaderboard(arena, minimumTrades);
+    const decision = arena.lastPromotionDecision;
+    const best = leaderboard[0];
+    const eligible = Boolean(decision?.eligible);
+    badge.textContent = eligible ? "Előléptethető" : best?.stats.sampleSize >= minimumTrades ? "Kiértékelés" : "Adatgyűjtés";
+    badge.className = `local-badge ${eligible ? "sync-ok" : ""}`;
+    summary.textContent = decision?.reason ||
+      `Profilonként legalább ${minimumTrades} lezárt árnyékügylet után indul a szigorú összevetés.`;
+
+    leaderboardElement.replaceChildren();
+    leaderboard.forEach((entry, index) => {
+      const card = document.createElement("article");
+      card.className = `strategy-arena-profile ${entry.role} ${index === 0 ? "leading" : ""}`;
+      const heading = document.createElement("div");
+      const title = document.createElement("strong");
+      title.textContent = entry.label;
+      const role = document.createElement("span");
+      role.textContent = entry.role === "champion" ? "AKTÍV CHAMPION" : index === 0 ? "JELENLEGI VEZETŐ" : "KIHÍVÓ";
+      heading.append(title, role);
+
+      const metrics = document.createElement("dl");
+      const profitFactor = Number.isFinite(entry.stats.profitFactor)
+        ? entry.stats.profitFactor.toFixed(2)
+        : entry.stats.profitFactor === Infinity ? "∞" : "0.00";
+      const values = [
+        ["Ügylet", `${entry.stats.sampleSize}/${minimumTrades}`],
+        ["Win rate", `${(entry.stats.winRate * 100).toFixed(1)}%`],
+        ["Expectancy", bridge.formatBotSignedMoney?.(entry.stats.expectancy, currency) || entry.stats.expectancy.toFixed(2)],
+        ["Profit factor", profitFactor],
+        ["Drawdown", `${entry.stats.maxDrawdownPercent.toFixed(2)}%`],
+        ["Validáció", entry.validation.passed ? "Megfelelt" : entry.validation.status === "failed" ? "Nem stabil" : "Folyamatban"],
+      ];
+      values.forEach(([label, value]) => {
+        const wrapper = document.createElement("div");
+        const term = document.createElement("dt");
+        term.textContent = label;
+        const description = document.createElement("dd");
+        description.textContent = value;
+        wrapper.append(term, description);
+        metrics.append(wrapper);
+      });
+      card.append(heading, metrics);
+      leaderboardElement.append(card);
+    });
+
+    decisionElement.replaceChildren();
+    const decisionTitle = document.createElement("strong");
+    decisionTitle.textContent = botState.config.strategyArenaAutoPromotionEnabled
+      ? "Automatikus előléptetés: aktív"
+      : "Automatikus előléptetés: kikapcsolva";
+    const decisionDetail = document.createElement("span");
+    decisionDetail.textContent = `${arena.promotionHistory?.length || 0} korábbi előléptetés · minimum PF ${botState.config.strategyArenaMinimumProfitFactor || 1.2} · maximum DD ${botState.config.strategyArenaMaximumDrawdownPercent || 8}%`;
+    decisionElement.append(decisionTitle, decisionDetail);
   }
 
   function renderIntelligenceValidation(validation) {

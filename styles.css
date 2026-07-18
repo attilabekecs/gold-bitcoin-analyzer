@@ -1552,6 +1552,107 @@ h2 {
   padding: 30px;
 }
 
+.strategy-arena-card {
+  margin-top: 22px;
+  overflow: hidden;
+}
+
+.strategy-arena-leaderboard {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 18px;
+}
+
+.strategy-arena-profile {
+  background: linear-gradient(145deg, var(--paper), rgba(224, 184, 90, 0.08));
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 16px;
+}
+
+.strategy-arena-profile.leading {
+  border-color: color-mix(in srgb, var(--gold-bright) 65%, var(--line));
+  box-shadow: inset 0 3px 0 var(--gold-bright);
+}
+
+.strategy-arena-profile > div {
+  align-items: flex-start;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.strategy-arena-profile > div span {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-align: right;
+}
+
+.strategy-arena-profile dl {
+  display: grid;
+  gap: 9px;
+  margin: 15px 0 0;
+}
+
+.strategy-arena-profile dl div {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.strategy-arena-profile dt {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.strategy-arena-profile dd {
+  font-size: 12px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.strategy-arena-decision {
+  align-items: center;
+  background: linear-gradient(135deg, var(--paper), var(--green-soft));
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-top: 12px;
+  padding: 14px 16px;
+}
+
+.strategy-arena-decision span {
+  color: var(--muted);
+  font-size: 11px;
+  text-align: right;
+}
+
+@media (max-width: 1050px) {
+  .strategy-arena-leaderboard {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .strategy-arena-leaderboard {
+    grid-template-columns: 1fr;
+  }
+
+  .strategy-arena-decision {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .strategy-arena-decision span {
+    text-align: left;
+  }
+}
+
 .intelligence-overview h2 {
   font-family: "Playfair Display", serif;
   font-size: 30px;
