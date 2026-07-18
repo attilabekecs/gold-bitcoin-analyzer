@@ -37,7 +37,9 @@
         minOpportunityScore: clamp(finite(base.minOpportunityScore, 58) - 4, 50, 120),
         minEntryQualityScore: clamp(finite(base.minEntryQualityScore, 55) - 3, 48, 95),
         signalScoreThreshold: clamp(finite(base.signalScoreThreshold, 2.25) - 0.25, 1.5, 4),
-        cooldownMinutes: Math.max(5, finite(base.cooldownMinutes, 10) - 5),
+        cooldownMinutes: base.rapidDataCollectionMode
+          ? 0
+          : Math.max(5, finite(base.cooldownMinutes, 10) - 5),
         minEntryGapMinutes: Math.max(0, finite(base.minEntryGapMinutes, 5) - 5),
       },
       "challenger-quality": {

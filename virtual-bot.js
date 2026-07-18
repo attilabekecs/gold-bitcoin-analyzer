@@ -24,7 +24,7 @@
   const PARAM_BOUNDS = {
     minConfidence: { min: 40, max: 90, step: 5 },
     riskPercent: { min: 0.1, max: 5, step: 0.25 },
-    cooldownMinutes: { min: 5, max: 120, step: 5 },
+    cooldownMinutes: { min: 0, max: 120, step: 5 },
     maxPositions: { min: 1, max: 10, step: 1 },
     rewardRatio: { min: 1, max: 5, step: 0.25 },
     atrStopMultiplier: { min: 0.5, max: 5, step: 0.25 },
@@ -48,8 +48,8 @@
     entryQualityWaitThreshold: { min: 35, max: 70, step: 5 },
     minHoldMinutes: { min: 5, max: 120, step: 5 },
     minSellUrgencyScore: { min: 40, max: 90, step: 5 },
-    maxTradesPerDay: { min: 1, max: 30, step: 1 },
-    maxTradesPerHour: { min: 1, max: 10, step: 1 },
+    maxTradesPerDay: { min: 1, max: 500, step: 1 },
+    maxTradesPerHour: { min: 1, max: 120, step: 1 },
     minEntryGapMinutes: { min: 0, max: 60, step: 5 },
     volumeMultiplier: { min: 1, max: 3, step: 0.1 },
     autoLearnNoTradeHours: { min: 1, max: 1, step: 1 },
@@ -215,6 +215,7 @@
 
   const DEFAULT_CONFIG = {
     enabled: false,
+    rapidDataCollectionMode: true,
     autoLearnEnabled: true,
     professionalMode: true,
     marketWideMode: true,
@@ -222,11 +223,11 @@
     currency: "sync",
     initialCapital: 10000,
     riskPercent: 1.5,
-    maxPositions: 3,
-    cooldownMinutes: 10,
+    maxPositions: 10,
+    cooldownMinutes: 0,
     proMinConfidenceFloor: 50,
     proHighScoreThreshold: 75,
-    proWinCooldownMinutes: 5,
+    proWinCooldownMinutes: 0,
     primaryInterval: 5,
     direction: "both",
     fastEma: 9,
@@ -265,7 +266,7 @@
     autoCloseOnReversal: true,
     reversalMinConfidence: 72,
     reversalMinScore: 3,
-    maxPositionAgeMinutes: 120,
+    maxPositionAgeMinutes: 30,
     maxDailyLossPercent: 5,
     minOpportunityScore: 58,
     minEntryQualityScore: 55,
@@ -277,17 +278,17 @@
     maxRegimeAtrPercentile: 90,
     srProximityBlockPercent: 0.35,
     breakevenAfterR: 1,
-    staleExitRequiresTrendBreak: true,
-    marketWideTopN: 1,
+    staleExitRequiresTrendBreak: false,
+    marketWideTopN: 10,
     feePercent: 0.1,
     spreadPercent: 0.02,
     slippagePercent: 0.01,
     useTradingHours: false,
     tradingHoursStart: 8,
     tradingHoursEnd: 20,
-    maxTradesPerDay: 20,
-    maxTradesPerHour: 8,
-    minEntryGapMinutes: 5,
+    maxTradesPerDay: 500,
+    maxTradesPerHour: 120,
+    minEntryGapMinutes: 0,
     regimeFilter: "both",
     htfTrendFilterStrength: "loose",
     entryMode: "both",
@@ -444,6 +445,7 @@
 
   const CONFIG_LABELS = {
     enabled: "Bot bekapcsolva",
+    rapidDataCollectionMode: "Gyors adatgyűjtési tesztmód",
     autoLearnEnabled: "Auto-tanulás",
     professionalMode: "Professzionális mód",
     marketWideMode: "Piaci mód (összes eszköz)",
@@ -696,8 +698,8 @@
       adaptiveConfigVersion: 3,
       aggressiveAdaptiveProfileRevision: 1,
     };
-    if (!migrated.aggressiveAdaptiveEnabled) return migrated;
-    return {
+    if (!migrated.aggressiveAdaptiveEnabled) return applyRapidDataCollectionEnvelope(migrated);
+    return applyRapidDataCollectionEnvelope({
       ...migrated,
       cooldownMinutes: Math.min(migrated.cooldownMinutes, 10),
       minEntryGapMinutes: Math.min(migrated.minEntryGapMinutes, 5),
@@ -716,6 +718,25 @@
         15,
       ),
       aggressiveAdaptiveBatchSize: Math.max(migrated.aggressiveAdaptiveBatchSize, 6),
+    });
+  }
+
+  function applyRapidDataCollectionEnvelope(config) {
+    if (!config?.rapidDataCollectionMode) return config;
+    return {
+      ...config,
+      professionalMode: true,
+      marketWideMode: true,
+      scannerRefreshPriority: "fast",
+      cooldownMinutes: 0,
+      proWinCooldownMinutes: 0,
+      minEntryGapMinutes: 0,
+      maxPositions: Math.max(10, Number(config.maxPositions) || 0),
+      marketWideTopN: Math.max(10, Number(config.marketWideTopN) || 0),
+      maxTradesPerDay: Math.max(500, Number(config.maxTradesPerDay) || 0),
+      maxTradesPerHour: Math.max(120, Number(config.maxTradesPerHour) || 0),
+      maxPositionAgeMinutes: Math.min(30, Number(config.maxPositionAgeMinutes) || 30),
+      staleExitRequiresTrendBreak: false,
     };
   }
 
@@ -936,7 +957,7 @@
   }
 
   function createBotState(config = DEFAULT_CONFIG) {
-    const merged = { ...DEFAULT_CONFIG, ...config };
+    const merged = applyRapidDataCollectionEnvelope({ ...DEFAULT_CONFIG, ...config });
     const now = Date.now();
     return {
       config: merged,
@@ -2357,6 +2378,7 @@
 
   function getBotTickIntervalMs(config) {
     if (!config.enabled) return 60000;
+    if (config.rapidDataCollectionMode) return 5000;
     const priority = config.scannerRefreshPriority || "balanced";
     if (priority === "fast") {
       return config.professionalMode ? 10000 : 20000;
@@ -2370,6 +2392,13 @@
   }
 
   function getCooldownStatus(config, botState, assetKey, now, opportunityScore = 0) {
+    if (config.rapidDataCollectionMode) {
+      return {
+        blocked: false,
+        reason: "rapid-data-collection",
+        detail: "Gyors adatgyűjtés – cooldown kikapcsolva",
+      };
+    }
     const lastAction = botState.lastActionAt[assetKey] || 0;
     const lastOutcome = botState.lastActionOutcome?.[assetKey];
 
@@ -2937,6 +2966,7 @@
   }
 
   function getTradeRateLimitStatus(botState, config, now) {
+    if (config.rapidDataCollectionMode) return { blocked: false };
     const dayLimit = config.maxTradesPerDay ?? 10;
     const hourLimit = config.maxTradesPerHour ?? 4;
     const opensDay = countRecentOpens(botState, 86400000, now);
@@ -2957,6 +2987,7 @@
   }
 
   function getGlobalEntryGapStatus(config, botState, now) {
+    if (config.rapidDataCollectionMode) return { blocked: false };
     const gapMinutes = config.minEntryGapMinutes ?? 0;
     if (!(gapMinutes > 0)) return { blocked: false };
     const diagnostics = botState.tradeDiagnostics || createEmptyTradeDiagnostics();
@@ -3182,7 +3213,11 @@
     const preset = CONFIG_PRESETS[presetKey];
     if (!preset || !botState) return null;
     const before = { ...botState.config, assets: [...(botState.config.assets || [])] };
-    const next = { ...botState.config, ...preset.config, assets: before.assets };
+    const next = applyRapidDataCollectionEnvelope({
+      ...botState.config,
+      ...preset.config,
+      assets: before.assets,
+    });
     const changes = diffConfigs(before, next);
     botState.config = next;
     if (!options.skipLog && changes.length) {
@@ -3427,19 +3462,29 @@
         return evaluateOpportunity(assetKey, decision, profileConfig, shadowState, now, context);
       });
       results.sort(compareOpportunityResults);
-      const candidate = results.find((result) => result.eligible);
-      if (!candidate) return;
-      StrategyArena.openShadowPosition(profile, {
-        asset: candidate.assetKey,
-        direction: candidate.direction,
-        entry: candidate.decision.currentPrice,
-        stop: candidate.decision.stop,
-        target: candidate.decision.target,
-        confidence: candidate.confidence,
-        opportunityScore: candidate.opportunityScore,
-        signal: candidate.signal,
-        regime: candidate.entryQuality?.regime || "unknown",
-      }, now);
+      const availableSlots = Math.max(
+        0,
+        (Number(profileConfig.maxPositions) || 1) - profile.positions.length,
+      );
+      const candidateLimit = profileConfig.rapidDataCollectionMode
+        ? availableSlots
+        : Math.min(1, availableSlots);
+      results
+        .filter((result) => result.eligible)
+        .slice(0, candidateLimit)
+        .forEach((candidate) => {
+          StrategyArena.openShadowPosition(profile, {
+            asset: candidate.assetKey,
+            direction: candidate.direction,
+            entry: candidate.decision.currentPrice,
+            stop: candidate.decision.stop,
+            target: candidate.decision.target,
+            confidence: candidate.confidence,
+            opportunityScore: candidate.opportunityScore,
+            signal: candidate.signal,
+            regime: candidate.entryQuality?.regime || "unknown",
+          }, now);
+        });
     });
     context.botConfig = botState.config;
     arena.lastTickAt = now;
@@ -3999,6 +4044,7 @@
     const now = Date.now();
     let opened = 0;
     const beforeTrades = botState.trades.length;
+    botState.config = applyRapidDataCollectionEnvelope(botState.config);
     const config = botState.config;
     context.botConfig = config;
     refreshIntelligenceState(botState, context, true);
@@ -4035,43 +4081,48 @@
       const topEligible = eligible.slice(0, topN);
       if (topEligible.length) {
         chosen = topEligible[0];
-        const position = maybeOpenPosition(
-          botState,
-          chosen.assetKey,
-          chosen.decision,
-          context,
-          now,
-          {
-            skipAssetCheck: true,
-            opportunityScore: chosen.opportunityScore,
-          },
-        );
-        if (position) {
-          opened += 1;
-          botState.performanceStats.capturedCount += 1;
-          logActivity(
+        const selectedOpportunities = config.rapidDataCollectionMode
+          ? topEligible
+          : [chosen];
+        selectedOpportunities.forEach((opportunity) => {
+          const position = maybeOpenPosition(
             botState,
-            `Piaci mód: ${chosen.assetName} választva (${chosen.opportunityScore.toFixed(0)} pont) – ${chosen.signal} (${chosen.confidence}%)`,
+            opportunity.assetKey,
+            opportunity.decision,
+            context,
+            now,
+            {
+              skipAssetCheck: true,
+              opportunityScore: opportunity.opportunityScore,
+            },
           );
-        } else {
+          if (position) {
+            opened += 1;
+            botState.performanceStats.capturedCount += 1;
+            logActivity(
+              botState,
+              `Piaci mód: ${opportunity.assetName} választva (${opportunity.opportunityScore.toFixed(0)} pont) – ${opportunity.signal} (${opportunity.confidence}%)`,
+            );
+            return;
+          }
           const cooldownStatus = getCooldownStatus(
             config,
             botState,
-            chosen.assetKey,
+            opportunity.assetKey,
             now,
-            chosen.opportunityScore,
+            opportunity.opportunityScore,
           );
           recordMissedOpportunity(
             botState,
-            chosen,
+            opportunity,
             cooldownStatus.reason,
             cooldownStatus.detail,
           );
           logActivity(
             botState,
-            `Kihagyott lehetőség: ${chosen.assetName} (${chosen.opportunityScore.toFixed(0)} pont) – ${cooldownStatus.detail}`,
+            `Kihagyott lehetőség: ${opportunity.assetName} (${opportunity.opportunityScore.toFixed(0)} pont) – ${cooldownStatus.detail}`,
           );
-        }
+        });
       }
     } else {
       config.assets.forEach((assetKey) => {
@@ -5109,6 +5160,7 @@
     getPerformanceMetrics,
     getTradeDiagnostics,
     applyConfigPreset,
+    applyRapidDataCollectionEnvelope,
     getEffectiveThresholds,
     getBotTickIntervalMs,
     tick,
