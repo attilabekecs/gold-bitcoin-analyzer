@@ -36,14 +36,15 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=20260717-05" />
+    <link rel="stylesheet" href="styles.css?v=20260718-01" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
     <script src="assets-catalog.js?v=20260712-22" defer></script>
     <script src="bot-intelligence-statistics.js?v=20260717-01" defer></script>
     <script src="bot-intelligence-engine.js?v=20260717-01" defer></script>
-    <script src="virtual-bot.js?v=20260717-04" defer></script>
-    <script src="bot-lab.js?v=20260717-04" defer></script>
-    <script src="app.js?v=20260717-06" defer></script>
+    <script src="bot-adaptive-controller.js?v=20260718-01" defer></script>
+    <script src="virtual-bot.js?v=20260718-04" defer></script>
+    <script src="bot-lab.js?v=20260718-01" defer></script>
+    <script src="app.js?v=20260718-01" defer></script>
   </head>
   <body data-view="bot">
     <header class="site-header">
@@ -706,16 +707,16 @@
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Max. nyitott pozíció</span>
-                    <output for="botMaxPositions" id="botMaxPositionsOut">2</output>
+                    <output for="botMaxPositions" id="botMaxPositionsOut">3</output>
                   </span>
-                  <input id="botMaxPositions" type="range" min="1" max="10" step="1" value="2" />
+                  <input id="botMaxPositions" type="range" min="1" max="10" step="1" value="3" />
                 </label>
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Cooldown veszteség után (perc)</span>
-                    <output for="botCooldown" id="botCooldownOut">30</output>
+                    <output for="botCooldown" id="botCooldownOut">10</output>
                   </span>
-                  <input id="botCooldown" type="range" min="5" max="120" step="5" value="30" />
+                  <input id="botCooldown" type="range" min="5" max="120" step="5" value="10" />
                 </label>
                 <label>Primér idősík
                   <select id="botPrimaryInterval">
@@ -747,37 +748,37 @@
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Min. megbízhatóság (%)</span>
-                    <output for="botMinConfidence" id="botMinConfidenceOut">58</output>
+                    <output for="botMinConfidence" id="botMinConfidenceOut">52</output>
                   </span>
-                  <input id="botMinConfidence" type="range" min="40" max="90" step="1" value="58" />
+                  <input id="botMinConfidence" type="range" min="40" max="90" step="1" value="52" />
                 </label>
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Jelzésküszöb (pont)</span>
-                    <output for="botSignalScore" id="botSignalScoreOut">2.75</output>
+                    <output for="botSignalScore" id="botSignalScoreOut">2.25</output>
                   </span>
-                  <input id="botSignalScore" type="range" min="1.5" max="4" step="0.25" value="2.75" />
+                  <input id="botSignalScore" type="range" min="1.5" max="4" step="0.25" value="2.25" />
                 </label>
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Min. lehetőség pontszám</span>
-                    <output for="botMinOpportunityScore" id="botMinOpportunityScoreOut">65</output>
+                    <output for="botMinOpportunityScore" id="botMinOpportunityScoreOut">58</output>
                   </span>
-                  <input id="botMinOpportunityScore" type="range" min="60" max="120" step="5" value="65" />
+                  <input id="botMinOpportunityScore" type="range" min="50" max="120" step="5" value="58" />
                 </label>
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Min. belépési minőség</span>
-                    <output for="botMinEntryQualityScore" id="botMinEntryQualityScoreOut">62</output>
+                    <output for="botMinEntryQualityScore" id="botMinEntryQualityScoreOut">55</output>
                   </span>
-                  <input id="botMinEntryQualityScore" type="range" min="50" max="95" step="5" value="62" />
+                  <input id="botMinEntryQualityScore" type="range" min="50" max="95" step="5" value="55" />
                 </label>
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Belépés KÉSZ küszöb</span>
-                    <output for="botEntryQualityReady" id="botEntryQualityReadyOut">62</output>
+                    <output for="botEntryQualityReady" id="botEntryQualityReadyOut">58</output>
                   </span>
-                  <input id="botEntryQualityReady" type="range" min="60" max="90" step="5" value="62" />
+                  <input id="botEntryQualityReady" type="range" min="50" max="90" step="5" value="58" />
                 </label>
                 <label class="control-slider">
                   <span class="control-header">
@@ -1155,66 +1156,86 @@
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Max. ügylet / nap</span>
-                    <output for="botMaxTradesPerDay" id="botMaxTradesPerDayOut">10</output>
+                    <output for="botMaxTradesPerDay" id="botMaxTradesPerDayOut">20</output>
                   </span>
-                  <input id="botMaxTradesPerDay" type="range" min="1" max="30" step="1" value="10" />
+                  <input id="botMaxTradesPerDay" type="range" min="1" max="30" step="1" value="20" />
                 </label>
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Max. ügylet / óra</span>
-                    <output for="botMaxTradesPerHour" id="botMaxTradesPerHourOut">4</output>
+                    <output for="botMaxTradesPerHour" id="botMaxTradesPerHourOut">8</output>
                   </span>
-                  <input id="botMaxTradesPerHour" type="range" min="1" max="10" step="1" value="4" />
+                  <input id="botMaxTradesPerHour" type="range" min="1" max="10" step="1" value="8" />
                 </label>
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Min. idő belépések között (perc)</span>
-                    <output for="botMinEntryGap" id="botMinEntryGapOut">10</output>
+                    <output for="botMinEntryGap" id="botMinEntryGapOut">5</output>
                   </span>
-                  <input id="botMinEntryGap" type="range" min="0" max="60" step="5" value="10" />
+                  <input id="botMinEntryGap" type="range" min="0" max="60" step="5" value="5" />
                 </label>
                 <div class="bot-pro-info panel-inset">
-                  <p class="eyebrow">AUTO-TANULÁS FINOMHANGOLÁS</p>
+                  <p class="eyebrow">ULTRA ADAPTÍV VEZÉRLÉS</p>
                   <p class="helper-text">
-                    Egy óra ügylet-szünet után a bot újraelemzi a blokkoló okokat, majd 15 percenként
-                    fokozatosan finomhangol legfeljebb három belépési paramétert. A kockázati limiteket,
-                    stop-loss védelmet és biztonsági minimumokat nem lazítja.
+                    A bot minden piaci ciklusban monitoroz, ötpercenként felülvizsgálja a teljes
+                    konfigurációt, és 15 perc ügylet-szünet után egyszerre legfeljebb hat kapcsolódó
+                    paramétert módosít. Negatív teljesítménynél nem hajszolja az ügyleteket: automatikusan
+                    minőségi és kockázati javításra vált. A kill switch, stop-loss és portfóliólimitek aktívak maradnak.
                   </p>
                 </div>
+                <label class="toggle-switch wide-check adaptive-mode-toggle">
+                  <span class="toggle-label">Agresszív folyamatos adaptáció</span>
+                  <input id="botAggressiveAdaptive" type="checkbox" checked />
+                  <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                </label>
                 <label class="control-slider">
                   <span class="control-header">
-                    <span>Ügylet-szünet tanulás (óra)</span>
-                    <output for="botAutoLearnNoTradeHours" id="botAutoLearnNoTradeHoursOut">1</output>
+                    <span>Adaptív felülvizsgálat (perc)</span>
+                    <output for="botAdaptiveReviewMinutes" id="botAdaptiveReviewMinutesOut">5</output>
                   </span>
-                  <input id="botAutoLearnNoTradeHours" type="range" min="1" max="1" step="1" value="1" disabled />
+                  <input id="botAdaptiveReviewMinutes" type="range" min="1" max="15" step="1" value="5" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Aktivitási helyreállítás (perc ügylet nélkül)</span>
+                    <output for="botAdaptiveNoTradeMinutes" id="botAdaptiveNoTradeMinutesOut">15</output>
+                  </span>
+                  <input id="botAdaptiveNoTradeMinutes" type="range" min="5" max="60" step="5" value="15" />
+                </label>
+                <label class="control-slider">
+                  <span class="control-header">
+                    <span>Paraméter / adaptív ciklus</span>
+                    <output for="botAdaptiveBatchSize" id="botAdaptiveBatchSizeOut">6</output>
+                  </span>
+                  <input id="botAdaptiveBatchSize" type="range" min="2" max="8" step="1" value="6" />
                 </label>
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Max. auto-módosítás / nap</span>
-                    <output for="botAutoLearnMaxDaily" id="botAutoLearnMaxDailyOut">20</output>
+                    <output for="botAutoLearnMaxDaily" id="botAutoLearnMaxDailyOut">48</output>
                   </span>
-                  <input id="botAutoLearnMaxDaily" type="range" min="5" max="50" step="1" value="20" />
+                  <input id="botAutoLearnMaxDaily" type="range" min="5" max="50" step="1" value="48" />
                 </label>
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Min. idő módosítások között (perc)</span>
-                    <output for="botAutoLearnMinInterval" id="botAutoLearnMinIntervalOut">15</output>
+                    <output for="botAutoLearnMinInterval" id="botAutoLearnMinIntervalOut">5</output>
                   </span>
-                  <input id="botAutoLearnMinInterval" type="range" min="5" max="60" step="5" value="15" />
+                  <input id="botAutoLearnMinInterval" type="range" min="5" max="60" step="5" value="5" />
                 </label>
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Cél win rate (%)</span>
-                    <output for="botAutoLearnTargetWinRate" id="botAutoLearnTargetWinRateOut">40</output>
+                    <output for="botAutoLearnTargetWinRate" id="botAutoLearnTargetWinRateOut">45</output>
                   </span>
-                  <input id="botAutoLearnTargetWinRate" type="range" min="30" max="70" step="5" value="40" />
+                  <input id="botAutoLearnTargetWinRate" type="range" min="30" max="70" step="5" value="45" />
                 </label>
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Cél ügylet / 6 óra</span>
-                    <output for="botAutoLearnTargetTrades6h" id="botAutoLearnTargetTrades6hOut">1</output>
+                    <output for="botAutoLearnTargetTrades6h" id="botAutoLearnTargetTrades6hOut">4</output>
                   </span>
-                  <input id="botAutoLearnTargetTrades6h" type="range" min="1" max="5" step="1" value="1" />
+                  <input id="botAutoLearnTargetTrades6h" type="range" min="1" max="5" step="1" value="4" />
                 </label>
               </div>
 

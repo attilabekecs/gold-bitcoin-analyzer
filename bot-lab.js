@@ -68,11 +68,13 @@
     { id: "botMaxTradesPerDay", key: "maxTradesPerDay", type: "range", decimals: 0 },
     { id: "botMaxTradesPerHour", key: "maxTradesPerHour", type: "range", decimals: 0 },
     { id: "botMinEntryGap", key: "minEntryGapMinutes", type: "range", decimals: 0 },
-    { id: "botAutoLearnNoTradeHours", key: "autoLearnNoTradeHours", type: "range", decimals: 0 },
     { id: "botAutoLearnMaxDaily", key: "autoLearnMaxDailyAdjustments", type: "range", decimals: 0 },
     { id: "botAutoLearnMinInterval", key: "autoLearnMinChangeMinutes", type: "range", decimals: 0 },
     { id: "botAutoLearnTargetWinRate", key: "autoLearnTargetWinRate", type: "range", decimals: 0 },
     { id: "botAutoLearnTargetTrades6h", key: "autoLearnTargetTradesPer6h", type: "range", decimals: 0 },
+    { id: "botAdaptiveReviewMinutes", key: "aggressiveAdaptiveReviewMinutes", type: "range", decimals: 0 },
+    { id: "botAdaptiveNoTradeMinutes", key: "aggressiveAdaptiveNoTradeMinutes", type: "range", decimals: 0 },
+    { id: "botAdaptiveBatchSize", key: "aggressiveAdaptiveBatchSize", type: "range", decimals: 0 },
     { id: "botMinimumSetupSamples", key: "minimumSetupSamples", type: "range", decimals: 0 },
     { id: "botMaximumOpenRisk", key: "maximumOpenRiskPercent", type: "range", decimals: 1 },
     { id: "botMaximumGroupRisk", key: "maximumGroupRiskPercent", type: "range", decimals: 1 },
@@ -94,6 +96,7 @@
     { id: "botEnabled", key: "enabled" },
     { id: "botProfessionalMode", key: "professionalMode" },
     { id: "botAutoLearn", key: "autoLearnEnabled" },
+    { id: "botAggressiveAdaptive", key: "aggressiveAdaptiveEnabled" },
     { id: "botMarketWideMode", key: "marketWideMode" },
     { id: "botAutoClose", key: "autoCloseOnReversal" },
     { id: "botUseMacd", key: "useMacd" },
@@ -1719,13 +1722,20 @@
     if (card) card.hidden = !show;
     if (experiences) experiences.hidden = !show;
 
-    const recoveryActive = status.recoveryStep > 0 || status.recoveryExhausted;
+    const adaptiveMode = status.adaptiveMode || "monitoring";
+    const recoveryActive =
+      status.recoveryStep > 0 ||
+      status.recoveryExhausted ||
+      adaptiveMode === "activity-recovery" ||
+      adaptiveMode === "quality-repair";
     const summaryText = status.active
       ? status.recoveryExhausted
         ? "A biztonságos finomhangolási határ elérve. A bot tovább elemez, de nem kényszerít belépést."
-        : recoveryActive
-          ? `Egyórás helyreállítás aktív: ${status.recoveryStep}. kör, minden módosítás után teljes újraelemzéssel.`
-          : `Auto-tanulás aktív: ${status.dailyCount} finomhangolás ma, cél: ${status.goal}`
+        : adaptiveMode === "quality-repair"
+          ? "Folyamatos adaptáció: a gördülő eredmény gyenge, ezért a bot minőségi és kockázati javítást végez."
+          : adaptiveMode === "activity-recovery"
+            ? `Aktivitási helyreállítás: ${Math.round(status.inactivityMinutes || 0)} perc ügylet nélkül, ${status.adaptiveBatchSize} paraméteres ciklusokkal.`
+            : `Folyamatos monitorozás aktív: felülvizsgálat ${status.adaptiveReviewMinutes} percenként, cél: ${status.goal}`
       : "";
 
     if (card) {
@@ -1738,20 +1748,24 @@
       if (title) {
         title.textContent = status.recoveryExhausted
           ? "Auto-tanulás – biztonsági határ"
-          : recoveryActive
-            ? "Auto-tanulás – ügylet-szünet helyreállítás"
+          : adaptiveMode === "quality-repair"
+            ? "Auto-tanulás – minőségi helyreállítás"
+            : recoveryActive
+              ? "Auto-tanulás – aktivitási helyreállítás"
             : status.targetsMet
               ? "Auto-tanulás – célok teljesülnek"
-              : "Auto-tanulás – finomhangolás folyamatban";
+              : "Auto-tanulás – folyamatos monitorozás";
       }
       if (badge) {
         badge.textContent = status.recoveryExhausted
           ? "Biztonsági stop"
-          : recoveryActive
-            ? `${status.recoveryStep}. kör`
+          : adaptiveMode === "quality-repair"
+            ? "Minőségjavítás"
+            : recoveryActive
+              ? `${status.recoveryStep}. kör`
             : status.targetsMet
               ? "Cél teljesítve"
-              : "Aktív";
+              : "Monitoroz";
         badge.className = `local-badge learn-active ${status.targetsMet && !recoveryActive ? "sync-ok" : ""}`;
       }
       if (summary) summary.textContent = summaryText;
@@ -1788,12 +1802,12 @@
             ok: status.dailyCount < status.maxDaily,
           },
           {
-            label: "Ügylet-szünet protokoll",
+            label: "Adaptív vezérlés",
             value: recoveryActive
               ? status.recoveryExhausted
                 ? "Biztonsági határ"
                 : `${status.recoveryStep}. elemzési kör`
-              : `${status.noTradeTimeoutHours} óra után`,
+              : `${status.adaptiveReviewMinutes}p review · ${status.adaptiveNoTradeMinutes}p recovery · ${status.adaptiveBatchSize} paraméter`,
             ok: !status.recoveryExhausted,
           },
         ];
@@ -1828,7 +1842,7 @@
           parts.push(`Következő felülvizsgálat: ${reviewLabel}`);
         }
         if (status.recoveryBlockers?.length) {
-          parts.push(`Vizsgált blokkolók: ${status.recoveryBlockers.slice(0, 3).join(", ")}`);
+          parts.push(`Vizsgált blokkolók: ${status.recoveryBlockers.slice(0, 6).join(", ")}`);
         }
         next.textContent = parts.join(" · ") || "Még nem történt auto-finomhangolás.";
       }
