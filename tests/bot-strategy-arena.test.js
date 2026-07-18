@@ -28,6 +28,16 @@ test("négy elkülönített Champion–Challenger profilt hoz létre", () => {
   );
 });
 
+test("gyors adatgyűjtésnél az aktív kihívó sem kap cooldown-t", () => {
+  const configs = Arena.deriveProfileConfigs({
+    ...baseConfig,
+    rapidDataCollectionMode: true,
+    cooldownMinutes: 30,
+  });
+  assert.equal(configs["challenger-active"].cooldownMinutes, 0);
+  assert.equal(configs["challenger-active"].minEntryGapMinutes, 0);
+});
+
 test("kockázatarányosan nyit és céláron zár árnyékügyletet", () => {
   const arena = Arena.createArena(baseConfig, 10000, 1000);
   const profile = arena.profiles[0];

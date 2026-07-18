@@ -51,9 +51,10 @@ test("legacy saved configuration migrates to the aggressive adaptive profile onc
   assert.equal(state.config.autoLearnMaxDailyAdjustments, 48);
   assert.equal(state.config.autoLearnMinChangeMinutes, 5);
   assert.equal(state.config.autoLearnTargetTradesPer6h, 4);
-  assert.equal(state.config.cooldownMinutes, 10);
-  assert.equal(state.config.maxPositions, 3);
-  assert.equal(state.config.maxTradesPerHour, 8);
+  assert.equal(state.config.cooldownMinutes, 0);
+  assert.equal(state.config.maxPositions, 10);
+  assert.equal(state.config.maxTradesPerHour, 120);
+  assert.equal(state.config.maxTradesPerDay, 500);
   assert.equal(state.config.aggressiveAdaptiveProfileRevision, 1);
 });
 
@@ -90,13 +91,14 @@ test("enabled aggressive mode reasserts its activity envelope on load", () => {
   assert.equal(state.config.autoLearnMaxDailyAdjustments, 48);
   assert.equal(state.config.autoLearnMinChangeMinutes, 5);
   assert.equal(state.config.autoLearnTargetTradesPer6h, 4);
-  assert.equal(state.config.cooldownMinutes, 10);
-  assert.equal(state.config.maxPositions, 3);
-  assert.equal(state.config.maxTradesPerHour, 8);
+  assert.equal(state.config.cooldownMinutes, 0);
+  assert.equal(state.config.maxPositions, 10);
+  assert.equal(state.config.maxTradesPerHour, 120);
 });
 
 test("trade-rate blocker can raise both hourly and daily activity limits", () => {
   const state = window.VirtualBot.createBotState({
+    rapidDataCollectionMode: false,
     maxTradesPerDay: 10,
     maxTradesPerHour: 4,
     aggressiveAdaptiveBatchSize: 6,
@@ -114,4 +116,34 @@ test("trade-rate blocker can raise both hourly and daily activity limits", () =>
 
   assert.equal(byKey.maxTradesPerDay.to, 12);
   assert.equal(byKey.maxTradesPerHour.to, 5);
+});
+
+test("rapid data collection removes frequency limits but keeps an explicit off switch", () => {
+  const rapid = window.VirtualBot.createBotState({
+    enabled: true,
+    rapidDataCollectionMode: true,
+    cooldownMinutes: 45,
+    minEntryGapMinutes: 30,
+    maxPositions: 2,
+    maxTradesPerDay: 10,
+    maxTradesPerHour: 4,
+    maxPositionAgeMinutes: 120,
+  });
+
+  assert.equal(rapid.config.cooldownMinutes, 0);
+  assert.equal(rapid.config.minEntryGapMinutes, 0);
+  assert.equal(rapid.config.maxPositions, 10);
+  assert.equal(rapid.config.maxTradesPerDay, 500);
+  assert.equal(rapid.config.maxTradesPerHour, 120);
+  assert.equal(rapid.config.maxPositionAgeMinutes, 30);
+  assert.equal(window.VirtualBot.getBotTickIntervalMs(rapid.config), 5000);
+
+  const normal = window.VirtualBot.createBotState({
+    enabled: true,
+    rapidDataCollectionMode: false,
+    cooldownMinutes: 45,
+    maxPositions: 2,
+  });
+  assert.equal(normal.config.cooldownMinutes, 45);
+  assert.equal(normal.config.maxPositions, 2);
 });

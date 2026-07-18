@@ -36,15 +36,15 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=20260718-01" />
+    <link rel="stylesheet" href="styles.css?v=20260718-02" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
     <script src="assets-catalog.js?v=20260712-22" defer></script>
     <script src="bot-intelligence-statistics.js?v=20260717-01" defer></script>
     <script src="bot-intelligence-engine.js?v=20260717-01" defer></script>
     <script src="bot-adaptive-controller.js?v=20260718-01" defer></script>
-    <script src="bot-strategy-arena.js?v=20260718-02" defer></script>
-    <script src="virtual-bot.js?v=20260718-06" defer></script>
-    <script src="bot-lab.js?v=20260718-03" defer></script>
+    <script src="bot-strategy-arena.js?v=20260718-03" defer></script>
+    <script src="virtual-bot.js?v=20260718-07" defer></script>
+    <script src="bot-lab.js?v=20260718-06" defer></script>
     <script src="app.js?v=20260718-01" defer></script>
   </head>
   <body data-view="bot">
@@ -723,16 +723,16 @@
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Max. nyitott pozíció</span>
-                    <output for="botMaxPositions" id="botMaxPositionsOut">3</output>
+                    <output for="botMaxPositions" id="botMaxPositionsOut">10</output>
                   </span>
-                  <input id="botMaxPositions" type="range" min="1" max="10" step="1" value="3" />
+                  <input id="botMaxPositions" type="range" min="1" max="10" step="1" value="10" />
                 </label>
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Cooldown veszteség után (perc)</span>
-                    <output for="botCooldown" id="botCooldownOut">10</output>
+                    <output for="botCooldown" id="botCooldownOut">0</output>
                   </span>
-                  <input id="botCooldown" type="range" min="5" max="120" step="5" value="10" />
+                  <input id="botCooldown" type="range" min="0" max="120" step="5" value="0" />
                 </label>
                 <label>Primér idősík
                   <select id="botPrimaryInterval">
@@ -890,9 +890,9 @@
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Max. pozíció életkor / stale limit (perc)</span>
-                    <output for="botMaxPositionAge" id="botMaxPositionAgeOut">120</output>
+                    <output for="botMaxPositionAge" id="botMaxPositionAgeOut">30</output>
                   </span>
-                  <input id="botMaxPositionAge" type="range" min="30" max="480" step="15" value="120" />
+                  <input id="botMaxPositionAge" type="range" min="30" max="480" step="15" value="30" />
                 </label>
                 <label class="toggle-switch wide-check">
                   <span class="toggle-label">Követő stop (trailing)</span>
@@ -1075,6 +1075,19 @@
                     prioritástól függően 10–45 mp-enként frissít piaci módban.
                   </p>
                 </div>
+                <div class="bot-pro-info panel-inset rapid-data-collection-info">
+                  <p class="eyebrow">GYORS TESZTADAT-GYŰJTÉS</p>
+                  <p class="helper-text">
+                    Tesztüzemben 5 másodpercenként szkennel, nem alkalmaz cooldown-t vagy
+                    belépési gyakorisági limitet, és egy ciklusban több megfelelő setupot is
+                    árnyéktesztel. A stop-loss, célár, kill switch és veszteségvédelem aktív marad.
+                  </p>
+                </div>
+                <label class="toggle-switch wide-check rapid-data-collection-toggle">
+                  <span class="toggle-label">Gyors adatgyűjtési tesztmód</span>
+                  <input id="botRapidDataCollectionMode" type="checkbox" checked />
+                  <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                </label>
                 <div class="bot-pro-info panel-inset">
                   <p class="eyebrow">BOT INTELLIGENCE VÉDELEM</p>
                   <p class="helper-text">
@@ -1168,9 +1181,9 @@
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Pro: rövid pihenő nyertes után (perc)</span>
-                    <output for="botProWinCooldown" id="botProWinCooldownOut">5</output>
+                    <output for="botProWinCooldown" id="botProWinCooldownOut">0</output>
                   </span>
-                  <input id="botProWinCooldown" type="range" min="0" max="10" step="1" value="5" />
+                  <input id="botProWinCooldown" type="range" min="0" max="10" step="1" value="0" />
                 </label>
                 <label class="control-slider">
                   <span class="control-header">
@@ -1203,23 +1216,23 @@
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Max. ügylet / nap</span>
-                    <output for="botMaxTradesPerDay" id="botMaxTradesPerDayOut">20</output>
+                    <output for="botMaxTradesPerDay" id="botMaxTradesPerDayOut">500</output>
                   </span>
-                  <input id="botMaxTradesPerDay" type="range" min="1" max="30" step="1" value="20" />
+                  <input id="botMaxTradesPerDay" type="range" min="1" max="500" step="1" value="500" />
                 </label>
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Max. ügylet / óra</span>
-                    <output for="botMaxTradesPerHour" id="botMaxTradesPerHourOut">8</output>
+                    <output for="botMaxTradesPerHour" id="botMaxTradesPerHourOut">120</output>
                   </span>
-                  <input id="botMaxTradesPerHour" type="range" min="1" max="10" step="1" value="8" />
+                  <input id="botMaxTradesPerHour" type="range" min="1" max="120" step="1" value="120" />
                 </label>
                 <label class="control-slider">
                   <span class="control-header">
                     <span>Min. idő belépések között (perc)</span>
-                    <output for="botMinEntryGap" id="botMinEntryGapOut">5</output>
+                    <output for="botMinEntryGap" id="botMinEntryGapOut">0</output>
                   </span>
-                  <input id="botMinEntryGap" type="range" min="0" max="60" step="5" value="5" />
+                  <input id="botMinEntryGap" type="range" min="0" max="60" step="5" value="0" />
                 </label>
                 <div class="bot-pro-info panel-inset">
                   <p class="eyebrow">ULTRA ADAPTÍV VEZÉRLÉS</p>

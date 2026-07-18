@@ -98,6 +98,7 @@
 
   const CHECKBOX_FIELDS = [
     { id: "botEnabled", key: "enabled" },
+    { id: "botRapidDataCollectionMode", key: "rapidDataCollectionMode" },
     { id: "botProfessionalMode", key: "professionalMode" },
     { id: "botAutoLearn", key: "autoLearnEnabled" },
     { id: "botAggressiveAdaptive", key: "aggressiveAdaptiveEnabled" },
@@ -914,7 +915,8 @@
     const botState = getBotState();
     if (!botState) return;
     const before = { ...botState.config, assets: [...botState.config.assets] };
-    const next = readConfigFromForm();
+    const formConfig = readConfigFromForm();
+    const next = Bot.applyRapidDataCollectionEnvelope?.(formConfig) || formConfig;
     const currency = getBotCurrency(next);
     if (currency !== "USD" && !bridge.areExchangeRatesReady?.()) {
       bridge?.showToast?.(
@@ -1223,10 +1225,12 @@
   function render() {
     const botState = getBotState();
     if (!botState) return;
+    botState.config = Bot.applyRapidDataCollectionEnvelope?.(botState.config) || botState.config;
     maybeReconcilePendingBalance();
     const metrics = Bot.getMetrics(botState, getContext());
     const { formatNumber, setMetricValue, valueClass, appendEmptyTableRow } = bridge;
     const currency = getBotCurrency(botState.config);
+    syncRapidDataCollectionControls(botState.config);
     updateCurrencyUi(currency);
     if (bridge.areExchangeRatesReady?.() || currency === "USD") {
       syncCapitalField(botState.config);
@@ -1298,6 +1302,7 @@
       const parts = [];
       if (botState.config.professionalMode) parts.push("Pro mód");
       if (botState.config.marketWideMode) parts.push(`Piaci mód (${Catalog.ALL_KEYS.length})`);
+      if (botState.config.rapidDataCollectionMode) parts.push("Gyors tesztadat");
       if (botState.config.autoLearnEnabled) parts.push("Auto-tanulás");
       if (botState.config.currency && botState.config.currency !== "sync") {
         parts.push(botState.config.currency);
@@ -1321,6 +1326,32 @@
     renderIntelligence();
     renderConfigChangeLog();
     renderCloudSyncStatus();
+  }
+
+  function syncRapidDataCollectionControls(config) {
+    const active = Boolean(config.rapidDataCollectionMode);
+    const controlIds = [
+      "botCooldown",
+      "botProWinCooldown",
+      "botMaxPositions",
+      "botMaxTradesPerDay",
+      "botMaxTradesPerHour",
+      "botMinEntryGap",
+      "botMaxPositionAge",
+      "botScannerPriority",
+    ];
+    controlIds.forEach((id) => {
+      const element = document.getElementById(id);
+      if (!element) return;
+      if (active) {
+        const field = CONFIG_FIELDS.find((item) => item.id === id);
+        if (field && config[field.key] !== undefined) {
+          element.value = config[field.key];
+          if (field.type === "range") updateSliderOutput(field);
+        }
+      }
+      element.disabled = active;
+    });
   }
 
   function appendIntelligenceMetric(container, label, value, detail, tone = "neutral") {
