@@ -1970,6 +1970,13 @@ h2 {
   margin-bottom: 6px;
 }
 
+.adaptive-mode-toggle {
+  background: linear-gradient(135deg, rgba(47, 93, 80, 0.1), rgba(185, 138, 53, 0.09));
+  border: 1px solid rgba(47, 93, 80, 0.22);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
 .bot-missed-log {
   display: grid;
   gap: 8px;

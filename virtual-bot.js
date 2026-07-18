@@ -2,6 +2,7 @@
   "use strict";
 
   const Intelligence = window.BotIntelligence;
+  const Adaptive = window.BotAdaptiveController;
 
   const STORAGE_KEY = "aurum-virtual-bot";
   const STORAGE_KEY_TRADES_BACKUP = "aurum-virtual-bot-trades-backup";
@@ -34,7 +35,7 @@
     shortMomentumMin: { min: 0.03, max: 0.5, step: 0.02 },
     reversalMinConfidence: { min: 55, max: 90, step: 5 },
     reversalMinScore: { min: 2, max: 4, step: 0.25 },
-    minOpportunityScore: { min: 60, max: 120, step: 5 },
+    minOpportunityScore: { min: 50, max: 120, step: 5 },
     maxDailyLossPercent: { min: 1, max: 15, step: 0.5 },
     maxPositionAgeMinutes: { min: 30, max: 480, step: 15 },
     trailingAtrMultiplier: { min: 0.5, max: 4, step: 0.25 },
@@ -42,7 +43,7 @@
     partialTakeProfitR: { min: 0.5, max: 3, step: 0.25 },
     partialTakeProfitPercent: { min: 25, max: 75, step: 5 },
     minEntryQualityScore: { min: 50, max: 95, step: 5 },
-    entryQualityReadyThreshold: { min: 60, max: 90, step: 5 },
+    entryQualityReadyThreshold: { min: 50, max: 90, step: 5 },
     entryQualityWaitThreshold: { min: 35, max: 70, step: 5 },
     minHoldMinutes: { min: 5, max: 120, step: 5 },
     minSellUrgencyScore: { min: 40, max: 90, step: 5 },
@@ -56,6 +57,9 @@
     autoLearnTargetWinRate: { min: 30, max: 70, step: 5 },
     autoLearnTargetTradesPer6h: { min: 1, max: 5, step: 1 },
     autoLearnRollingWindow: { min: 10, max: 50, step: 5 },
+    aggressiveAdaptiveReviewMinutes: { min: 1, max: 30, step: 1 },
+    aggressiveAdaptiveNoTradeMinutes: { min: 5, max: 120, step: 5 },
+    aggressiveAdaptiveBatchSize: { min: 2, max: 8, step: 1 },
     minimumSetupSamples: { min: 5, max: 30, step: 1 },
     maximumOpenRiskPercent: { min: 1, max: 10, step: 0.5 },
     maximumGroupRiskPercent: { min: 1, max: 8, step: 0.5 },
@@ -113,27 +117,35 @@
     },
     aggressive: {
       label: "Agresszív",
-      description: "Lazább küszöbök, több belépés – aktívabb piacokhoz.",
+      description: "Ultraaktív, ötpercenként adaptív profil – több belépés kontrollált kockázattal.",
       config: {
-        minConfidence: 52,
-        signalScoreThreshold: 2.25,
-        minOpportunityScore: 58,
-        minEntryQualityScore: 55,
-        entryQualityReadyThreshold: 58,
-        entryQualityWaitThreshold: 38,
-        riskPercent: 2.5,
-        maxPositions: 3,
-        cooldownMinutes: 15,
-        minEntryGapMinutes: 5,
+        minConfidence: 48,
+        signalScoreThreshold: 1.75,
+        minOpportunityScore: 55,
+        minEntryQualityScore: 50,
+        entryQualityReadyThreshold: 55,
+        entryQualityWaitThreshold: 35,
+        riskPercent: 2,
+        maxPositions: 4,
+        cooldownMinutes: 5,
+        minEntryGapMinutes: 0,
         requireAlignment: false,
-        minAlignmentRatio: 0.6,
+        minAlignmentRatio: 0.55,
         maxDailyLossPercent: 8,
         regimeFilter: "both",
         htfTrendFilterStrength: "loose",
-        entryMode: "breakout",
-        maxTradesPerDay: 16,
-        maxTradesPerHour: 6,
+        entryMode: "both",
+        maxTradesPerDay: 24,
+        maxTradesPerHour: 8,
         scannerRefreshPriority: "fast",
+        aggressiveAdaptiveEnabled: true,
+        aggressiveAdaptiveReviewMinutes: 5,
+        aggressiveAdaptiveNoTradeMinutes: 15,
+        aggressiveAdaptiveBatchSize: 6,
+        autoLearnMaxDailyAdjustments: 48,
+        autoLearnMinChangeMinutes: 5,
+        autoLearnTargetWinRate: 45,
+        autoLearnTargetTradesPer6h: 4,
       },
     },
     proScalp: {
@@ -206,9 +218,9 @@
     currency: "sync",
     initialCapital: 10000,
     riskPercent: 1.5,
-    maxPositions: 2,
-    cooldownMinutes: 30,
-    proMinConfidenceFloor: 55,
+    maxPositions: 3,
+    cooldownMinutes: 10,
+    proMinConfidenceFloor: 50,
     proHighScoreThreshold: 75,
     proWinCooldownMinutes: 5,
     primaryInterval: 5,
@@ -229,12 +241,12 @@
     shortMomentumMin: 0.1,
     useVolume: true,
     volumeMultiplier: 1.4,
-    signalScoreThreshold: 2.75,
-    minConfidence: 58,
-    requireAlignment: true,
-    minAlignmentRatio: 0.7,
+    signalScoreThreshold: 2.25,
+    minConfidence: 52,
+    requireAlignment: false,
+    minAlignmentRatio: 0.6,
     minAlignedTimeframes: 2,
-    blockAgainstDailyTrend: true,
+    blockAgainstDailyTrend: false,
     atrPeriod: 14,
     atrStopMultiplier: 2.5,
     atrStopMultiplierLong: 2.5,
@@ -251,10 +263,10 @@
     reversalMinScore: 3,
     maxPositionAgeMinutes: 120,
     maxDailyLossPercent: 5,
-    minOpportunityScore: 65,
-    minEntryQualityScore: 62,
-    entryQualityReadyThreshold: 62,
-    entryQualityWaitThreshold: 42,
+    minOpportunityScore: 58,
+    minEntryQualityScore: 55,
+    entryQualityReadyThreshold: 58,
+    entryQualityWaitThreshold: 38,
     minHoldMinutes: 15,
     minSellUrgencyScore: 55,
     minRegimeAtrPercentile: 12,
@@ -269,19 +281,25 @@
     useTradingHours: false,
     tradingHoursStart: 8,
     tradingHoursEnd: 20,
-    maxTradesPerDay: 10,
-    maxTradesPerHour: 4,
-    minEntryGapMinutes: 10,
+    maxTradesPerDay: 20,
+    maxTradesPerHour: 8,
+    minEntryGapMinutes: 5,
     regimeFilter: "both",
-    htfTrendFilterStrength: "medium",
+    htfTrendFilterStrength: "loose",
     entryMode: "both",
-    scannerRefreshPriority: "balanced",
+    scannerRefreshPriority: "fast",
     autoLearnNoTradeHours: 1,
-    autoLearnMaxDailyAdjustments: 20,
-    autoLearnMinChangeMinutes: 15,
-    autoLearnTargetWinRate: 40,
-    autoLearnTargetTradesPer6h: 1,
+    autoLearnMaxDailyAdjustments: 48,
+    autoLearnMinChangeMinutes: 5,
+    autoLearnTargetWinRate: 45,
+    autoLearnTargetTradesPer6h: 4,
     autoLearnRollingWindow: 20,
+    aggressiveAdaptiveEnabled: true,
+    aggressiveAdaptiveReviewMinutes: 5,
+    aggressiveAdaptiveNoTradeMinutes: 15,
+    aggressiveAdaptiveBatchSize: 6,
+    adaptiveConfigVersion: 3,
+    aggressiveAdaptiveProfileRevision: 1,
     intelligenceEnabled: true,
     minimumSetupSamples: 8,
     maximumOpenRiskPercent: 4.5,
@@ -340,6 +358,8 @@
     minConfidence: 45,
     minOpportunityScore: 55,
     minEntryQualityScore: 50,
+    entryQualityReadyThreshold: 55,
+    entryQualityWaitThreshold: 35,
     signalScoreThreshold: 1.75,
     momentumThreshold: 0.05,
     longMomentumMin: 0.05,
@@ -350,6 +370,12 @@
     maxTradesPerHour: 1,
     riskPercent: 0.5,
     proMinConfidenceFloor: 40,
+  };
+
+  const LOOSEN_SAFETY_CEILINGS = {
+    maxTradesPerDay: 24,
+    maxTradesPerHour: 8,
+    maxPositions: 4,
   };
 
   const FILTER_REASON_CATEGORIES = [
@@ -391,10 +417,19 @@
     "atrStopMultiplierShort",
     "signalScoreThreshold",
     "requireAlignment",
+    "blockAgainstDailyTrend",
+    "direction",
     "momentumThreshold",
     "longMomentumMin",
     "shortMomentumMin",
     "minOpportunityScore",
+    "minEntryQualityScore",
+    "entryQualityReadyThreshold",
+    "entryQualityWaitThreshold",
+    "minAlignmentRatio",
+    "maxTradesPerDay",
+    "maxTradesPerHour",
+    "minEntryGapMinutes",
     "maxDailyLossPercent",
   ];
 
@@ -480,6 +515,10 @@
     autoLearnTargetWinRate: "Auto-tanulás: cél win rate (%)",
     autoLearnTargetTradesPer6h: "Auto-tanulás: cél ügylet / 6 óra",
     autoLearnRollingWindow: "Auto-tanulás: gördülő ablak (ügylet)",
+    aggressiveAdaptiveEnabled: "Agresszív folyamatos adaptáció",
+    aggressiveAdaptiveReviewMinutes: "Adaptív felülvizsgálat (perc)",
+    aggressiveAdaptiveNoTradeMinutes: "Adaptív ügylet-szünet (perc)",
+    aggressiveAdaptiveBatchSize: "Paraméter / adaptív ciklus",
     intelligenceEnabled: "Bot Intelligence",
     minimumSetupSamples: "Setup minimum minta",
     maximumOpenRiskPercent: "Max. teljes nyitott kockázat",
@@ -609,6 +648,63 @@
     });
   }
 
+  function migrateAggressiveAdaptiveConfig(config = {}) {
+    const merged = { ...DEFAULT_CONFIG, ...config };
+    const profileRevision = Number(config?.aggressiveAdaptiveProfileRevision) || 0;
+    const migrated = profileRevision >= 1
+      ? merged
+      : {
+      ...merged,
+      minConfidence: Math.min(merged.minConfidence, 52),
+      signalScoreThreshold: Math.min(merged.signalScoreThreshold, 2.25),
+      minOpportunityScore: Math.min(merged.minOpportunityScore, 58),
+      minEntryQualityScore: Math.min(merged.minEntryQualityScore, 55),
+      cooldownMinutes: Math.min(merged.cooldownMinutes, 10),
+      minEntryGapMinutes: Math.min(merged.minEntryGapMinutes, 5),
+      proMinConfidenceFloor: Math.min(merged.proMinConfidenceFloor, 50),
+      maxPositions: Math.max(merged.maxPositions, 3),
+      maxTradesPerDay: Math.max(merged.maxTradesPerDay, 20),
+      maxTradesPerHour: Math.max(merged.maxTradesPerHour, 8),
+      requireAlignment: false,
+      blockAgainstDailyTrend: false,
+      regimeFilter: "both",
+      htfTrendFilterStrength: "loose",
+      entryMode: "both",
+      scannerRefreshPriority: "fast",
+      autoLearnMaxDailyAdjustments: 48,
+      autoLearnMinChangeMinutes: 5,
+      autoLearnTargetWinRate: 45,
+      autoLearnTargetTradesPer6h: 4,
+      aggressiveAdaptiveEnabled: true,
+      aggressiveAdaptiveReviewMinutes: 5,
+      aggressiveAdaptiveNoTradeMinutes: 15,
+      aggressiveAdaptiveBatchSize: 6,
+      adaptiveConfigVersion: 3,
+      aggressiveAdaptiveProfileRevision: 1,
+    };
+    if (!migrated.aggressiveAdaptiveEnabled) return migrated;
+    return {
+      ...migrated,
+      cooldownMinutes: Math.min(migrated.cooldownMinutes, 10),
+      minEntryGapMinutes: Math.min(migrated.minEntryGapMinutes, 5),
+      maxPositions: Math.max(migrated.maxPositions, 3),
+      maxTradesPerDay: Math.max(migrated.maxTradesPerDay, 20),
+      maxTradesPerHour: Math.max(migrated.maxTradesPerHour, 8),
+      autoLearnMaxDailyAdjustments: Math.max(migrated.autoLearnMaxDailyAdjustments, 48),
+      autoLearnMinChangeMinutes: Math.min(migrated.autoLearnMinChangeMinutes, 5),
+      autoLearnTargetTradesPer6h: Math.max(migrated.autoLearnTargetTradesPer6h, 4),
+      aggressiveAdaptiveReviewMinutes: Math.min(
+        migrated.aggressiveAdaptiveReviewMinutes,
+        5,
+      ),
+      aggressiveAdaptiveNoTradeMinutes: Math.min(
+        migrated.aggressiveAdaptiveNoTradeMinutes,
+        15,
+      ),
+      aggressiveAdaptiveBatchSize: Math.max(migrated.aggressiveAdaptiveBatchSize, 6),
+    };
+  }
+
   function buildSyncPayload(botState) {
     if (!botState) return null;
     return {
@@ -640,7 +736,7 @@
   function applySyncPayload(botState, payload, fxContext = null) {
     if (!botState || !payload?.state) return botState;
     const incoming = payload.state;
-    botState.config = { ...DEFAULT_CONFIG, ...incoming.config };
+    botState.config = migrateAggressiveAdaptiveConfig(incoming.config);
     botState.config.autoLearnNoTradeHours = 1;
     botState.trades = Array.isArray(incoming.trades) ? incoming.trades : [];
     botState.positions = Array.isArray(incoming.positions) ? incoming.positions : [];
@@ -897,6 +993,9 @@
       recoveryStep: 0,
       recoveryExhausted: false,
       recoveryBlockers: [],
+      adaptiveMode: "monitoring",
+      lastMonitorAt: 0,
+      inactivityMinutes: 0,
     };
   }
 
@@ -967,7 +1066,7 @@
       if (!Number.isFinite(saved.initialCapital) || !Number.isFinite(saved.cash)) {
         return createBotState();
       }
-      saved.config = { ...DEFAULT_CONFIG, ...saved.config };
+      saved.config = migrateAggressiveAdaptiveConfig(saved.config);
       saved.config.autoLearnNoTradeHours = 1;
       saved.positions = Array.isArray(saved.positions) ? saved.positions : [];
       saved.trades = Array.isArray(saved.trades) ? saved.trades : [];
@@ -4031,6 +4130,7 @@
       rollingPnl,
       tradesLast6h,
       hoursSinceOpen,
+      minutesSinceOpen: hoursSinceOpen * 60,
     };
   }
 
@@ -4045,7 +4145,8 @@
     const tradesOk =
       !config.enabled ||
       rolling.tradesLast6h >= targetTradesPer6h ||
-      (rolling.hoursSinceOpen !== null && rolling.hoursSinceOpen < config.autoLearnNoTradeHours);
+      (rolling.minutesSinceOpen !== null &&
+        rolling.minutesSinceOpen < (config.aggressiveAdaptiveNoTradeMinutes ?? 15));
     const pnlOk = rolling.sampleSize < 5 || rolling.rollingPnl >= 0;
     return winRateOk && tradesOk && pnlOk;
   }
@@ -4057,7 +4158,7 @@
     const targetTradesPer6h = config.autoLearnTargetTradesPer6h ?? 1;
     if (
       config.enabled &&
-      rolling.hoursSinceOpen >= (config.autoLearnNoTradeHours ?? 1)
+      rolling.minutesSinceOpen >= (config.aggressiveAdaptiveNoTradeMinutes ?? 15)
     ) {
       return "több ügylet";
     }
@@ -4119,7 +4220,10 @@
       return;
     }
     let clamped = clampLearnValue(key, newValue);
-    if (loosen && LOOSEN_SAFETY_FLOORS[key] !== undefined) {
+    if (loosen && LOOSEN_SAFETY_CEILINGS[key] !== undefined) {
+      clamped = Math.min(clamped, LOOSEN_SAFETY_CEILINGS[key]);
+      if (clamped <= next[key]) return;
+    } else if (loosen && LOOSEN_SAFETY_FLOORS[key] !== undefined) {
       clamped = Math.max(clamped, LOOSEN_SAFETY_FLOORS[key]);
       if (clamped >= next[key]) return;
     }
@@ -4129,6 +4233,7 @@
   }
 
   function finalizeLearningChanges(changes, maxCount = 3) {
+    if (Adaptive?.selectBatch) return Adaptive.selectBatch(changes, maxCount);
     const unique = [];
     const seen = new Set();
     changes.forEach((change) => {
@@ -4158,7 +4263,10 @@
     runtime.lastChangeAt = now;
     runtime.lastTrigger = meta.trigger || "auto";
     runtime.lastTradeId = meta.tradeId || null;
-    if (String(meta.trigger || "").startsWith("no-trade-")) {
+    if (
+      String(meta.trigger || "").startsWith("no-trade-") ||
+      String(meta.trigger || "").includes("activity-recovery")
+    ) {
       runtime.recoveryStep = (runtime.recoveryStep || 0) + 1;
       runtime.recoveryExhausted = false;
       runtime.recoveryBlockers = meta.blockers || [];
@@ -4324,11 +4432,12 @@
     const pending = [];
     const runtime = ensureAutoLearnRuntime(botState);
     const reference = diagnostics.lastOpenSuccessAt || runtime.inactivityStartedAt || Date.now();
-    const hours = Math.max(1, Math.round((Date.now() - reference) / 3600000));
+    const inactivityMinutes = Math.max(1, Math.round((Date.now() - reference) / 60000));
     const delta = AUTO_LEARN_DELTAS;
+    const batchSize = config.aggressiveAdaptiveBatchSize ?? 6;
 
     function loosenOne(key, newValue, label) {
-      const reason = `Helyreállítás ${hours} óra ügylet-szünet után: ${label}`;
+      const reason = `Adaptív helyreállítás ${inactivityMinutes} perc ügylet-szünet után: ${label}`;
       const scratch = { ...next };
       const changes = [];
       proposeLearnChange(scratch, changes, key, newValue, reason, { loosen: true });
@@ -4338,8 +4447,8 @@
       }
     }
 
-    topReasons.slice(0, 5).forEach(({ key: topKey, label }) => {
-      if (pending.length >= 3) return;
+    topReasons.slice(0, 8).forEach(({ key: topKey, label }) => {
+      if (pending.length >= batchSize) return;
       if (topKey === "low-confidence") {
         loosenOne("minConfidence", next.minConfidence - delta.minConfidence, label);
       } else if (topKey === "low-opportunity") {
@@ -4352,6 +4461,11 @@
         loosenOne(
           "minEntryQualityScore",
           next.minEntryQualityScore - delta.minEntryQualityScore,
+          label,
+        );
+        loosenOne(
+          "entryQualityReadyThreshold",
+          next.entryQualityReadyThreshold - delta.minEntryQualityScore,
           label,
         );
       } else if (topKey === "alignment" && next.requireAlignment) {
@@ -4372,6 +4486,9 @@
         loosenOne("minEntryGapMinutes", next.minEntryGapMinutes - delta.minEntryGapMinutes, label);
       } else if (topKey === "trade-rate") {
         loosenOne("maxTradesPerDay", next.maxTradesPerDay + delta.maxTradesPerDay, label);
+        loosenOne("maxTradesPerHour", next.maxTradesPerHour + delta.maxTradesPerHour, label);
+      } else if (topKey === "max-positions") {
+        loosenOne("maxPositions", next.maxPositions + 1, label);
       } else if (topKey === "low-signal") {
         loosenOne(
           "signalScoreThreshold",
@@ -4380,10 +4497,16 @@
         );
       } else if (topKey === "direction-filters") {
         loosenOne("momentumThreshold", next.momentumThreshold - delta.momentumThreshold, label);
+        loosenOne("longMomentumMin", next.longMomentumMin - delta.longMomentumMin, label);
+        loosenOne("shortMomentumMin", next.shortMomentumMin - delta.shortMomentumMin, label);
+      } else if (topKey === "daily-trend" && next.blockAgainstDailyTrend) {
+        loosenOne("blockAgainstDailyTrend", false, label);
+      } else if (topKey === "direction-mode" && next.direction !== "both") {
+        loosenOne("direction", "both", label);
       }
     });
 
-    return finalizeLearningChanges(pending, 3);
+    return finalizeLearningChanges(pending, batchSize);
   }
 
   function learnFromTradeClose(botState, context, trade) {
@@ -4415,34 +4538,43 @@
     if (!runtime.inactivityStartedAt) {
       runtime.inactivityStartedAt = lastOpen || botState.lastTickAt || now;
     }
-    const inactivityReference = lastOpen || runtime.inactivityStartedAt;
-    const timeoutHours = config.autoLearnNoTradeHours ?? 1;
-    const staleMs = timeoutHours * 3600000;
-    const hoursSince = (now - inactivityReference) / 3600000;
-    const isStale = now - inactivityReference >= staleMs;
-    if (!isStale) return null;
+    const rolling = getRollingLearningMetrics(botState, config);
+    const decision = Adaptive?.decideCycle
+      ? Adaptive.decideCycle({ config, runtime, diagnostics, rolling, now })
+      : {
+          shouldAdjust:
+            now - (lastOpen || runtime.inactivityStartedAt) >=
+            (config.autoLearnNoTradeHours ?? 1) * 3600000,
+          mode: "activity-recovery",
+          maxChanges: 3,
+        };
+    runtime.lastMonitorAt = now;
+    runtime.adaptiveMode = decision.mode;
+    runtime.inactivityMinutes = decision.inactivityMinutes || 0;
+    if (!decision.shouldAdjust) {
+      if (decision.nextReviewAt) runtime.nextReviewAt = decision.nextReviewAt;
+      return { applied: false, monitoring: true, mode: decision.mode };
+    }
 
     const gate = canApplyAutoLearnChange(botState, config, { ignoreTargets: true });
     if (!gate.ok) return { applied: false, reason: gate.reason, nextReviewAt: gate.nextReviewAt };
 
-    const blockers = (diagnostics.lastTopReasons || []).slice(0, 5).map((item) => item.label);
-    const rolling = getRollingLearningMetrics(botState, config);
-    const targetWinRate = config.autoLearnTargetWinRate ?? 40;
-    const needsQualityRepair =
-      rolling.sampleSize >= 5 &&
-      (rolling.rollingPnl < 0 || (rolling.winRate !== null && rolling.winRate < targetWinRate));
+    const blockers = (diagnostics.lastTopReasons || []).slice(0, 8).map((item) => item.label);
+    const needsQualityRepair = decision.mode === "quality-repair";
     const qualityPreview = needsQualityRepair
       ? runAggregateAutoLearnPreview(botState, context)
       : null;
+    const maxChanges = decision.maxChanges || config.aggressiveAdaptiveBatchSize || 6;
     const changes = needsQualityRepair
-      ? qualityPreview?.changes?.slice(0, 3) || []
+      ? finalizeLearningChanges(qualityPreview?.changes || [], maxChanges)
       : buildNoTradeLooseningChange(botState);
     if (!changes?.length) {
       const firstExhaustedNotice = !runtime.recoveryExhausted;
       runtime.recoveryExhausted = true;
       runtime.recoveryBlockers = blockers;
       runtime.lastTrigger = "no-trade-safety-limit";
-      runtime.nextReviewAt = now + (config.autoLearnMinChangeMinutes ?? 15) * 60000;
+      runtime.nextReviewAt =
+        now + (config.aggressiveAdaptiveReviewMinutes ?? config.autoLearnMinChangeMinutes ?? 5) * 60000;
       if (firstExhaustedNotice) {
         logActivity(
           botState,
@@ -4459,13 +4591,18 @@
     }
 
     diagnostics.lastNoTradeLearnAt = now;
-    const hoursLabel = Math.max(timeoutHours, Math.round(hoursSince));
+    const inactivityLabel = Math.max(
+      config.aggressiveAdaptiveNoTradeMinutes ?? 15,
+      Math.round(decision.inactivityMinutes || 0),
+    );
     return applyLearningChanges(botState, changes, {
-      trigger: needsQualityRepair ? "no-trade-quality-recovery" : "no-trade-timeout",
+      trigger: needsQualityRepair
+        ? "continuous-quality-repair"
+        : "continuous-activity-recovery",
       blockers,
       activityMessage: needsQualityRepair
-        ? `Auto-tanulás: ${hoursLabel} óra ügylet nélkül, negatív gördülő teljesítmény → ${changes.length} minőségi/kockázati paraméter javítva.`
-        : `Auto-tanulás: ${hoursLabel} óra ügylet nélkül → ${changes.length} belépési paraméter finomhangolva, majd teljes újraelemzés indul.`,
+        ? `Folyamatos adaptáció: negatív gördülő teljesítmény → ${changes.length} minőségi/kockázati paraméter javítva.`
+        : `Folyamatos adaptáció: ${inactivityLabel} perc ügylet nélkül → ${changes.length} aktivitási/belépési paraméter módosítva, majd teljes újraelemzés indul.`,
     });
   }
 
@@ -4500,6 +4637,13 @@
       targetWinRate: config.autoLearnTargetWinRate ?? 40,
       targetTradesPer6h: config.autoLearnTargetTradesPer6h ?? 1,
       noTradeTimeoutHours: config.autoLearnNoTradeHours ?? 1,
+      aggressiveAdaptiveEnabled: Boolean(config.aggressiveAdaptiveEnabled),
+      adaptiveReviewMinutes: config.aggressiveAdaptiveReviewMinutes ?? 5,
+      adaptiveNoTradeMinutes: config.aggressiveAdaptiveNoTradeMinutes ?? 15,
+      adaptiveBatchSize: config.aggressiveAdaptiveBatchSize ?? 6,
+      adaptiveMode: runtime.adaptiveMode || "monitoring",
+      lastMonitorAt: runtime.lastMonitorAt || null,
+      inactivityMinutes: runtime.inactivityMinutes || 0,
       recoveryStep: runtime.recoveryStep || 0,
       recoveryExhausted: Boolean(runtime.recoveryExhausted),
       recoveryBlockers: runtime.recoveryBlockers || [],
@@ -4565,7 +4709,10 @@
       propose("cooldownMinutes", next.cooldownMinutes + AUTO_LEARN_DELTAS.cooldownMinutes, "Negatív nap – hosszabb pihenő új belépések között.");
     }
 
-    const finalized = finalizeLearningChanges(changes, 3);
+    const finalized = finalizeLearningChanges(
+      changes,
+      botState.config.aggressiveAdaptiveBatchSize ?? 6,
+    );
     const after = pickLearnable({ ...next, ...Object.fromEntries(finalized.map((c) => [c.key, c.to])) });
     if (!finalized.length) {
       return { applied: false, reason: "Nincs szükség módosításra.", changes: [], before, after: before };
