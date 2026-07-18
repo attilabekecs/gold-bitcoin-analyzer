@@ -1666,6 +1666,58 @@ h2 {
   max-width: 680px;
 }
 
+.intelligence-overview-actions {
+  align-items: stretch;
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 210px;
+}
+
+.intelligence-overview-actions .intelligence-status {
+  align-self: flex-end;
+}
+
+.intelligence-export-button {
+  align-items: center;
+  background: var(--gold-bright);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: var(--radius-pill);
+  color: #13231b;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 800;
+  gap: 8px;
+  justify-content: center;
+  letter-spacing: 0.02em;
+  padding: 11px 15px;
+  transition: transform 160ms ease, filter 160ms ease;
+}
+
+.intelligence-export-button:hover {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+
+.intelligence-export-button:focus-visible {
+  outline: 2px solid var(--paper);
+  outline-offset: 3px;
+}
+
+.intelligence-export-button span {
+  font-size: 16px;
+  line-height: 0.8;
+}
+
+#botAnalysisExportHint {
+  color: rgba(255, 253, 249, 0.54);
+  font-size: 8px;
+  text-align: right;
+}
+
 .intelligence-status {
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: var(--radius-pill);
@@ -4735,6 +4787,19 @@ footer {
 
   .intelligence-overview h2 {
     font-size: 25px;
+  }
+
+  .intelligence-overview-actions {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .intelligence-overview-actions .intelligence-status {
+    align-self: flex-start;
+  }
+
+  #botAnalysisExportHint {
+    text-align: center;
   }
 
   .intelligence-metric-grid,

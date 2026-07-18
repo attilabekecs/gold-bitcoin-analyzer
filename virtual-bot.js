@@ -5122,6 +5122,221 @@
     return suggestions;
   }
 
+  const ANALYSIS_SENSITIVE_KEY = /(api[-_]?key|access[-_]?token|auth(?:orization)?|credential|password|passwd|secret|session[-_]?id|cookie)/i;
+  const ANALYSIS_MARKET_CANDLE_LIMIT = 500;
+
+  function sanitizeAnalysisValue(value, seen = new WeakSet(), key = "") {
+    if (ANALYSIS_SENSITIVE_KEY.test(key)) return undefined;
+    if (value === null || typeof value === "string" || typeof value === "boolean") return value;
+    if (typeof value === "number") return Number.isFinite(value) ? value : String(value);
+    if (typeof value === "bigint") return String(value);
+    if (typeof value === "undefined" || typeof value === "function" || typeof value === "symbol") {
+      return undefined;
+    }
+    if (value instanceof Date) return value.toISOString();
+    if (typeof value !== "object") return String(value);
+    if (seen.has(value)) return "[circular-reference-removed]";
+    seen.add(value);
+
+    if (Array.isArray(value)) {
+      const result = value
+        .map((item) => sanitizeAnalysisValue(item, seen))
+        .filter((item) => item !== undefined);
+      seen.delete(value);
+      return result;
+    }
+
+    const result = {};
+    Object.entries(value).forEach(([childKey, childValue]) => {
+      const sanitized = sanitizeAnalysisValue(childValue, seen, childKey);
+      if (sanitized !== undefined) result[childKey] = sanitized;
+    });
+    seen.delete(value);
+    return result;
+  }
+
+  function trimMarketSeries(series) {
+    if (!series || typeof series !== "object") return series ?? null;
+    const sanitized = sanitizeAnalysisValue(series) || {};
+    if (Array.isArray(sanitized.candles)) {
+      sanitized.originalCandleCount = sanitized.candles.length;
+      sanitized.candles = sanitized.candles.slice(-ANALYSIS_MARKET_CANDLE_LIMIT);
+      sanitized.exportedCandleCount = sanitized.candles.length;
+    }
+    return sanitized;
+  }
+
+  function buildAnalysisMarketSnapshot(context = {}) {
+    const keys = new Set([
+      ...Object.keys(context.assets || {}),
+      ...Object.keys(context.intraday || {}),
+      ...Object.keys(context.multiTimeframe || {}),
+    ]);
+    const assets = {};
+    keys.forEach((assetKey) => {
+      const timeframes = {};
+      Object.entries(context.multiTimeframe?.[assetKey] || {}).forEach(([interval, series]) => {
+        if (series) timeframes[interval] = trimMarketSeries(series);
+      });
+      const daily = context.assets?.[assetKey];
+      const intraday = context.intraday?.[assetKey];
+      if (daily || intraday || Object.keys(timeframes).length) {
+        assets[assetKey] = {
+          daily: trimMarketSeries(daily),
+          intraday: trimMarketSeries(intraday),
+          timeframes,
+        };
+      }
+    });
+    return {
+      candleLimitPerSeries: ANALYSIS_MARKET_CANDLE_LIMIT,
+      latestMarketDataAt: getLatestMarketDataAt(context),
+      botCurrency: context.botCurrency || null,
+      fxContext: sanitizeAnalysisValue(context.fxContext || null),
+      assetCount: Object.keys(assets).length,
+      assets,
+    };
+  }
+
+  function getConsecutiveLossCount(trades) {
+    let count = 0;
+    for (const trade of trades || []) {
+      if (trade?.partial) continue;
+      const pnl = Number(trade?.pnl);
+      if (!Number.isFinite(pnl) || pnl >= 0) break;
+      count += 1;
+    }
+    return count;
+  }
+
+  function getCloudSyncStatusSnapshot() {
+    return {
+      status: cloudSyncRuntime.status,
+      error: cloudSyncRuntime.lastError,
+      lastSyncedAt: cloudSyncRuntime.lastSyncedAt,
+      userId: getOrCreateBotUserId(),
+    };
+  }
+
+  function getAnalysisCloudSyncSnapshot() {
+    const sync = getCloudSyncStatusSnapshot();
+    return {
+      status: sync.status,
+      error: sync.error,
+      lastSyncedAt: sync.lastSyncedAt,
+      userIdConfigured: Boolean(sync.userId),
+    };
+  }
+
+  function buildAnalysisExport(botState, context = {}, options = {}) {
+    if (!botState) throw new Error("Hiányzó botállapot az elemzési exporthoz.");
+    const analysisState = sanitizeAnalysisValue(botState);
+    const exportedAt = Number(options.exportedAt) || Date.now();
+    const completedTrades = (analysisState.trades || []).filter((trade) => !trade.partial);
+    const latestClosedAt = completedTrades.reduce(
+      (latest, trade) => Math.max(latest, Number(trade.closedAt) || 0),
+      0,
+    );
+    const lastOpenAt = Number(analysisState.tradeDiagnostics?.lastOpenSuccessAt) || 0;
+    const diagnostics = getTradeDiagnostics(analysisState, context);
+    const metrics = getMetrics(analysisState, context);
+    const performance = getPerformanceMetrics(analysisState);
+    const autoLearn = getAutoLearnStatus(analysisState, context);
+    const arenaProfiles = analysisState.strategyArena?.profiles || [];
+    const intelligence = analysisState.intelligence || createEmptyIntelligenceState();
+    const detectedIssues = [];
+
+    if (intelligence.killSwitch?.active) {
+      detectedIssues.push({
+        severity: "critical",
+        code: "kill-switch-active",
+        detail: intelligence.killSwitch.reasons || [],
+      });
+    }
+    if (diagnostics.isStale) {
+      detectedIssues.push({
+        severity: "warning",
+        code: "no-recent-open",
+        detail: diagnostics.hoursSinceOpenLabel,
+      });
+    }
+    if (
+      analysisState.config?.enabled &&
+      exportedAt - (Number(analysisState.lastTickAt) || 0) > 2 * 60000
+    ) {
+      detectedIssues.push({
+        severity: "warning",
+        code: "tick-stale-or-page-suspended",
+        detail: "A bot utolsó ciklusa több mint két perce futott.",
+      });
+    }
+    if (diagnostics.blockers?.length) {
+      detectedIssues.push({
+        severity: "warning",
+        code: "entry-blockers",
+        detail: diagnostics.blockers,
+      });
+    }
+
+    return sanitizeAnalysisValue({
+      schema: "aurum-virtual-bot-analysis",
+      schemaVersion: 1,
+      exportedAt,
+      exportedAtIso: new Date(exportedAt).toISOString(),
+      purpose: "Teljes, megosztható diagnosztikai csomag a virtuális bot működésének elemzéséhez.",
+      privacy: {
+        sensitiveValuesExcluded: true,
+        excludedKeyTypes: [
+          "API key",
+          "access token",
+          "authorization",
+          "credential",
+          "password",
+          "secret",
+          "session id",
+          "cookie",
+        ],
+      },
+      runtime: options.runtime || null,
+      summary: {
+        botEnabled: Boolean(analysisState.config?.enabled),
+        rapidDataCollectionMode: Boolean(analysisState.config?.rapidDataCollectionMode),
+        lastTickAt: analysisState.lastTickAt || null,
+        lastScanAt: diagnostics.lastScanAt || null,
+        lastOpenAt: lastOpenAt || null,
+        latestClosedAt: latestClosedAt || null,
+        minutesSinceLastOpen: lastOpenAt ? (exportedAt - lastOpenAt) / 60000 : null,
+        minutesSinceLatestClose: latestClosedAt ? (exportedAt - latestClosedAt) / 60000 : null,
+        consecutiveLosses: getConsecutiveLossCount(analysisState.trades),
+        killSwitchActive: Boolean(intelligence.killSwitch?.active),
+        killSwitchReasons: intelligence.killSwitch?.reasons || [],
+        openPositionCount: analysisState.positions?.length || 0,
+        closedTradeCount: completedTrades.length,
+        activityLogCount: analysisState.activityLog?.length || 0,
+        learningHistoryCount: analysisState.learningHistory?.length || 0,
+        configChangeCount: analysisState.configChangeLog?.length || 0,
+        arenaProfileCount: arenaProfiles.length,
+        arenaTradeCounts: arenaProfiles.map((profile) => ({
+          id: profile.id,
+          name: profile.name,
+          closedTrades: (profile.trades || []).filter((trade) => !trade.partial).length,
+          openPositions: profile.positions?.length || 0,
+        })),
+      },
+      diagnostics: {
+        metrics,
+        performance,
+        tradeFlow: diagnostics,
+        autoLearn,
+        intelligence,
+        detectedIssues,
+      },
+      botState: analysisState,
+      market: buildAnalysisMarketSnapshot(context),
+      cloudSync: getAnalysisCloudSyncSnapshot(),
+    });
+  }
+
   function resetBot(config) {
     const botState = createBotState(config);
     saveBotState(botState);
@@ -5149,12 +5364,8 @@
     mergeBotStateWithCloud,
     initCloudSync,
     resolveBotSyncEndpoint,
-    getCloudSyncStatus: () => ({
-      status: cloudSyncRuntime.status,
-      error: cloudSyncRuntime.lastError,
-      lastSyncedAt: cloudSyncRuntime.lastSyncedAt,
-      userId: getOrCreateBotUserId(),
-    }),
+    getCloudSyncStatus: getCloudSyncStatusSnapshot,
+    buildAnalysisExport,
     passesEntryQualityGate,
     getMetrics,
     getPerformanceMetrics,
